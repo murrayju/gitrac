@@ -1,0 +1,186 @@
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import type { Priority } from '../../../core/types.ts';
+import { createIssue } from '../api.ts';
+import { useConfig } from '../hooks.ts';
+import { IssueEditor } from './IssueEditor.tsx';
+
+const PRIORITIES: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
+
+export function CreateIssuePage() {
+  const navigate = useNavigate();
+  const { config } = useConfig();
+  const [title, setTitle] = useState('');
+  const [priority, setPriority] = useState<Priority>('none');
+  const [assignee, setAssignee] = useState('');
+  const [labels, setLabels] = useState<string[]>([]);
+  const [description, setDescription] = useState('');
+  const [labelInput, setLabelInput] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!title.trim()) return;
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      const issue = await createIssue({
+        title: title.trim(),
+        priority,
+        labels,
+        assignee: assignee.trim() || undefined,
+        description,
+      });
+      navigate(`/issues/${issue.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create issue');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function addLabel() {
+    const trimmed = labelInput.trim();
+    if (!trimmed || labels.includes(trimmed)) return;
+    setLabels([...labels, trimmed]);
+    setLabelInput('');
+  }
+
+  function removeLabel(label: string) {
+    setLabels(labels.filter((l) => l !== label));
+  }
+
+  const availableLabels = config?.labels.filter((l) => !labels.includes(l));
+
+  return (
+    <div className="p-6 max-w-2xl mx-auto">
+      <h1 className="text-lg font-semibold mb-6">New Issue</h1>
+
+      {error && (
+        <div className="text-red-400 text-sm mb-4">Error: {error}</div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Title */}
+        <div>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Issue title"
+            className="w-full bg-transparent text-lg font-medium border-b border-gray-700 focus:border-blue-500 outline-none pb-2 placeholder:text-gray-600"
+            autoFocus
+            required
+          />
+        </div>
+
+        {/* Priority */}
+        <div className="flex gap-4">
+          <div className="flex-1">
+            <label className="block text-xs text-gray-500 uppercase tracking-wider mb-1">
+              Priority
+            </label>
+            <select
+              value={priority}
+              onChange={(e) => setPriority(e.target.value as Priority)}
+              className="bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-300 w-full"
+            >
+              {PRIORITIES.map((p) => (
+                <option key={p} value={p}>
+                  {p.charAt(0).toUpperCase() + p.slice(1)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Assignee */}
+          <div className="flex-1">
+            <label className="block text-xs text-gray-500 uppercase tracking-wider mb-1">
+              Assignee
+            </label>
+            <input
+              type="text"
+              value={assignee}
+              onChange={(e) => setAssignee(e.target.value)}
+              placeholder="Unassigned"
+              className="bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-300 placeholder:text-gray-600 w-full"
+            />
+          </div>
+        </div>
+
+        {/* Labels */}
+        <div>
+          <label className="block text-xs text-gray-500 uppercase tracking-wider mb-1">
+            Labels
+          </label>
+          <div className="flex flex-wrap gap-1 mb-2">
+            {labels.map((label) => (
+              <span
+                key={label}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-gray-800 text-gray-300"
+              >
+                {label}
+                <button
+                  type="button"
+                  onClick={() => removeLabel(label)}
+                  className="text-gray-500 hover:text-gray-300"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+          <div className="flex gap-1">
+            <input
+              type="text"
+              value={labelInput}
+              onChange={(e) => setLabelInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  addLabel();
+                }
+              }}
+              placeholder="Add label..."
+              list="create-available-labels"
+              className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300 placeholder:text-gray-600 flex-1"
+            />
+            <datalist id="create-available-labels">
+              {availableLabels?.map((l) => (
+                <option key={l} value={l} />
+              ))}
+            </datalist>
+            <button
+              type="button"
+              onClick={addLabel}
+              className="text-xs text-gray-500 hover:text-gray-300 px-2"
+            >
+              +
+            </button>
+          </div>
+        </div>
+
+        {/* Description */}
+        <div>
+          <label className="block text-xs text-gray-500 uppercase tracking-wider mb-1">
+            Description
+          </label>
+          <IssueEditor content="" onChange={setDescription} />
+        </div>
+
+        {/* Submit */}
+        <div className="flex justify-end pt-2">
+          <button
+            type="submit"
+            disabled={submitting || !title.trim()}
+            className="px-4 py-2 text-sm rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50 transition-colors"
+          >
+            {submitting ? 'Creating...' : 'Create Issue'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
