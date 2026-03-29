@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { createDefaultConfig } from './config.ts';
-import type { Config, Issue } from './types.ts';
+import type { Issue } from './types.ts';
 import { validateIssue } from './validate.ts';
 
 function makeValidIssue(overrides: Partial<Issue> = {}): Issue {

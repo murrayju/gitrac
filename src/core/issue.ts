@@ -21,9 +21,7 @@ export function parseIssue(markdown: string): Issue {
   // We look for a --- line that separates description from comments.
   const { description, commentsSection } = splitContent(content);
 
-  const comments = commentsSection
-    ? parseComments(commentsSection)
-    : [];
+  const comments = commentsSection ? parseComments(commentsSection) : [];
 
   return {
     id: fm.id,
@@ -82,7 +80,7 @@ function splitContent(content: string): {
   let separatorIndex = -1;
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
+    const line = (lines[i] ?? '').trim();
     if (line.startsWith('```')) {
       inCodeFence = !inCodeFence;
     } else if (!inCodeFence && line === '---') {

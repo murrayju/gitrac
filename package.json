@@ -4,7 +4,9 @@
   "license": "MIT",
   "module": "index.ts",
   "type": "module",
-  "bin": { "gitrac": "./index.ts" },
+  "bin": {
+    "gitrac": "./index.ts"
+  },
   "scripts": {
     "build": "./bun run scripts/build.ts",
     "typecheck": "tsc --noEmit",

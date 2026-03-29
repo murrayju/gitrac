@@ -11,9 +11,9 @@ describe('parseComments', () => {
     const input = '### Alice \u2014 2024-01-15T10:30:00Z\n\nThis is the body.';
     const comments = parseComments(input);
     expect(comments).toHaveLength(1);
-    expect(comments[0].author).toBe('Alice');
-    expect(comments[0].timestamp).toBe('2024-01-15T10:30:00Z');
-    expect(comments[0].body).toBe('This is the body.');
+    expect(comments[0]?.author).toBe('Alice');
+    expect(comments[0]?.timestamp).toBe('2024-01-15T10:30:00Z');
+    expect(comments[0]?.body).toBe('This is the body.');
   });
 
   test('parses multiple comments', () => {
@@ -28,10 +28,10 @@ describe('parseComments', () => {
     ].join('\n');
     const comments = parseComments(input);
     expect(comments).toHaveLength(2);
-    expect(comments[0].author).toBe('Alice');
-    expect(comments[0].body).toBe('First comment.');
-    expect(comments[1].author).toBe('Bob');
-    expect(comments[1].body).toBe('Second comment.');
+    expect(comments[0]?.author).toBe('Alice');
+    expect(comments[0]?.body).toBe('First comment.');
+    expect(comments[1]?.author).toBe('Bob');
+    expect(comments[1]?.body).toBe('Second comment.');
   });
 
   test('parses a comment containing code fences', () => {
@@ -46,8 +46,8 @@ describe('parseComments', () => {
     ].join('\n');
     const comments = parseComments(input);
     expect(comments).toHaveLength(1);
-    expect(comments[0].body).toContain('```javascript');
-    expect(comments[0].body).toContain('console.log("hello");');
+    expect(comments[0]?.body).toContain('```javascript');
+    expect(comments[0]?.body).toContain('console.log("hello");');
   });
 
   test('unescapes headings in comment body', () => {
@@ -60,7 +60,7 @@ describe('parseComments', () => {
     ].join('\n');
     const comments = parseComments(input);
     expect(comments).toHaveLength(1);
-    expect(comments[0].body).toBe('## My Heading\n\nSome text.');
+    expect(comments[0]?.body).toBe('## My Heading\n\nSome text.');
   });
 
   test('returns empty array for empty string', () => {
@@ -102,9 +102,7 @@ describe('serializeComments', () => {
       '##### H5',
       '###### H6',
     ].join('\n');
-    const result = serializeComments([
-      { author: 'A', timestamp: 'T', body },
-    ]);
+    const result = serializeComments([{ author: 'A', timestamp: 'T', body }]);
     expect(result).toContain('\\# H1');
     expect(result).toContain('\\## H2');
     expect(result).toContain('\\### H3');
@@ -115,16 +113,7 @@ describe('serializeComments', () => {
 
   test('preserves code fences unchanged', () => {
     const body = '```\n### not a heading\n```';
-    const result = serializeComments([
-      { author: 'A', timestamp: 'T', body },
-    ]);
-    // Inside code fences, ### should still be escaped since we escape all lines
-    // Actually, code fence content should be preserved as-is? Let's check the spec.
-    // The spec says: "Serialize a comment containing code fences -> unchanged"
-    // This means code fences themselves are unchanged, but headings inside are escaped.
-    // Wait, re-reading: "escapeCommentHeadings — replace # at start of line with \#"
-    // This is a simple line-level operation, so it WILL escape inside code fences.
-    // But the test says "unchanged". Let me handle code fences specially.
+    const result = serializeComments([{ author: 'A', timestamp: 'T', body }]);
     expect(result).toContain('```\n### not a heading\n```');
   });
 
@@ -164,8 +153,6 @@ describe('unescapeCommentHeadings', () => {
 
   test('does not unescape inside code fences', () => {
     const input = '```\n\\## Still escaped\n```';
-    expect(unescapeCommentHeadings(input)).toBe(
-      '```\n\\## Still escaped\n```',
-    );
+    expect(unescapeCommentHeadings(input)).toBe('```\n\\## Still escaped\n```');
   });
 });

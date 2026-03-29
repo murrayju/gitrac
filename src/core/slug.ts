@@ -22,5 +22,6 @@ export function issueFilename(id: number, title: string): string {
  */
 export function parseIssueId(filename: string): number | null {
   const match = filename.match(/^(\d+)-/);
-  return match ? Number.parseInt(match[1], 10) : null;
+  if (!match?.[1]) return null;
+  return Number.parseInt(match[1], 10);
 }

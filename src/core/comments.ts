@@ -73,8 +73,8 @@ export function parseComments(commentsSection: string): Comment[] {
           body: unescapeCommentHeadings(trimBody(bodyLines)),
         });
       }
-      currentAuthor = match[1];
-      currentTimestamp = match[2];
+      currentAuthor = match[1] ?? '';
+      currentTimestamp = match[2] ?? '';
       bodyLines = [];
     } else {
       bodyLines.push(line);
@@ -112,11 +112,11 @@ export function serializeComments(comments: Comment[]): string {
 function trimBody(lines: string[]): string {
   // Remove leading empty line (the blank line after the header)
   let start = 0;
-  while (start < lines.length && lines[start].trim() === '') {
+  while (start < lines.length && (lines[start] ?? '').trim() === '') {
     start++;
   }
   let end = lines.length - 1;
-  while (end >= start && lines[end].trim() === '') {
+  while (end >= start && (lines[end] ?? '').trim() === '') {
     end--;
   }
   return lines.slice(start, end + 1).join('\n');

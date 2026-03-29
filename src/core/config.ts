@@ -1,5 +1,5 @@
 import yaml from 'js-yaml';
-import type { Config, GitConfig, Priority, Status } from './types.ts';
+import type { Config, GitConfig } from './types.ts';
 
 const VALID_STATUSES: readonly string[] = [
   'backlog',

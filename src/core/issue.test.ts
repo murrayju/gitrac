@@ -74,15 +74,13 @@ describe('parseIssue', () => {
     expect(issue.created).toBe('2024-01-15T10:00:00Z');
     expect(issue.createdBy).toBe('bob');
     expect(issue.updated).toBe('2024-01-15T12:00:00Z');
-    expect(issue.description).toContain(
-      'Users are experiencing timeouts',
-    );
+    expect(issue.description).toContain('Users are experiencing timeouts');
     expect(issue.description).toContain('## Steps to Reproduce');
     expect(issue.comments).toHaveLength(2);
-    expect(issue.comments[0].author).toBe('Alice');
-    expect(issue.comments[0].body).toContain('connection pool issue');
-    expect(issue.comments[1].author).toBe('Bob');
-    expect(issue.comments[1].body).toContain('## Fix Attempt');
+    expect(issue.comments[0]?.author).toBe('Alice');
+    expect(issue.comments[0]?.body).toContain('connection pool issue');
+    expect(issue.comments[1]?.author).toBe('Bob');
+    expect(issue.comments[1]?.body).toContain('## Fix Attempt');
   });
 
   test('parses an issue with no comments', () => {
@@ -129,9 +127,7 @@ describe('serializeIssue', () => {
     expect(result).toContain('---');
     expect(result).toContain('id: 2');
     expect(result).toContain('title: Add dark mode');
-    expect(result).toContain(
-      'We should add a dark mode option to the UI.',
-    );
+    expect(result).toContain('We should add a dark mode option to the UI.');
   });
 
   test('round-trip: parse then serialize produces semantically equivalent output', () => {
@@ -147,11 +143,11 @@ describe('serializeIssue', () => {
     expect(reparsed.description).toBe(issue.description);
     expect(reparsed.comments).toHaveLength(issue.comments.length);
     for (let i = 0; i < issue.comments.length; i++) {
-      expect(reparsed.comments[i].author).toBe(issue.comments[i].author);
-      expect(reparsed.comments[i].timestamp).toBe(
-        issue.comments[i].timestamp,
+      expect(reparsed.comments[i]?.author).toBe(issue.comments[i]?.author);
+      expect(reparsed.comments[i]?.timestamp).toBe(
+        issue.comments[i]?.timestamp,
       );
-      expect(reparsed.comments[i].body).toBe(issue.comments[i].body);
+      expect(reparsed.comments[i]?.body).toBe(issue.comments[i]?.body);
     }
   });
 
