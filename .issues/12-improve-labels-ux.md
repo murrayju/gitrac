@@ -1,14 +1,14 @@
 ---
 id: 12
 title: Improve labels UX
-status: backlog
+status: in_progress
 priority: medium
-assignee: ''
+assignee: Justin Murray
 labels:
   - enhancement
 created: '2026-03-29T17:27:57.932Z'
 createdBy: web
-updated: '2026-03-29T17:27:57.932Z'
+updated: '2026-03-29T18:21:41.735Z'
 ---
 
 Let's improve the labels UX. This should be more similar to Linear's.
