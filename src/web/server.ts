@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
 import { cors } from 'hono/cors';
@@ -51,6 +51,22 @@ export async function startServer(options: {
   });
 }
 
+/** Locate the built UI assets directory, checking several candidate paths. */
+function findUiDistDir(projectDir: string): string | null {
+  const candidates = [
+    // Relative to executable (compiled binary)
+    resolve(dirname(process.execPath), 'dist', 'ui'),
+    // Relative to project working directory
+    resolve(projectDir, 'dist', 'ui'),
+  ];
+  for (const dir of candidates) {
+    if (existsSync(join(dir, 'index.html'))) {
+      return dir;
+    }
+  }
+  return null;
+}
+
 export function createApp(ctx: ServerContext): Hono {
   const app = new Hono();
 
@@ -63,9 +79,10 @@ export function createApp(ctx: ServerContext): Hono {
   app.route('/api', gitRoutes(ctx));
   app.route('/api', eventsRoute(ctx));
 
-  // Static file serving for built UI assets
-  const distDir = resolve(ctx.dir, 'dist', 'ui');
-  if (existsSync(distDir)) {
+  // Static file serving for built UI assets.
+  // Try multiple locations: relative to executable (compiled binary), then cwd.
+  const distDir = findUiDistDir(ctx.dir);
+  if (distDir) {
     app.use(
       '/*',
       serveStatic({
