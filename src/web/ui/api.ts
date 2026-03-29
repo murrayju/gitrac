@@ -107,3 +107,22 @@ export async function fetchConfig(): Promise<Config> {
 export async function fetchGitStatus(): Promise<GitStatus> {
   return request<GitStatus>('/api/git/status');
 }
+
+export interface AssetUploadResult {
+  filename: string;
+  url: string;
+}
+
+export async function uploadAsset(file: File): Promise<AssetUploadResult> {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch('/api/issues/assets', {
+    method: 'POST',
+    body: form,
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Upload failed ${res.status}: ${body}`);
+  }
+  return res.json() as Promise<AssetUploadResult>;
+}

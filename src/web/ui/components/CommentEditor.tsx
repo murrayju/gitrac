@@ -1,9 +1,11 @@
+import Image from '@tiptap/extension-image';
 import Placeholder from '@tiptap/extension-placeholder';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { useState } from 'react';
 import { Markdown } from 'tiptap-markdown';
 import { addComment } from '../api.ts';
+import { ImageUpload } from '../lib/image-upload-plugin.ts';
 
 export function CommentEditor({ issueId }: { issueId: number }) {
   const [submitting, setSubmitting] = useState(false);
@@ -11,6 +13,8 @@ export function CommentEditor({ issueId }: { issueId: number }) {
   const editor = useEditor({
     extensions: [
       StarterKit,
+      Image.configure({ inline: false, allowBase64: false }),
+      ImageUpload,
       Placeholder.configure({ placeholder: 'Add a comment...' }),
       Markdown.configure({
         html: false,
