@@ -1,7 +1,26 @@
+import { Route, Routes } from 'react-router-dom';
+import { Layout } from './components/Layout.tsx';
+
+function IssueListPlaceholder() {
+  return <div className="p-6 text-gray-400">Issue list coming soon...</div>;
+}
+
+function IssueDetailPlaceholder() {
+  return <div className="p-6 text-gray-400">Issue detail coming soon...</div>;
+}
+
+function CreateIssuePlaceholder() {
+  return <div className="p-6 text-gray-400">Create issue coming soon...</div>;
+}
+
 export function App() {
   return (
-    <div className="flex items-center justify-center h-screen">
-      <h1 className="text-2xl font-bold">gitrac</h1>
-    </div>
+    <Layout>
+      <Routes>
+        <Route path="/" element={<IssueListPlaceholder />} />
+        <Route path="/issues/:id" element={<IssueDetailPlaceholder />} />
+        <Route path="/new" element={<CreateIssuePlaceholder />} />
+      </Routes>
+    </Layout>
   );
 }
