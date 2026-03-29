@@ -1,5 +1,5 @@
 version: 1
-nextId: 7
+nextId: 8
 statuses:
   - backlog
   - todo
@@ -12,12 +12,14 @@ labels:
   - enhancement
   - docs
   - chore
+  - foo
 labelColors:
-  bug: "#e05d5d"
-  feature: "#58a6e0"
-  enhancement: "#4dba6f"
-  docs: "#d4a843"
-  chore: "#b065d6"
+  bug: '#e05d5d'
+  feature: '#58a6e0'
+  enhancement: '#4dba6f'
+  docs: '#d4a843'
+  chore: '#b065d6'
+  foo: '#e07843'
 priorities:
   - urgent
   - high
