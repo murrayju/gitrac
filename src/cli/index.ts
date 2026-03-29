@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { registerCommentCommand } from './commands/comment.ts';
 import { registerCreateCommand } from './commands/create.ts';
 import { registerEditCommand } from './commands/edit.ts';
 import { registerInitCommand } from './commands/init.ts';
@@ -31,6 +32,7 @@ export function createProgram(): Command {
   registerListCommand(program);
   registerShowCommand(program);
   registerEditCommand(program);
+  registerCommentCommand(program);
 
   return program;
 }
