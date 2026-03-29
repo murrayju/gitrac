@@ -9,3 +9,4 @@ bin/
 .idea
 *.tsbuildinfo
 coverage
+.worktrees
