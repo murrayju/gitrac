@@ -1,5 +1,6 @@
 import type { Comment } from '../../../core/types.ts';
 import { relativeTime } from '../lib/time.ts';
+import { MarkdownContent } from './MarkdownContent.tsx';
 
 const AVATAR_COLORS = [
   'bg-blue-600',
@@ -49,9 +50,7 @@ export function CommentList({ comments }: { comments: Comment[] }) {
                 {relativeTime(comment.timestamp)}
               </span>
             </div>
-            <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-              {comment.body}
-            </div>
+            <MarkdownContent content={comment.body} />
           </div>
         </div>
       ))}
