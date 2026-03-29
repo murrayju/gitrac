@@ -99,13 +99,13 @@ export function IssueList() {
             onChange={setStatusFilter}
             placeholder="Status"
             options={[
-              { value: '', label: 'All statuses' },
+              { value: '', label: 'Open' },
               { value: 'backlog', label: 'Backlog' },
               { value: 'todo', label: 'Todo' },
               { value: 'in_progress', label: 'In Progress' },
               { value: 'done', label: 'Done' },
               { value: 'cancelled', label: 'Cancelled' },
-              { value: 'all', label: 'All (incl. closed)' },
+              { value: 'all', label: 'All' },
             ]}
           />
           <FilterSelect
