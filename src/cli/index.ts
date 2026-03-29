@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { registerCreateCommand } from './commands/create.ts';
 import { registerInitCommand } from './commands/init.ts';
+import { registerListCommand } from './commands/list.ts';
 
 export function createProgram(): Command {
   const program = new Command();
@@ -25,6 +26,7 @@ export function createProgram(): Command {
 
   registerInitCommand(program);
   registerCreateCommand(program);
+  registerListCommand(program);
 
   return program;
 }
