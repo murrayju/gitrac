@@ -7,6 +7,7 @@ import { serializeIssue } from '../core/issue.ts';
 import type { Issue } from '../core/types.ts';
 import {
   allocateNextId,
+  deleteIssueFile,
   findIssueFile,
   initIssuesDir,
   listAllIssueFiles,
@@ -272,5 +273,76 @@ describe('allocateNextId', () => {
     expect(id1).toBe(1);
     expect(id2).toBe(2);
     expect(id3).toBe(3);
+  });
+});
+
+describe('writeIssue with closed option', () => {
+  test('writes to .issues/ by default', async () => {
+    await initIssuesDir(dir);
+    const issue = makeIssue({ id: 1, title: 'Open Issue' });
+    const filename = await writeIssue(dir, issue);
+    expect(filename).toBe('1-open-issue.md');
+
+    const openFiles = await listIssueFiles(dir);
+    expect(openFiles).toContain('1-open-issue.md');
+
+    const closedFiles = await listClosedIssueFiles(dir);
+    expect(closedFiles).not.toContain('1-open-issue.md');
+  });
+
+  test('writes to .issues/closed/ when closed is true', async () => {
+    await initIssuesDir(dir);
+    const issue = makeIssue({ id: 1, title: 'Closed Issue', status: 'done' });
+    const filename = await writeIssue(dir, issue, { closed: true });
+    expect(filename).toBe('1-closed-issue.md');
+
+    const closedFiles = await listClosedIssueFiles(dir);
+    expect(closedFiles).toContain('1-closed-issue.md');
+
+    const openFiles = await listIssueFiles(dir);
+    expect(openFiles).not.toContain('1-closed-issue.md');
+  });
+
+  test('writes to .issues/ when closed is false', async () => {
+    await initIssuesDir(dir);
+    const issue = makeIssue({ id: 1, title: 'Open Issue' });
+    const filename = await writeIssue(dir, issue, { closed: false });
+    expect(filename).toBe('1-open-issue.md');
+
+    const openFiles = await listIssueFiles(dir);
+    expect(openFiles).toContain('1-open-issue.md');
+  });
+});
+
+describe('deleteIssueFile', () => {
+  test('deletes a file from .issues/', async () => {
+    await initIssuesDir(dir);
+    await writeIssue(dir, makeIssue({ id: 1, title: 'To Delete' }));
+    const openBefore = await listIssueFiles(dir);
+    expect(openBefore).toContain('1-to-delete.md');
+
+    await deleteIssueFile(dir, '1-to-delete.md', false);
+    const openAfter = await listIssueFiles(dir);
+    expect(openAfter).not.toContain('1-to-delete.md');
+  });
+
+  test('deletes a file from .issues/closed/', async () => {
+    await initIssuesDir(dir);
+    await writeIssue(dir, makeIssue({ id: 1, title: 'Closed' }), {
+      closed: true,
+    });
+    const closedBefore = await listClosedIssueFiles(dir);
+    expect(closedBefore).toContain('1-closed.md');
+
+    await deleteIssueFile(dir, '1-closed.md', true);
+    const closedAfter = await listClosedIssueFiles(dir);
+    expect(closedAfter).not.toContain('1-closed.md');
+  });
+
+  test('silently ignores non-existent file', async () => {
+    await initIssuesDir(dir);
+    // Should not throw
+    await deleteIssueFile(dir, 'nonexistent.md', false);
+    await deleteIssueFile(dir, 'nonexistent.md', true);
   });
 });

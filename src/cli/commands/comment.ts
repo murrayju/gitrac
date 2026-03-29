@@ -1,6 +1,12 @@
+import { join } from 'node:path';
 import type { Command } from 'commander';
 import type { OutputFormat } from '../../core/types.ts';
-import { readConfig, readIssue, writeIssue } from '../../fs/issue-store.ts';
+import {
+  findIssueFile,
+  readConfig,
+  readIssue,
+  writeIssue,
+} from '../../fs/issue-store.ts';
 import { commitIssueChange, pushIfConfigured } from '../../git/operations.ts';
 import { getGitRoot } from '../../git/status.ts';
 import { formatIssueDetail } from '../output.ts';
@@ -50,6 +56,13 @@ export function registerCommentCommand(program: Command): void {
         }
       }
 
+      const found = await findIssueFile(dir, id);
+      if (!found) {
+        console.error(`Error: Issue #${id} not found.`);
+        process.exit(1);
+      }
+      const isClosed = found.closed;
+
       const issue = await readIssue(dir, id);
       const now = new Date().toISOString();
 
@@ -60,15 +73,16 @@ export function registerCommentCommand(program: Command): void {
       });
       issue.updated = now;
 
-      const filename = await writeIssue(dir, issue);
+      const filename = await writeIssue(dir, issue, { closed: isClosed });
 
       const format = (globalOpts.output || 'human') as OutputFormat;
       console.log(formatIssueDetail(issue, format));
 
       if (!globalOpts.noCommit && config.git.autoCommit) {
+        const relDir = isClosed ? join('.issues', 'closed') : '.issues';
         await commitIssueChange(
           dir,
-          [`.issues/${filename}`],
+          [join(relDir, filename)],
           `${config.git.commitPrefix} comment on #${id}`,
         );
         await pushIfConfigured(dir, config, {

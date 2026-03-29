@@ -1,4 +1,10 @@
 export type Status = 'backlog' | 'todo' | 'in_progress' | 'done' | 'cancelled';
+
+export const closedStatuses: Status[] = ['done', 'cancelled'];
+
+export function isClosedStatus(status: Status): boolean {
+  return closedStatuses.includes(status);
+}
 export type Priority = 'urgent' | 'high' | 'medium' | 'low' | 'none';
 
 export interface Comment {

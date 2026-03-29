@@ -1,9 +1,9 @@
-import { unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Command } from 'commander';
-import { issueFilename } from '../../core/slug.ts';
 import type { OutputFormat, Priority, Status } from '../../core/types.ts';
+import { isClosedStatus } from '../../core/types.ts';
 import {
+  deleteIssueFile,
   findIssueFile,
   readConfig,
   readIssue,
@@ -56,8 +56,10 @@ export function registerEditCommand(program: Command): void {
           process.exit(1);
         }
 
+        const wasClosed = found.closed;
+        const oldFilename = found.filename;
+
         const issue = await readIssue(dir, id);
-        const oldFilename = issueFilename(issue.id, issue.title);
 
         // Apply changes
         if (options.title !== undefined) issue.title = options.title;
@@ -72,20 +74,28 @@ export function registerEditCommand(program: Command): void {
 
         issue.updated = new Date().toISOString();
 
-        const newFilename = await writeIssue(dir, issue);
-        const filesToCommit = [`.issues/${newFilename}`, '.issues/config.yaml'];
+        const nowClosed = isClosedStatus(issue.status);
+        const newFilename = await writeIssue(dir, issue, {
+          closed: nowClosed,
+        });
 
-        // If title changed, remove old file
-        if (newFilename !== oldFilename) {
-          const base = found.closed
-            ? join(dir, '.issues', 'closed')
-            : join(dir, '.issues');
-          try {
-            await unlink(join(base, oldFilename));
-          } catch {
-            // old file may not exist if it's a different name pattern
-          }
-          filesToCommit.push(`.issues/${oldFilename}`);
+        // Clean up old file if filename changed or issue moved directories
+        const filenameChanged = newFilename !== oldFilename;
+        const directoryChanged = wasClosed !== nowClosed;
+        if (filenameChanged || directoryChanged) {
+          await deleteIssueFile(dir, oldFilename, wasClosed);
+        }
+
+        const newDir = nowClosed ? join('.issues', 'closed') : '.issues';
+        const filesToCommit = [
+          join(newDir, newFilename),
+          '.issues/config.yaml',
+        ];
+
+        // Include old file path for git tracking
+        if (filenameChanged || directoryChanged) {
+          const oldDir = wasClosed ? join('.issues', 'closed') : '.issues';
+          filesToCommit.push(join(oldDir, oldFilename));
         }
 
         const format = (globalOpts.output || 'human') as OutputFormat;

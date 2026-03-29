@@ -2,7 +2,8 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Command } from 'commander';
 import { parseIssue } from '../../core/issue.ts';
-import type { Issue, OutputFormat } from '../../core/types.ts';
+import type { Issue, OutputFormat, Status } from '../../core/types.ts';
+import { isClosedStatus } from '../../core/types.ts';
 import {
   listClosedIssueFiles,
   listIssueFiles,
@@ -98,7 +99,6 @@ export function registerListCommand(program: Command): void {
 
         let issues: Issue[] = [];
 
-        const closedStatuses = ['done', 'cancelled'];
         const statusFilter = options.status;
 
         if (statusFilter === 'all') {
@@ -112,7 +112,7 @@ export function registerListCommand(program: Command): void {
             loadIssues(dir, closedFiles, 'closed'),
           ]);
           issues = [...openIssues, ...closedIssues];
-        } else if (statusFilter && closedStatuses.includes(statusFilter)) {
+        } else if (statusFilter && isClosedStatus(statusFilter as Status)) {
           // Search both dirs since a done/cancelled issue might not be moved yet
           const [openFiles, closedFiles] = await Promise.all([
             listIssueFiles(dir),

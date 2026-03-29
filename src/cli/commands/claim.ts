@@ -1,6 +1,13 @@
+import { join } from 'node:path';
 import type { Command } from 'commander';
 import type { OutputFormat } from '../../core/types.ts';
-import { readConfig, readIssue, writeIssue } from '../../fs/issue-store.ts';
+import {
+  deleteIssueFile,
+  findIssueFile,
+  readConfig,
+  readIssue,
+  writeIssue,
+} from '../../fs/issue-store.ts';
 import { commitIssueChange, pushIfConfigured } from '../../git/operations.ts';
 import { getGitRoot } from '../../git/status.ts';
 import { formatIssueDetail } from '../output.ts';
@@ -40,20 +47,38 @@ export function registerClaimCommand(program: Command): void {
       }
 
       try {
+        const found = await findIssueFile(dir, id);
+        if (!found) {
+          console.error(`Error: Issue #${id} not found.`);
+          process.exit(1);
+        }
+        const wasClosed = found.closed;
+        const oldFilename = found.filename;
+
         const issue = await readIssue(dir, id);
         issue.assignee = author;
         issue.status = 'in_progress';
         issue.updated = new Date().toISOString();
 
+        // Claiming always sets in_progress (not a closed status), so write to open dir
         const filename = await writeIssue(dir, issue);
+
+        // If issue was in closed dir, clean up the old file
+        if (wasClosed) {
+          await deleteIssueFile(dir, oldFilename, true);
+        }
 
         const format = (globalOpts.output || 'human') as OutputFormat;
         console.log(formatIssueDetail(issue, format));
 
         if (!globalOpts.noCommit && config.git.autoCommit) {
+          const filesToCommit = [join('.issues', filename)];
+          if (wasClosed) {
+            filesToCommit.push(join('.issues', 'closed', oldFilename));
+          }
           await commitIssueChange(
             dir,
-            [`.issues/${filename}`],
+            filesToCommit,
             `${config.git.commitPrefix} claim #${id} ${issue.title}`,
           );
           await pushIfConfigured(dir, config, {

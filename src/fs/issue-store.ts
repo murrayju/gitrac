@@ -1,4 +1,11 @@
-import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   createDefaultConfig,
@@ -105,14 +112,38 @@ export async function readIssue(dir: string, id: number): Promise<Issue> {
 }
 
 /**
- * Write an issue to .issues/ using the correct filename.
+ * Write an issue to the correct directory using the correct filename.
+ * When `opts.closed` is true, writes to `.issues/closed/` instead of `.issues/`.
  * Returns the filename.
  */
-export async function writeIssue(dir: string, issue: Issue): Promise<string> {
+export async function writeIssue(
+  dir: string,
+  issue: Issue,
+  opts?: { closed?: boolean },
+): Promise<string> {
   const filename = issueFilename(issue.id, issue.title);
   const content = serializeIssue(issue);
-  await writeFile(join(issuesDir(dir), filename), content);
+  const base = opts?.closed ? closedDir(dir) : issuesDir(dir);
+  await writeFile(join(base, filename), content);
   return filename;
+}
+
+/**
+ * Delete an issue file by filename.
+ * When `closed` is true, deletes from `.issues/closed/`, otherwise from `.issues/`.
+ * Silently ignores if the file doesn't exist.
+ */
+export async function deleteIssueFile(
+  dir: string,
+  filename: string,
+  closed: boolean,
+): Promise<void> {
+  const base = closed ? closedDir(dir) : issuesDir(dir);
+  try {
+    await unlink(join(base, filename));
+  } catch {
+    // File may not exist — ignore
+  }
 }
 
 /**

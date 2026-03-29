@@ -5,7 +5,12 @@ import { join } from 'node:path';
 import { Hono } from 'hono';
 import { createDefaultConfig } from '../../core/config.ts';
 import type { Issue } from '../../core/types.ts';
-import { initIssuesDir, writeIssue } from '../../fs/issue-store.ts';
+import {
+  initIssuesDir,
+  listClosedIssueFiles,
+  listIssueFiles,
+  writeIssue,
+} from '../../fs/issue-store.ts';
 import { AmendTracker } from '../../git/amend-tracker.ts';
 import type { ServerContext } from '../server.ts';
 import { IssueWatcher } from '../watcher.ts';
@@ -380,5 +385,129 @@ describe('PATCH /api/issues/:id/reopen', () => {
   test('returns 404 for non-existent issue', async () => {
     const res = await req('/issues/999/reopen', { method: 'PATCH' });
     expect(res.status).toBe(404);
+  });
+});
+
+describe('PATCH /api/issues/:id — closed issue handling', () => {
+  test('updating a closed issue does not create a duplicate', async () => {
+    // Create and close an issue
+    await writeIssue(dir, makeIssue({ id: 1, title: 'Bug Fix' }));
+    await req('/issues/1/close', { method: 'PATCH' });
+
+    // Verify it's only in closed dir
+    let openFiles = await listIssueFiles(dir);
+    let closedFiles = await listClosedIssueFiles(dir);
+    expect(openFiles).toHaveLength(0);
+    expect(closedFiles).toHaveLength(1);
+
+    // Update the closed issue (e.g. change priority)
+    const res = await req('/issues/1', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ priority: 'high' }),
+    });
+
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as Issue;
+    expect(data.priority).toBe('high');
+    expect(data.status).toBe('done');
+
+    // Verify no duplicate: still only in closed dir
+    openFiles = await listIssueFiles(dir);
+    closedFiles = await listClosedIssueFiles(dir);
+    expect(openFiles).toHaveLength(0);
+    expect(closedFiles).toHaveLength(1);
+  });
+
+  test('title rename on a closed issue writes to correct directory and cleans up old file', async () => {
+    await writeIssue(dir, makeIssue({ id: 1, title: 'Old Title' }));
+    await req('/issues/1/close', { method: 'PATCH' });
+
+    // Rename the title
+    const res = await req('/issues/1', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'New Title' }),
+    });
+
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as Issue;
+    expect(data.title).toBe('New Title');
+
+    // Verify: new file in closed, old file gone, nothing in open
+    const openFiles = await listIssueFiles(dir);
+    const closedFiles = await listClosedIssueFiles(dir);
+    expect(openFiles).toHaveLength(0);
+    expect(closedFiles).toContain('1-new-title.md');
+    expect(closedFiles).not.toContain('1-old-title.md');
+    expect(closedFiles).toHaveLength(1);
+  });
+
+  test('title rename on an open issue cleans up old file', async () => {
+    await writeIssue(dir, makeIssue({ id: 1, title: 'Old Title' }));
+
+    const res = await req('/issues/1', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'New Title' }),
+    });
+
+    expect(res.status).toBe(200);
+
+    const openFiles = await listIssueFiles(dir);
+    expect(openFiles).toContain('1-new-title.md');
+    expect(openFiles).not.toContain('1-old-title.md');
+    expect(openFiles).toHaveLength(1);
+  });
+
+  test('changing status from done to open moves issue out of closed dir', async () => {
+    await writeIssue(dir, makeIssue({ id: 1, title: 'Issue' }));
+    await req('/issues/1/close', { method: 'PATCH' });
+
+    // Change status back to in_progress via PATCH
+    const res = await req('/issues/1', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'in_progress' }),
+    });
+
+    expect(res.status).toBe(200);
+
+    const openFiles = await listIssueFiles(dir);
+    const closedFiles = await listClosedIssueFiles(dir);
+    expect(openFiles).toContain('1-issue.md');
+    expect(closedFiles).toHaveLength(0);
+  });
+});
+
+describe('POST /api/issues/:id/comments — closed issue handling', () => {
+  test('adding a comment to a closed issue does not create a duplicate', async () => {
+    // Create and close an issue
+    await writeIssue(dir, makeIssue({ id: 1, title: 'Closed Bug' }));
+    await req('/issues/1/close', { method: 'PATCH' });
+
+    // Verify it's only in closed dir
+    let openFiles = await listIssueFiles(dir);
+    let closedFiles = await listClosedIssueFiles(dir);
+    expect(openFiles).toHaveLength(0);
+    expect(closedFiles).toHaveLength(1);
+
+    // Add a comment to the closed issue
+    const res = await req('/issues/1/comments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: 'Follow-up note', author: 'alice' }),
+    });
+
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as Issue;
+    expect(data.comments).toHaveLength(1);
+    expect(data.comments[0]?.body).toBe('Follow-up note');
+
+    // Verify no duplicate: still only in closed dir
+    openFiles = await listIssueFiles(dir);
+    closedFiles = await listClosedIssueFiles(dir);
+    expect(openFiles).toHaveLength(0);
+    expect(closedFiles).toHaveLength(1);
   });
 });

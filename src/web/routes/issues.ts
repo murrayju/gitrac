@@ -3,9 +3,12 @@ import { join } from 'node:path';
 import { Hono } from 'hono';
 import { ensureLabelColors } from '../../core/config.ts';
 import { parseIssue } from '../../core/issue.ts';
-import type { Issue, Status } from '../../core/types.ts';
+import { issueFilename } from '../../core/slug.ts';
+import type { Issue } from '../../core/types.ts';
+import { isClosedStatus, type Status } from '../../core/types.ts';
 import {
   allocateNextId,
+  deleteIssueFile,
   findIssueFile,
   listClosedIssueFiles,
   listIssueFiles,
@@ -18,8 +21,6 @@ import {
 } from '../../fs/issue-store.ts';
 import { commitIssueChange } from '../../git/operations.ts';
 import type { ServerContext } from '../server.ts';
-
-const CLOSED_STATUSES: Status[] = ['done', 'cancelled'];
 
 /**
  * Ensure any new labels used on an issue get assigned colors in the config.
@@ -82,10 +83,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
         join(dir, '.issues', 'closed'),
       );
       issues = [...openIssues, ...closedIssues];
-    } else if (
-      statusFilter &&
-      CLOSED_STATUSES.includes(statusFilter as Status)
-    ) {
+    } else if (statusFilter && isClosedStatus(statusFilter as Status)) {
       const closedFiles = await listClosedIssueFiles(dir);
       const closedIssues = await loadIssues(
         closedFiles,
@@ -197,6 +195,14 @@ export function issueRoutes(ctx: ServerContext): Hono {
       return c.json({ error: 'Invalid issue ID' }, 400);
     }
 
+    // Track original location
+    const found = await findIssueFile(dir, id);
+    if (!found) {
+      return c.json({ error: `Issue #${id} not found` }, 404);
+    }
+    const wasClosed = found.closed;
+    const oldFilename = found.filename;
+
     let issue: Issue;
     try {
       issue = await readIssue(dir, id);
@@ -215,9 +221,34 @@ export function issueRoutes(ctx: ServerContext): Hono {
     if (description !== undefined) issue.description = description;
     issue.updated = new Date().toISOString();
 
-    const filename = await writeIssue(dir, issue);
+    const nowClosed = isClosedStatus(issue.status);
+    const newFilename = issueFilename(issue.id, issue.title);
+
+    // Write to the correct directory based on current status
+    const filename = await writeIssue(dir, issue, { closed: nowClosed });
+
+    // Clean up old file if filename changed or issue moved between directories
+    const filenameChanged = newFilename !== oldFilename;
+    const directoryChanged = wasClosed !== nowClosed;
+    if (filenameChanged || directoryChanged) {
+      await deleteIssueFile(dir, oldFilename, wasClosed);
+    }
+
     const extraFiles = await syncLabelColors(ctx, issue.labels);
-    const allFiles = [join('.issues', filename), ...extraFiles];
+    const newDir = nowClosed ? 'closed' : '';
+    const newRelPath = newDir
+      ? join('.issues', newDir, filename)
+      : join('.issues', filename);
+    const allFiles = [newRelPath, ...extraFiles];
+
+    // Include old file path for git tracking
+    if (filenameChanged || directoryChanged) {
+      const oldDir = wasClosed ? 'closed' : '';
+      const oldRelPath = oldDir
+        ? join('.issues', oldDir, oldFilename)
+        : join('.issues', oldFilename);
+      allFiles.push(oldRelPath);
+    }
 
     if (config.git.autoCommit) {
       const prefix = config.git.commitPrefix;
@@ -246,6 +277,13 @@ export function issueRoutes(ctx: ServerContext): Hono {
       return c.json({ error: 'Invalid issue ID' }, 400);
     }
 
+    // Track original location
+    const found = await findIssueFile(dir, id);
+    if (!found) {
+      return c.json({ error: `Issue #${id} not found` }, 404);
+    }
+    const isClosed = found.closed;
+
     let issue: Issue;
     try {
       issue = await readIssue(dir, id);
@@ -271,16 +309,14 @@ export function issueRoutes(ctx: ServerContext): Hono {
     });
     issue.updated = new Date().toISOString();
 
-    const filename = await writeIssue(dir, issue);
+    const filename = await writeIssue(dir, issue, { closed: isClosed });
+    const relDir = isClosed ? join('.issues', 'closed') : '.issues';
+    const relPath = join(relDir, filename);
 
     if (config.git.autoCommit) {
       const prefix = config.git.commitPrefix;
       const message = `${prefix} comment on #${id} ${issue.title}`;
-      const hash = await commitIssueChange(
-        dir,
-        [join('.issues', filename)],
-        message,
-      );
+      const hash = await commitIssueChange(dir, [relPath], message);
       if (hash) {
         amendTracker.record(id, hash);
       }
