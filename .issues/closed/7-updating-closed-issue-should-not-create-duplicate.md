@@ -1,14 +1,14 @@
 ---
 id: 7
 title: Updating closed issue should not create duplicate
-status: in_progress
+status: done
 priority: high
 assignee: Justin Murray
 labels:
   - bug
 created: '2026-03-29T17:09:25.658Z'
 createdBy: web
-updated: '2026-03-29T17:50:19.528Z'
+updated: '2026-03-29T17:58:56.435Z'
 ---
 
 Editing a closed issue (adding a label) should not create a duplicate issue.
