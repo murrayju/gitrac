@@ -8,7 +8,7 @@ labels:
   - enhancement
 created: '2026-03-29T17:43:20.351Z'
 createdBy: web
-updated: '2026-03-29T18:52:06.947Z'
+updated: '2026-03-29T23:45:44.430Z'
 ---
 
 The "All statuses" filter is confusing. It is really all *open* statuses.
