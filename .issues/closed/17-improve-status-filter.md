@@ -1,14 +1,14 @@
 ---
 id: 17
 title: Improve status filter
-status: in_progress
+status: done
 priority: medium
 assignee: Justin Murray
 labels:
   - enhancement
 created: '2026-03-29T17:43:20.351Z'
 createdBy: web
-updated: '2026-03-29T18:50:56.349Z'
+updated: '2026-03-29T18:52:06.947Z'
 ---
 
 The "All statuses" filter is confusing. It is really all *open* statuses.
