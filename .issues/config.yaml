@@ -1,5 +1,5 @@
 version: 1
-nextId: 1
+nextId: 2
 statuses:
   - backlog
   - todo
