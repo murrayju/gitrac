@@ -3,12 +3,14 @@ import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useGitStatus } from '../hooks.ts';
 import { BranchWarning } from './BranchWarning.tsx';
+import { CreateIssueModal } from './CreateIssueModal.tsx';
 import { ThemeToggle } from './ThemeToggle.tsx';
 
 export function Layout({ children }: { children: ReactNode }) {
   const location = useLocation();
   const { gitStatus } = useGitStatus();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -18,7 +20,7 @@ export function Layout({ children }: { children: ReactNode }) {
         className="md:hidden fixed top-3 left-3 z-50 p-2 rounded bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
         onClick={() => setSidebarOpen(!sidebarOpen)}
       >
-        {sidebarOpen ? '✕' : '☰'}
+        {sidebarOpen ? '\u2715' : '\u2630'}
       </button>
 
       {/* Sidebar overlay for mobile */}
@@ -55,13 +57,16 @@ export function Layout({ children }: { children: ReactNode }) {
           >
             Issues
           </NavLink>
-          <NavLink
-            to="/new"
-            active={location.pathname === '/new'}
-            onClick={() => setSidebarOpen(false)}
+          <button
+            type="button"
+            className="w-full text-left block px-3 py-1.5 rounded text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-900"
+            onClick={() => {
+              setSidebarOpen(false);
+              setShowCreateModal(true);
+            }}
           >
             + New Issue
-          </NavLink>
+          </button>
         </nav>
 
         <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-800">
@@ -79,6 +84,11 @@ export function Layout({ children }: { children: ReactNode }) {
         )}
         <div className="flex-1 overflow-auto">{children}</div>
       </main>
+
+      {/* Create Issue Modal */}
+      {showCreateModal && (
+        <CreateIssueModal onClose={() => setShowCreateModal(false)} />
+      )}
     </div>
   );
 }
