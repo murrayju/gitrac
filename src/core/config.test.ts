@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import {
   createDefaultConfig,
+  ensureLabelColors,
+  generateLabelColor,
+  hslToHex,
   parseConfig,
   serializeConfig,
   validateConfig,
@@ -18,6 +21,9 @@ statuses:
 labels:
   - bug
   - feature
+labelColors:
+  bug: "#e05d5d"
+  feature: "#58a6e0"
 priorities:
   - urgent
   - high
@@ -46,6 +52,8 @@ describe('parseConfig', () => {
       'cancelled',
     ]);
     expect(config.labels).toEqual(['bug', 'feature']);
+    expect(config.labelColors.bug).toBe('#e05d5d');
+    expect(config.labelColors.feature).toBe('#58a6e0');
     expect(config.defaultStatus).toBe('backlog');
     expect(config.defaultPriority).toBe('medium');
     expect(config.git.autoCommit).toBe(true);
@@ -66,6 +74,7 @@ statuses:
   - backlog
   - invalid_status
 labels: []
+labelColors: {}
 priorities:
   - medium
 defaultStatus: backlog
@@ -90,6 +99,7 @@ statuses:
   - done
   - cancelled
 labels: []
+labelColors: {}
 priorities:
   - urgent
   - high
@@ -105,6 +115,68 @@ defaultPriority: medium
     expect(config.git.commitPrefix).toBe('issue:');
     expect(config.git.defaultBranch).toBe('main');
   });
+
+  test('auto-assigns colors to labels missing from labelColors', () => {
+    const yaml = `
+version: 1
+nextId: 1
+statuses:
+  - backlog
+  - todo
+  - in_progress
+  - done
+  - cancelled
+labels:
+  - bug
+  - feature
+priorities:
+  - urgent
+  - high
+  - medium
+  - low
+  - none
+defaultStatus: backlog
+defaultPriority: medium
+`;
+    const config = parseConfig(yaml);
+    expect(config.labelColors.bug).toBeDefined();
+    expect(config.labelColors.feature).toBeDefined();
+    expect(config.labelColors.bug).toMatch(/^#[0-9a-f]{6}$/);
+    expect(config.labelColors.feature).toMatch(/^#[0-9a-f]{6}$/);
+  });
+
+  test('preserves existing colors when adding new labels', () => {
+    const yaml = `
+version: 1
+nextId: 1
+statuses:
+  - backlog
+  - todo
+  - in_progress
+  - done
+  - cancelled
+labels:
+  - bug
+  - feature
+  - docs
+labelColors:
+  bug: "#ff0000"
+  feature: "#00ff00"
+priorities:
+  - urgent
+  - high
+  - medium
+  - low
+  - none
+defaultStatus: backlog
+defaultPriority: medium
+`;
+    const config = parseConfig(yaml);
+    expect(config.labelColors.bug).toBe('#ff0000');
+    expect(config.labelColors.feature).toBe('#00ff00');
+    expect(config.labelColors.docs).toBeDefined();
+    expect(config.labelColors.docs).toMatch(/^#[0-9a-f]{6}$/);
+  });
 });
 
 describe('serializeConfig', () => {
@@ -116,6 +188,7 @@ describe('serializeConfig', () => {
     expect(yaml).toContain('defaultStatus: backlog');
     expect(yaml).toContain('defaultPriority: medium');
     expect(yaml).toContain('autoCommit: true');
+    expect(yaml).toContain('labelColors:');
   });
 });
 
@@ -155,6 +228,14 @@ describe('createDefaultConfig', () => {
     });
     expect(validateConfig(config)).toBe(true);
   });
+
+  test('assigns colors to all default labels', () => {
+    const config = createDefaultConfig();
+    for (const label of config.labels) {
+      expect(config.labelColors[label]).toBeDefined();
+      expect(config.labelColors[label]).toMatch(/^#[0-9a-f]{6}$/);
+    }
+  });
 });
 
 describe('validateConfig', () => {
@@ -186,5 +267,75 @@ describe('validateConfig', () => {
       priorities: ['high', 'invalid'],
     };
     expect(validateConfig(config)).toBe(false);
+  });
+
+  test('returns false for invalid labelColors', () => {
+    const config = {
+      ...createDefaultConfig(),
+      labelColors: 'not-an-object',
+    };
+    expect(validateConfig(config)).toBe(false);
+  });
+
+  test('returns false for labelColors with non-string values', () => {
+    const config = {
+      ...createDefaultConfig(),
+      labelColors: { bug: 123 },
+    };
+    expect(validateConfig(config)).toBe(false);
+  });
+});
+
+describe('generateLabelColor', () => {
+  test('returns a valid hex color', () => {
+    const color = generateLabelColor();
+    expect(color).toMatch(/^#[0-9a-f]{6}$/);
+  });
+
+  test('generates different colors on subsequent calls', () => {
+    const colors = new Set<string>();
+    for (let i = 0; i < 20; i++) {
+      colors.add(generateLabelColor());
+    }
+    // Should have at least a few distinct colors (probabilistic but very safe)
+    expect(colors.size).toBeGreaterThan(5);
+  });
+});
+
+describe('hslToHex', () => {
+  test('converts known values correctly', () => {
+    // Pure red: hsl(0, 100%, 50%)
+    expect(hslToHex(0, 100, 50)).toBe('#ff0000');
+    // Pure green: hsl(120, 100%, 50%)
+    expect(hslToHex(120, 100, 50)).toBe('#00ff00');
+    // Pure blue: hsl(240, 100%, 50%)
+    expect(hslToHex(240, 100, 50)).toBe('#0000ff');
+    // White: hsl(0, 0%, 100%)
+    expect(hslToHex(0, 0, 100)).toBe('#ffffff');
+    // Black: hsl(0, 0%, 0%)
+    expect(hslToHex(0, 0, 0)).toBe('#000000');
+  });
+});
+
+describe('ensureLabelColors', () => {
+  test('assigns colors from palette to new labels', () => {
+    const result = ensureLabelColors(['bug', 'feature'], {});
+    expect(result.bug).toBeDefined();
+    expect(result.feature).toBeDefined();
+    expect(result.bug).not.toBe(result.feature);
+  });
+
+  test('preserves existing colors', () => {
+    const existing = { bug: '#ff0000' };
+    const result = ensureLabelColors(['bug', 'feature'], existing);
+    expect(result.bug).toBe('#ff0000');
+    expect(result.feature).toBeDefined();
+  });
+
+  test('does not overwrite existing colors', () => {
+    const existing = { bug: '#custom1', feature: '#custom2' };
+    const result = ensureLabelColors(['bug', 'feature'], existing);
+    expect(result.bug).toBe('#custom1');
+    expect(result.feature).toBe('#custom2');
   });
 });

@@ -104,6 +104,15 @@ export async function fetchConfig(): Promise<Config> {
   return request<Config>('/api/config');
 }
 
+export async function updateLabelColors(
+  labelColors: Record<string, string>,
+): Promise<Config> {
+  return request<Config>('/api/config/labels', {
+    method: 'PATCH',
+    body: JSON.stringify({ labelColors }),
+  });
+}
+
 export async function fetchGitStatus(): Promise<GitStatus> {
   return request<GitStatus>('/api/git/status');
 }

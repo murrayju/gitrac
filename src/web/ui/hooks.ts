@@ -105,7 +105,7 @@ export function useConfig(): {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const refetch = useCallback(() => {
     fetchConfig()
       .then((data) => {
         setConfig(data);
@@ -114,6 +114,13 @@ export function useConfig(): {
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    refetch();
+  }, [refetch]);
+
+  // Re-fetch config when issues change (label colors may have been assigned)
+  useSSE(refetch);
 
   return { config, loading, error };
 }
