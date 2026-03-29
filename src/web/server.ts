@@ -94,10 +94,10 @@ export function createApp(ctx: ServerContext): Hono {
     );
 
     // SPA fallback: serve index.html for non-API routes
-    app.get('*', (c) => {
+    app.get('*', async (c) => {
       const indexPath = join(distDir, 'index.html');
       if (existsSync(indexPath)) {
-        return c.html(Bun.file(indexPath) as unknown as string);
+        return c.html(await Bun.file(indexPath).text());
       }
       return c.text('Not Found', 404);
     });
