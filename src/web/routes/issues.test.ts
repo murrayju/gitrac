@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Hono } from 'hono';
 import { createDefaultConfig } from '../../core/config.ts';
 import type { Issue } from '../../core/types.ts';
 import { initIssuesDir, writeIssue } from '../../fs/issue-store.ts';
@@ -9,8 +10,6 @@ import { AmendTracker } from '../../git/amend-tracker.ts';
 import type { ServerContext } from '../server.ts';
 import { IssueWatcher } from '../watcher.ts';
 import { issueRoutes } from './issues.ts';
-
-import { Hono } from 'hono';
 
 let dir: string;
 let app: Hono;
@@ -94,10 +93,7 @@ describe('GET /api/issues', () => {
   });
 
   test('filters by label', async () => {
-    await writeIssue(
-      dir,
-      makeIssue({ id: 1, title: 'Bug', labels: ['bug'] }),
-    );
+    await writeIssue(dir, makeIssue({ id: 1, title: 'Bug', labels: ['bug'] }));
     await writeIssue(
       dir,
       makeIssue({ id: 2, title: 'Feature', labels: ['feature'] }),
@@ -114,10 +110,7 @@ describe('GET /api/issues', () => {
       dir,
       makeIssue({ id: 1, title: 'Urgent', priority: 'urgent' }),
     );
-    await writeIssue(
-      dir,
-      makeIssue({ id: 2, title: 'Low', priority: 'low' }),
-    );
+    await writeIssue(dir, makeIssue({ id: 2, title: 'Low', priority: 'low' }));
 
     const res = await req('/issues?priority=urgent');
     const data = (await res.json()) as Issue[];
@@ -126,10 +119,7 @@ describe('GET /api/issues', () => {
   });
 
   test('sorts by priority', async () => {
-    await writeIssue(
-      dir,
-      makeIssue({ id: 1, title: 'Low', priority: 'low' }),
-    );
+    await writeIssue(dir, makeIssue({ id: 1, title: 'Low', priority: 'low' }));
     await writeIssue(
       dir,
       makeIssue({ id: 2, title: 'Urgent', priority: 'urgent' }),

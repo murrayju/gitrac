@@ -1,5 +1,5 @@
-import { watch } from 'node:fs';
 import type { FSWatcher } from 'node:fs';
+import { watch } from 'node:fs';
 import { join } from 'node:path';
 
 type ChangeListener = () => void;

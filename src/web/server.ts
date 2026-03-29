@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { Hono } from 'hono';
-import { cors } from 'hono/cors';
 import { serveStatic } from 'hono/bun';
+import { cors } from 'hono/cors';
 import type { Config } from '../core/types.ts';
 import { AmendTracker } from '../git/amend-tracker.ts';
 import { getBranchWarning } from '../git/status.ts';

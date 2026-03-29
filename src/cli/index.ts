@@ -37,13 +37,11 @@ export function createProgram(): Command {
       try {
         const config = await readConfig(dir);
         await startServer({ dir, port, config });
-      } catch (err) {
+      } catch {
         console.error(
           'Error: Could not start server. Is this a gitrac project?',
         );
-        console.error(
-          'Run "gitrac init" to initialize the .issues directory.',
-        );
+        console.error('Run "gitrac init" to initialize the .issues directory.');
         process.exit(1);
       }
     });

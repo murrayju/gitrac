@@ -133,10 +133,11 @@ export function issueRoutes(ctx: ServerContext): Hono {
     if (config.git.autoCommit) {
       const prefix = config.git.commitPrefix;
       const message = `${prefix} create #${id} ${issue.title}`;
-      const hash = await commitIssueChange(dir, [
-        join('.issues', filename),
-        join('.issues', 'config.yaml'),
-      ], message);
+      const hash = await commitIssueChange(
+        dir,
+        [join('.issues', filename), join('.issues', 'config.yaml')],
+        message,
+      );
       if (hash) {
         amendTracker.record(id, hash);
       }
@@ -278,10 +279,11 @@ export function issueRoutes(ctx: ServerContext): Hono {
     if (config.git.autoCommit) {
       const prefix = config.git.commitPrefix;
       const message = `${prefix} close #${id} ${issue.title}`;
-      const hash = await commitIssueChange(dir, [
-        join('.issues', filename),
-        join('.issues', 'closed', filename),
-      ], message);
+      const hash = await commitIssueChange(
+        dir,
+        [join('.issues', filename), join('.issues', 'closed', filename)],
+        message,
+      );
       if (hash) {
         amendTracker.record(id, hash);
       }
@@ -321,10 +323,11 @@ export function issueRoutes(ctx: ServerContext): Hono {
     if (config.git.autoCommit) {
       const prefix = config.git.commitPrefix;
       const message = `${prefix} reopen #${id} ${issue.title}`;
-      const hash = await commitIssueChange(dir, [
-        join('.issues', filename),
-        join('.issues', 'closed', filename),
-      ], message);
+      const hash = await commitIssueChange(
+        dir,
+        [join('.issues', filename), join('.issues', 'closed', filename)],
+        message,
+      );
       if (hash) {
         amendTracker.record(id, hash);
       }
@@ -336,10 +339,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
   return app;
 }
 
-async function loadIssues(
-  files: string[],
-  baseDir: string,
-): Promise<Issue[]> {
+async function loadIssues(files: string[], baseDir: string): Promise<Issue[]> {
   const issues: Issue[] = [];
   for (const f of files) {
     try {
@@ -372,14 +372,12 @@ function sortIssues(issues: Issue[], sort: string): Issue[] {
       break;
     case 'created':
       sorted.sort(
-        (a, b) =>
-          new Date(b.created).getTime() - new Date(a.created).getTime(),
+        (a, b) => new Date(b.created).getTime() - new Date(a.created).getTime(),
       );
       break;
     case 'updated':
       sorted.sort(
-        (a, b) =>
-          new Date(b.updated).getTime() - new Date(a.updated).getTime(),
+        (a, b) => new Date(b.updated).getTime() - new Date(a.updated).getTime(),
       );
       break;
     case 'id':
