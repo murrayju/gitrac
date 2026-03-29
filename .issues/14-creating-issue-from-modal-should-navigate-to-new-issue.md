@@ -1,15 +1,15 @@
 ---
 id: 14
 title: Creating issue from modal should navigate to new issue
-status: backlog
+status: in_progress
 priority: medium
-assignee: ''
+assignee: Justin Murray
 labels:
   - enhancement
   - bug
 created: '2026-03-29T17:32:44.433Z'
 createdBy: web
-updated: '2026-03-29T17:35:29.636Z'
+updated: '2026-03-29T18:35:23.294Z'
 ---
 
 When submitting a new issue from the modal, it should immediately navigate to the new issue (rather than return to the previous view).
