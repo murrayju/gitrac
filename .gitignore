@@ -1,0 +1,11 @@
+node_modules
+download/
+dist/
+bin/
+*.tgz
+.env
+.env.*
+.DS_Store
+.idea
+*.tsbuildinfo
+coverage
