@@ -1,1 +1,29 @@
 @import 'tailwindcss';
+
+/* Light mode overrides */
+html.light body {
+  --tw-bg-opacity: 1;
+  background-color: rgb(249 250 251);
+  color: rgb(17 24 39);
+}
+
+/* Tiptap placeholder styling */
+.tiptap p.is-editor-empty:first-child::before {
+  color: #6b7280;
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* Tiptap focus ring */
+.tiptap:focus {
+  outline: none;
+}
+
+/* System font stack */
+body {
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
+    Arial, sans-serif;
+}
