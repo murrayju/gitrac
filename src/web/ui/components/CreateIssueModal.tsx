@@ -73,7 +73,9 @@ export function CreateIssueModal({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const availableLabels = config?.labels.filter((l) => !labels.includes(l));
+  const availableLabels = Object.keys(config?.labels ?? {}).filter(
+    (l) => !labels.includes(l),
+  );
 
   function addLabel(value?: string) {
     const trimmed = (value ?? labelInput).trim();
@@ -199,7 +201,7 @@ export function CreateIssueModal({ onClose }: { onClose: () => void }) {
                   <LabelBadge
                     key={label}
                     label={label}
-                    color={config?.labelColors[label]}
+                    color={config?.labels[label]}
                     onRemove={() => removeLabel(label)}
                   />
                 ))}

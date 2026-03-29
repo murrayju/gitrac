@@ -50,8 +50,7 @@ export interface Config {
   version: number;
   nextId: number;
   statuses: Status[];
-  labels: string[];
-  labelColors: Record<string, string>;
+  labels: Record<string, string>;
   priorities: Priority[];
   defaultStatus: Status;
   defaultPriority: Priority;

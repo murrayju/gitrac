@@ -30,26 +30,19 @@ async function syncLabelColors(
   ctx: ServerContext,
   labels: string[],
 ): Promise<string[]> {
-  const newLabels = labels.filter((l) => !ctx.config.labelColors[l]);
+  const newLabels = labels.filter((l) => !ctx.config.labels[l]);
   if (newLabels.length === 0) return [];
 
   const freshConfig = await readConfig(ctx.dir);
-  const updatedColors = ensureLabelColors(labels, freshConfig.labelColors);
+  const updatedColors = ensureLabelColors(labels, freshConfig.labels);
 
   // Check if any colors actually changed
   const changed = labels.some(
-    (l) => freshConfig.labelColors[l] !== updatedColors[l],
+    (l) => freshConfig.labels[l] !== updatedColors[l],
   );
   if (!changed) return [];
 
-  freshConfig.labelColors = updatedColors;
-
-  // Also add any truly new labels to the labels list
-  for (const label of newLabels) {
-    if (!freshConfig.labels.includes(label)) {
-      freshConfig.labels.push(label);
-    }
-  }
+  freshConfig.labels = updatedColors;
 
   await writeConfig(ctx.dir, freshConfig);
   ctx.config = freshConfig;

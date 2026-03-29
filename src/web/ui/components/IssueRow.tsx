@@ -84,7 +84,7 @@ export function IssueRow({ issue }: { issue: Issue }) {
             <LabelBadge
               key={label}
               label={label}
-              color={config?.labelColors[label]}
+              color={config?.labels[label]}
             />
           ))}
         </div>

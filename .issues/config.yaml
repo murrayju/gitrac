@@ -7,13 +7,6 @@ statuses:
   - done
   - cancelled
 labels:
-  - bug
-  - feature
-  - enhancement
-  - docs
-  - chore
-  - foo
-labelColors:
   bug: '#e05d5d'
   feature: '#58a6e0'
   enhancement: '#4dba6f'

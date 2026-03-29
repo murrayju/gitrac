@@ -104,12 +104,12 @@ export async function fetchConfig(): Promise<Config> {
   return request<Config>('/api/config');
 }
 
-export async function updateLabelColors(
-  labelColors: Record<string, string>,
+export async function updateLabels(
+  labels: Record<string, string>,
 ): Promise<Config> {
   return request<Config>('/api/config/labels', {
     method: 'PATCH',
-    body: JSON.stringify({ labelColors }),
+    body: JSON.stringify({ labels }),
   });
 }
 

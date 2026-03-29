@@ -19,9 +19,6 @@ statuses:
   - done
   - cancelled
 labels:
-  - bug
-  - feature
-labelColors:
   bug: "#e05d5d"
   feature: "#58a6e0"
 priorities:
@@ -51,9 +48,8 @@ describe('parseConfig', () => {
       'done',
       'cancelled',
     ]);
-    expect(config.labels).toEqual(['bug', 'feature']);
-    expect(config.labelColors.bug).toBe('#e05d5d');
-    expect(config.labelColors.feature).toBe('#58a6e0');
+    expect(config.labels.bug).toBe('#e05d5d');
+    expect(config.labels.feature).toBe('#58a6e0');
     expect(config.defaultStatus).toBe('backlog');
     expect(config.defaultPriority).toBe('medium');
     expect(config.git.autoCommit).toBe(true);
@@ -73,8 +69,7 @@ nextId: 1
 statuses:
   - backlog
   - invalid_status
-labels: []
-labelColors: {}
+labels: {}
 priorities:
   - medium
 defaultStatus: backlog
@@ -98,8 +93,7 @@ statuses:
   - in_progress
   - done
   - cancelled
-labels: []
-labelColors: {}
+labels: {}
 priorities:
   - urgent
   - high
@@ -116,7 +110,7 @@ defaultPriority: medium
     expect(config.git.defaultBranch).toBe('main');
   });
 
-  test('auto-assigns colors to labels missing from labelColors', () => {
+  test('auto-assigns colors to labels when migrating from old array format', () => {
     const yaml = `
 version: 1
 nextId: 1
@@ -139,13 +133,13 @@ defaultStatus: backlog
 defaultPriority: medium
 `;
     const config = parseConfig(yaml);
-    expect(config.labelColors.bug).toBeDefined();
-    expect(config.labelColors.feature).toBeDefined();
-    expect(config.labelColors.bug).toMatch(/^#[0-9a-f]{6}$/);
-    expect(config.labelColors.feature).toMatch(/^#[0-9a-f]{6}$/);
+    expect(config.labels.bug).toBeDefined();
+    expect(config.labels.feature).toBeDefined();
+    expect(config.labels.bug).toMatch(/^#[0-9a-f]{6}$/);
+    expect(config.labels.feature).toMatch(/^#[0-9a-f]{6}$/);
   });
 
-  test('preserves existing colors when adding new labels', () => {
+  test('preserves existing colors when migrating old format with labelColors', () => {
     const yaml = `
 version: 1
 nextId: 1
@@ -172,10 +166,10 @@ defaultStatus: backlog
 defaultPriority: medium
 `;
     const config = parseConfig(yaml);
-    expect(config.labelColors.bug).toBe('#ff0000');
-    expect(config.labelColors.feature).toBe('#00ff00');
-    expect(config.labelColors.docs).toBeDefined();
-    expect(config.labelColors.docs).toMatch(/^#[0-9a-f]{6}$/);
+    expect(config.labels.bug).toBe('#ff0000');
+    expect(config.labels.feature).toBe('#00ff00');
+    expect(config.labels.docs).toBeDefined();
+    expect(config.labels.docs).toMatch(/^#[0-9a-f]{6}$/);
   });
 });
 
@@ -188,7 +182,7 @@ describe('serializeConfig', () => {
     expect(yaml).toContain('defaultStatus: backlog');
     expect(yaml).toContain('defaultPriority: medium');
     expect(yaml).toContain('autoCommit: true');
-    expect(yaml).toContain('labelColors:');
+    expect(yaml).toContain('labels:');
   });
 });
 
@@ -204,7 +198,7 @@ describe('createDefaultConfig', () => {
       'done',
       'cancelled',
     ]);
-    expect(config.labels).toEqual([
+    expect(Object.keys(config.labels)).toEqual([
       'bug',
       'feature',
       'enhancement',
@@ -231,9 +225,9 @@ describe('createDefaultConfig', () => {
 
   test('assigns colors to all default labels', () => {
     const config = createDefaultConfig();
-    for (const label of config.labels) {
-      expect(config.labelColors[label]).toBeDefined();
-      expect(config.labelColors[label]).toMatch(/^#[0-9a-f]{6}$/);
+    for (const [_label, color] of Object.entries(config.labels)) {
+      expect(color).toBeDefined();
+      expect(color).toMatch(/^#[0-9a-f]{6}$/);
     }
   });
 });
@@ -269,18 +263,18 @@ describe('validateConfig', () => {
     expect(validateConfig(config)).toBe(false);
   });
 
-  test('returns false for invalid labelColors', () => {
+  test('returns false for invalid labels (non-object)', () => {
     const config = {
       ...createDefaultConfig(),
-      labelColors: 'not-an-object',
+      labels: 'not-an-object',
     };
     expect(validateConfig(config)).toBe(false);
   });
 
-  test('returns false for labelColors with non-string values', () => {
+  test('returns false for labels with non-string values', () => {
     const config = {
       ...createDefaultConfig(),
-      labelColors: { bug: 123 },
+      labels: { bug: 123 },
     };
     expect(validateConfig(config)).toBe(false);
   });

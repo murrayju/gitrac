@@ -52,9 +52,9 @@ export function validateIssue(issue: Issue, config: Config): ValidationResult {
 
   // Labels are warnings, not errors
   for (const label of issue.labels) {
-    if (!config.labels.includes(label)) {
+    if (!(label in config.labels)) {
       warnings.push(
-        `Unknown label "${label}": not in configured labels (${config.labels.join(', ')})`,
+        `Unknown label "${label}": not in configured labels (${Object.keys(config.labels).join(', ')})`,
       );
     }
   }

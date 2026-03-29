@@ -65,7 +65,7 @@ export function MetadataPanel({ issue }: { issue: Issue }) {
     await updateIssue(issue.id, { labels: newLabels });
   }
 
-  const availableLabels = config?.labels.filter(
+  const availableLabels = Object.keys(config?.labels ?? {}).filter(
     (l) => !issue.labels.includes(l),
   );
 
@@ -151,7 +151,7 @@ export function MetadataPanel({ issue }: { issue: Issue }) {
             <LabelBadge
               key={label}
               label={label}
-              color={config?.labelColors[label]}
+              color={config?.labels[label]}
               onRemove={() => handleRemoveLabel(label)}
             />
           ))}

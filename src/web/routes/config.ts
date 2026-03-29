@@ -16,27 +16,27 @@ export function configRoutes(ctx: ServerContext): Hono {
   app.patch('/config/labels', async (c) => {
     const { dir, config } = ctx;
     const body = await c.req.json();
-    const { labelColors } = body;
+    const { labels } = body;
 
     if (
-      typeof labelColors !== 'object' ||
-      labelColors === null ||
-      Array.isArray(labelColors)
+      typeof labels !== 'object' ||
+      labels === null ||
+      Array.isArray(labels)
     ) {
-      return c.json({ error: 'labelColors must be an object' }, 400);
+      return c.json({ error: 'labels must be an object' }, 400);
     }
 
     // Merge new colors into existing
     const freshConfig = await readConfig(dir);
-    freshConfig.labelColors = {
-      ...freshConfig.labelColors,
-      ...labelColors,
+    freshConfig.labels = {
+      ...freshConfig.labels,
+      ...labels,
     };
 
     // Ensure all labels still have colors
-    freshConfig.labelColors = ensureLabelColors(
+    freshConfig.labels = ensureLabelColors(
+      Object.keys(freshConfig.labels),
       freshConfig.labels,
-      freshConfig.labelColors,
     );
 
     await writeConfig(dir, freshConfig);

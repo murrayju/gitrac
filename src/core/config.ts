@@ -119,13 +119,12 @@ export function ensureLabelColors(
  * Create a default Config with sensible defaults.
  */
 export function createDefaultConfig(): Config {
-  const labels = ['bug', 'feature', 'enhancement', 'docs', 'chore'];
+  const defaultLabelNames = ['bug', 'feature', 'enhancement', 'docs', 'chore'];
   return {
     version: 1,
     nextId: 1,
     statuses: ['backlog', 'todo', 'in_progress', 'done', 'cancelled'],
-    labels,
-    labelColors: ensureLabelColors(labels, {}),
+    labels: ensureLabelColors(defaultLabelNames, {}),
     priorities: ['urgent', 'high', 'medium', 'low', 'none'],
     defaultStatus: 'backlog',
     defaultPriority: 'medium',
@@ -146,17 +145,16 @@ export function validateConfig(value: unknown): value is Config {
   if (typeof obj.version !== 'number') return false;
   if (typeof obj.nextId !== 'number') return false;
   if (!Array.isArray(obj.statuses)) return false;
-  if (!Array.isArray(obj.labels)) return false;
   if (!Array.isArray(obj.priorities)) return false;
   if (typeof obj.defaultStatus !== 'string') return false;
   if (typeof obj.defaultPriority !== 'string') return false;
 
-  // Validate labelColors is a plain object with string values
-  if (typeof obj.labelColors !== 'object' || obj.labelColors === null) {
+  // Validate labels is a plain object with string values (label name -> hex color)
+  if (typeof obj.labels !== 'object' || obj.labels === null) {
     return false;
   }
-  if (Array.isArray(obj.labelColors)) return false;
-  for (const v of Object.values(obj.labelColors as Record<string, unknown>)) {
+  if (Array.isArray(obj.labels)) return false;
+  for (const v of Object.values(obj.labels as Record<string, unknown>)) {
     if (typeof v !== 'string') return false;
   }
 
@@ -212,16 +210,32 @@ export function parseConfig(yamlStr: string): Config {
     };
   }
 
-  // Apply labelColors defaults if missing, ensuring all labels have colors
-  const labels = (raw.labels as string[]) ?? [];
-  const existingColors = (
+  // Migrate labels: handle both old format (array + labelColors) and new format (map)
+  const rawLabels = raw.labels;
+  const rawLabelColors = (
     typeof raw.labelColors === 'object' &&
     raw.labelColors !== null &&
     !Array.isArray(raw.labelColors)
       ? raw.labelColors
       : {}
   ) as Record<string, string>;
-  raw.labelColors = ensureLabelColors(labels, existingColors);
+
+  if (Array.isArray(rawLabels)) {
+    // Old format: labels is string[], merge with labelColors
+    raw.labels = ensureLabelColors(rawLabels as string[], rawLabelColors);
+  } else if (typeof rawLabels === 'object' && rawLabels !== null) {
+    // New format: labels is already a map, merge any leftover labelColors
+    raw.labels = {
+      ...(rawLabels as Record<string, string>),
+      ...rawLabelColors,
+    };
+  } else {
+    // Missing or invalid — use labelColors if present, else empty
+    raw.labels = { ...rawLabelColors };
+  }
+
+  // Remove the old field so it doesn't appear in serialized output
+  delete raw.labelColors;
 
   if (!validateConfig(raw)) {
     throw new Error('Invalid config: validation failed');
