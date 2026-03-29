@@ -64,16 +64,25 @@ export function MetadataPanel({ issue }: { issue: Issue }) {
     await updateIssue(issue.id, { labels: newLabels });
   }
 
-  async function handleAddLabel() {
-    const trimmed = labelInput.trim();
-    if (!trimmed || issue.labels.includes(trimmed)) return;
-    await updateIssue(issue.id, { labels: [...issue.labels, trimmed] });
-    setLabelInput('');
-  }
-
   const availableLabels = config?.labels.filter(
     (l) => !issue.labels.includes(l),
   );
+
+  async function handleAddLabel(value?: string) {
+    const trimmed = (value ?? labelInput).trim();
+    if (!trimmed || issue.labels.includes(trimmed)) return;
+    setLabelInput('');
+    await updateIssue(issue.id, { labels: [...issue.labels, trimmed] });
+  }
+
+  function handleLabelInputChange(value: string) {
+    setLabelInput(value);
+    // If the typed/selected value matches an available label, add it immediately
+    const trimmed = value.trim();
+    if (trimmed && availableLabels?.includes(trimmed)) {
+      handleAddLabel(trimmed);
+    }
+  }
 
   return (
     <div className="space-y-4 text-sm">
@@ -157,7 +166,7 @@ export function MetadataPanel({ issue }: { issue: Issue }) {
           <input
             type="text"
             value={labelInput}
-            onChange={(e) => setLabelInput(e.target.value)}
+            onChange={(e) => handleLabelInputChange(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleAddLabel();
             }}
@@ -170,13 +179,6 @@ export function MetadataPanel({ issue }: { issue: Issue }) {
               <option key={l} value={l} />
             ))}
           </datalist>
-          <button
-            type="button"
-            onClick={handleAddLabel}
-            className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 px-1"
-          >
-            +
-          </button>
         </div>
       </div>
     </div>

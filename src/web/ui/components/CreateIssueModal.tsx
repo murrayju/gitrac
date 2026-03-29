@@ -72,11 +72,22 @@ export function CreateIssueModal({ onClose }: { onClose: () => void }) {
     }
   }
 
-  function addLabel() {
-    const trimmed = labelInput.trim();
+  const availableLabels = config?.labels.filter((l) => !labels.includes(l));
+
+  function addLabel(value?: string) {
+    const trimmed = (value ?? labelInput).trim();
     if (!trimmed || labels.includes(trimmed)) return;
     setLabels([...labels, trimmed]);
     setLabelInput('');
+  }
+
+  function handleLabelInputChange(value: string) {
+    setLabelInput(value);
+    // If the typed/selected value matches an available label, add it immediately
+    const trimmed = value.trim();
+    if (trimmed && availableLabels?.includes(trimmed)) {
+      addLabel(trimmed);
+    }
   }
 
   function removeLabel(label: string) {
@@ -88,8 +99,6 @@ export function CreateIssueModal({ onClose }: { onClose: () => void }) {
       onClose();
     }
   }
-
-  const availableLabels = config?.labels.filter((l) => !labels.includes(l));
 
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: Escape key handled via document listener
@@ -206,7 +215,7 @@ export function CreateIssueModal({ onClose }: { onClose: () => void }) {
                   id="create-label-input"
                   type="text"
                   value={labelInput}
-                  onChange={(e) => setLabelInput(e.target.value)}
+                  onChange={(e) => handleLabelInputChange(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
@@ -222,13 +231,6 @@ export function CreateIssueModal({ onClose }: { onClose: () => void }) {
                     <option key={l} value={l} />
                   ))}
                 </datalist>
-                <button
-                  type="button"
-                  onClick={addLabel}
-                  className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 px-2"
-                >
-                  +
-                </button>
               </div>
             </div>
 
