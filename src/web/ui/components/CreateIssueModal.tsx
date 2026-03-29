@@ -86,11 +86,6 @@ export function CreateIssueModal({ onClose }: { onClose: () => void }) {
 
   function handleLabelInputChange(value: string) {
     setLabelInput(value);
-    // If the typed/selected value matches an available label, add it immediately
-    const trimmed = value.trim();
-    if (trimmed && availableLabels?.includes(trimmed)) {
-      addLabel(trimmed);
-    }
   }
 
   function removeLabel(label: string) {

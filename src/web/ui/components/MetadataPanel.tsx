@@ -78,11 +78,6 @@ export function MetadataPanel({ issue }: { issue: Issue }) {
 
   function handleLabelInputChange(value: string) {
     setLabelInput(value);
-    // If the typed/selected value matches an available label, add it immediately
-    const trimmed = value.trim();
-    if (trimmed && availableLabels?.includes(trimmed)) {
-      handleAddLabel(trimmed);
-    }
   }
 
   return (
