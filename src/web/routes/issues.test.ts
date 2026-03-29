@@ -55,7 +55,7 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-function req(path: string, init?: RequestInit): Promise<Response> {
+async function req(path: string, init?: RequestInit): Promise<Response> {
   return app.request(`http://localhost/api${path}`, init);
 }
 

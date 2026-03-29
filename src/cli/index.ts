@@ -1,4 +1,6 @@
 import { Command } from 'commander';
+import { readConfig } from '../fs/issue-store.ts';
+import { startServer } from '../web/server.ts';
 import { registerClaimCommand } from './commands/claim.ts';
 import { registerCloseCommand } from './commands/close.ts';
 import { registerCommentCommand } from './commands/comment.ts';
@@ -26,8 +28,24 @@ export function createProgram(): Command {
     .option('--no-commit', 'Do not auto-commit changes')
     .option('--author <name>', 'Author name for comments')
     .option('--dir <path>', 'Path to the project root (default: cwd)')
-    .action(() => {
-      console.log('Web UI not yet implemented.');
+    .option('-p, --port <port>', 'Port for the web server', '3000')
+    .action(async () => {
+      const opts = program.opts();
+      const dir = opts.dir || process.cwd();
+      const port = Number.parseInt(opts.port, 10);
+
+      try {
+        const config = await readConfig(dir);
+        await startServer({ dir, port, config });
+      } catch (err) {
+        console.error(
+          'Error: Could not start server. Is this a gitrac project?',
+        );
+        console.error(
+          'Run "gitrac init" to initialize the .issues directory.',
+        );
+        process.exit(1);
+      }
     });
 
   registerInitCommand(program);
