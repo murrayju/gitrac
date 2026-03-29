@@ -42,10 +42,7 @@ export function mergeIssueFrontmatter(
  * Union merge of comments, sorted by timestamp, deduped by author+timestamp.
  * When duplicates differ in body, ours wins.
  */
-export function mergeComments(
-  ours: Comment[],
-  theirs: Comment[],
-): Comment[] {
+export function mergeComments(ours: Comment[], theirs: Comment[]): Comment[] {
   const seen = new Map<string, Comment>();
 
   // Add ours first so ours wins on duplicates

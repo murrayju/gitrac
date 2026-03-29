@@ -56,11 +56,7 @@ export class AmendTracker {
    * Amend the HEAD commit with new files and message.
    * Returns the new commit hash.
    */
-  async amend(
-    dir: string,
-    files: string[],
-    message: string,
-  ): Promise<string> {
+  async amend(dir: string, files: string[], message: string): Promise<string> {
     const git = simpleGit(dir);
     await git.add(files);
     const result = await git.commit(message, undefined, { '--amend': null });

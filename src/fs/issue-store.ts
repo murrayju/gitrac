@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   createDefaultConfig,
@@ -134,7 +134,7 @@ export async function moveToClose(dir: string, id: number): Promise<void> {
  */
 export async function moveToReopen(dir: string, id: number): Promise<void> {
   const found = await findIssueFile(dir, id);
-  if (!found || !found.closed) {
+  if (!found?.closed) {
     throw new Error(`Closed issue #${id} not found`);
   }
   await rename(

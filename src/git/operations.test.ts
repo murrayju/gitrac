@@ -5,7 +5,11 @@ import { join } from 'node:path';
 import simpleGit from 'simple-git';
 import { createDefaultConfig } from '../core/config.ts';
 import type { Config } from '../core/types.ts';
-import { commitIssueChange, pullRebase, pushIfConfigured } from './operations.ts';
+import {
+  commitIssueChange,
+  pullRebase,
+  pushIfConfigured,
+} from './operations.ts';
 
 let dir: string;
 
@@ -35,7 +39,7 @@ describe('commitIssueChange', () => {
     const hash = await commitIssueChange(dir, ['issue.md'], 'add issue');
     expect(hash).not.toBeNull();
     expect(typeof hash).toBe('string');
-    expect(hash!.length).toBeGreaterThan(0);
+    expect(hash?.length).toBeGreaterThan(0);
 
     // Verify commit happened
     const git = simpleGit(dir);
@@ -63,7 +67,7 @@ describe('commitIssueChange', () => {
     expect(hash).not.toBeNull();
 
     const git = simpleGit(dir);
-    const show = await git.show(['--stat', '--format=%s', hash!]);
+    const show = await git.show(['--stat', '--format=%s', hash ?? '']);
     expect(show).toContain('a.md');
     expect(show).toContain('b.md');
   });

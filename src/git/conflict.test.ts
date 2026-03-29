@@ -173,7 +173,11 @@ describe('resolveIssueConflict', () => {
       'priority: medium',
       'priority: high',
     );
-    const result = resolveIssueConflict(oursContent, theirsContent, baseContent);
+    const result = resolveIssueConflict(
+      oursContent,
+      theirsContent,
+      baseContent,
+    );
     expect(result).not.toBeNull();
     expect(result).toContain('in_progress');
     expect(result).toContain('high');
@@ -188,7 +192,11 @@ describe('resolveIssueConflict', () => {
       'Base description.',
       'Their new description.',
     );
-    const result = resolveIssueConflict(oursContent, theirsContent, baseContent);
+    const result = resolveIssueConflict(
+      oursContent,
+      theirsContent,
+      baseContent,
+    );
     expect(result).toBeNull();
   });
 
@@ -198,7 +206,11 @@ describe('resolveIssueConflict', () => {
       'Updated description.',
     );
     const theirsContent = baseContent;
-    const result = resolveIssueConflict(oursContent, theirsContent, baseContent);
+    const result = resolveIssueConflict(
+      oursContent,
+      theirsContent,
+      baseContent,
+    );
     expect(result).not.toBeNull();
     expect(result).toContain('Updated description.');
   });
@@ -206,7 +218,11 @@ describe('resolveIssueConflict', () => {
   test('merges comments from both sides', () => {
     const oursContent = `${baseContent.trimEnd()}\n\n---\n\n### alice \u2014 2025-01-02T00:00:00Z\n\nhello\n`;
     const theirsContent = `${baseContent.trimEnd()}\n\n---\n\n### bob \u2014 2025-01-03T00:00:00Z\n\nworld\n`;
-    const result = resolveIssueConflict(oursContent, theirsContent, baseContent);
+    const result = resolveIssueConflict(
+      oursContent,
+      theirsContent,
+      baseContent,
+    );
     expect(result).not.toBeNull();
     expect(result).toContain('alice');
     expect(result).toContain('bob');
