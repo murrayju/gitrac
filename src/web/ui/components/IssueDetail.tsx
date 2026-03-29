@@ -75,13 +75,13 @@ export function IssueDetail() {
                 if (e.key === 'Enter') saveTitle();
                 if (e.key === 'Escape') setEditingTitle(false);
               }}
-              className="w-full text-xl font-semibold bg-transparent border-b border-gray-700 focus:border-blue-500 outline-none pb-1 mb-4"
+              className="w-full text-xl font-semibold bg-transparent border-b border-gray-300 dark:border-gray-700 focus:border-blue-500 outline-none pb-1 mb-4"
             />
           ) : (
             <div className="mb-4">
               <button
                 type="button"
-                className="text-xl font-semibold cursor-pointer hover:text-gray-300 bg-transparent border-none p-0 text-left"
+                className="text-xl font-semibold cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 bg-transparent border-none p-0 text-left"
                 onClick={startEditTitle}
                 title="Click to edit"
               >
@@ -104,11 +104,11 @@ export function IssueDetail() {
           </div>
 
           {/* Divider */}
-          <hr className="border-gray-800 mb-6" />
+          <hr className="border-gray-200 dark:border-gray-800 mb-6" />
 
           {/* Comments */}
           <div className="mb-6">
-            <h2 className="text-sm font-medium text-gray-400 mb-4">
+            <h2 className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-4">
               Comments ({issue.comments.length})
             </h2>
             <CommentList comments={issue.comments} />

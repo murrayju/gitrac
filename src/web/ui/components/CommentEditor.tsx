@@ -22,7 +22,7 @@ export function CommentEditor({ issueId }: { issueId: number }) {
     editorProps: {
       attributes: {
         class:
-          'prose prose-invert prose-sm max-w-none px-4 py-3 min-h-[80px] focus:outline-none',
+          'prose prose-sm max-w-none px-4 py-3 min-h-[80px] focus:outline-none dark:prose-invert',
       },
     },
   });
@@ -44,7 +44,7 @@ export function CommentEditor({ issueId }: { issueId: number }) {
 
   return (
     <div>
-      <div className="rounded border border-gray-800 bg-gray-900/50">
+      <div className="rounded border border-gray-200 bg-gray-50/50 dark:border-gray-800 dark:bg-gray-900/50">
         <EditorContent editor={editor} />
       </div>
       <div className="flex justify-end mt-2">

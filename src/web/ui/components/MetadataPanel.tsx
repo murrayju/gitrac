@@ -119,13 +119,13 @@ export function MetadataPanel({ issue }: { issue: Issue }) {
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleAssigneeSave();
             }}
-            className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm text-gray-300 w-full"
+            className="bg-white border border-gray-300 rounded px-2 py-1 text-sm text-gray-700 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-300 w-full"
           />
         ) : (
           <button
             type="button"
             onClick={() => setEditingAssignee(true)}
-            className="text-gray-300 hover:text-gray-100"
+            className="text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100"
           >
             {issue.assignee || 'Unassigned'}
           </button>
@@ -140,13 +140,13 @@ export function MetadataPanel({ issue }: { issue: Issue }) {
           {issue.labels.map((label) => (
             <span
               key={label}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-gray-800 text-gray-300"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
             >
               {label}
               <button
                 type="button"
                 onClick={() => handleRemoveLabel(label)}
-                className="text-gray-500 hover:text-gray-300"
+                className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
               >
                 ×
               </button>
@@ -163,7 +163,7 @@ export function MetadataPanel({ issue }: { issue: Issue }) {
             }}
             placeholder="Add label..."
             list="available-labels"
-            className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300 placeholder:text-gray-600 flex-1"
+            className="bg-white border border-gray-300 rounded px-2 py-1 text-xs text-gray-700 placeholder:text-gray-400 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-300 dark:placeholder:text-gray-600 flex-1"
           />
           <datalist id="available-labels">
             {availableLabels?.map((l) => (
@@ -173,7 +173,7 @@ export function MetadataPanel({ issue }: { issue: Issue }) {
           <button
             type="button"
             onClick={handleAddLabel}
-            className="text-xs text-gray-500 hover:text-gray-300 px-1"
+            className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 px-1"
           >
             +
           </button>
