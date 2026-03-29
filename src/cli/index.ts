@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { registerCreateCommand } from './commands/create.ts';
 import { registerInitCommand } from './commands/init.ts';
 
 export function createProgram(): Command {
@@ -23,6 +24,7 @@ export function createProgram(): Command {
     });
 
   registerInitCommand(program);
+  registerCreateCommand(program);
 
   return program;
 }
