@@ -480,6 +480,160 @@ describe('PATCH /api/issues/:id — closed issue handling', () => {
   });
 });
 
+describe('PUT /api/issues/:id/comments/:commentIndex', () => {
+  test('edits a comment', async () => {
+    await writeIssue(
+      dir,
+      makeIssue({
+        id: 1,
+        title: 'Issue',
+        comments: [
+          { author: 'alice', timestamp: '2025-01-01T00:00:00Z', body: 'Old' },
+        ],
+      }),
+    );
+
+    const res = await req('/issues/1/comments/0', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: 'Updated body' }),
+    });
+
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as Issue;
+    expect(data.comments).toHaveLength(1);
+    expect(data.comments[0]?.body).toBe('Updated body');
+    expect(data.comments[0]?.author).toBe('alice');
+  });
+
+  test('returns 404 for out-of-bounds index', async () => {
+    await writeIssue(
+      dir,
+      makeIssue({
+        id: 1,
+        title: 'Issue',
+        comments: [
+          { author: 'alice', timestamp: '2025-01-01T00:00:00Z', body: 'Hi' },
+        ],
+      }),
+    );
+
+    const res = await req('/issues/1/comments/5', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: 'Nope' }),
+    });
+
+    expect(res.status).toBe(404);
+  });
+
+  test('returns 400 for invalid index', async () => {
+    await writeIssue(dir, makeIssue({ id: 1, title: 'Issue' }));
+
+    const res = await req('/issues/1/comments/abc', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: 'Nope' }),
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  test('returns 400 when body is missing', async () => {
+    await writeIssue(
+      dir,
+      makeIssue({
+        id: 1,
+        title: 'Issue',
+        comments: [
+          { author: 'alice', timestamp: '2025-01-01T00:00:00Z', body: 'Hi' },
+        ],
+      }),
+    );
+
+    const res = await req('/issues/1/comments/0', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  test('returns 404 for non-existent issue', async () => {
+    const res = await req('/issues/999/comments/0', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: 'Nope' }),
+    });
+
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('DELETE /api/issues/:id/comments/:commentIndex', () => {
+  test('deletes a comment', async () => {
+    await writeIssue(
+      dir,
+      makeIssue({
+        id: 1,
+        title: 'Issue',
+        comments: [
+          { author: 'alice', timestamp: '2025-01-01T00:00:00Z', body: 'First' },
+          { author: 'bob', timestamp: '2025-01-01T01:00:00Z', body: 'Second' },
+        ],
+      }),
+    );
+
+    const res = await req('/issues/1/comments/0', {
+      method: 'DELETE',
+    });
+
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as Issue;
+    expect(data.comments).toHaveLength(1);
+    expect(data.comments[0]?.body).toBe('Second');
+    expect(data.comments[0]?.author).toBe('bob');
+  });
+
+  test('returns 404 for out-of-bounds index', async () => {
+    await writeIssue(
+      dir,
+      makeIssue({
+        id: 1,
+        title: 'Issue',
+        comments: [
+          { author: 'alice', timestamp: '2025-01-01T00:00:00Z', body: 'Hi' },
+        ],
+      }),
+    );
+
+    const res = await req('/issues/1/comments/5', {
+      method: 'DELETE',
+    });
+
+    expect(res.status).toBe(404);
+  });
+
+  test('returns 400 for invalid index', async () => {
+    await writeIssue(dir, makeIssue({ id: 1, title: 'Issue' }));
+
+    const res = await req('/issues/1/comments/abc', {
+      method: 'DELETE',
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  test('returns 404 for non-existent issue', async () => {
+    const res = await req('/issues/999/comments/0', {
+      method: 'DELETE',
+    });
+
+    expect(res.status).toBe(404);
+  });
+});
+
 describe('POST /api/issues/:id/comments — closed issue handling', () => {
   test('adding a comment to a closed issue does not create a duplicate', async () => {
     // Create and close an issue

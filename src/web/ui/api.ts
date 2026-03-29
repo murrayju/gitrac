@@ -92,6 +92,26 @@ export async function addComment(
   });
 }
 
+export async function updateComment(
+  issueId: number,
+  commentIndex: number,
+  body: string,
+): Promise<Issue> {
+  return request<Issue>(`/api/issues/${issueId}/comments/${commentIndex}`, {
+    method: 'PUT',
+    body: JSON.stringify({ body }),
+  });
+}
+
+export async function deleteComment(
+  issueId: number,
+  commentIndex: number,
+): Promise<Issue> {
+  return request<Issue>(`/api/issues/${issueId}/comments/${commentIndex}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function closeIssue(id: number): Promise<Issue> {
   return request<Issue>(`/api/issues/${id}/close`, { method: 'PATCH' });
 }

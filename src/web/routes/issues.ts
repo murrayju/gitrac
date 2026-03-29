@@ -318,6 +318,118 @@ export function issueRoutes(ctx: ServerContext): Hono {
     return c.json(issue);
   });
 
+  // PUT /issues/:id/comments/:commentIndex — edit a comment
+  app.put('/issues/:id/comments/:commentIndex', async (c) => {
+    const { dir, config, amendTracker } = ctx;
+    const id = Number.parseInt(c.req.param('id'), 10);
+    const commentIndex = Number.parseInt(c.req.param('commentIndex'), 10);
+
+    if (Number.isNaN(id)) {
+      return c.json({ error: 'Invalid issue ID' }, 400);
+    }
+    if (Number.isNaN(commentIndex) || commentIndex < 0) {
+      return c.json({ error: 'Invalid comment index' }, 400);
+    }
+
+    const found = await findIssueFile(dir, id);
+    if (!found) {
+      return c.json({ error: `Issue #${id} not found` }, 404);
+    }
+    const isClosed = found.closed;
+
+    let issue: Issue;
+    try {
+      issue = await readIssue(dir, id);
+    } catch {
+      return c.json({ error: `Issue #${id} not found` }, 404);
+    }
+
+    if (commentIndex >= issue.comments.length) {
+      return c.json({ error: 'Comment index out of bounds' }, 404);
+    }
+
+    const body = await c.req.json();
+    const { body: commentBody } = body;
+
+    if (
+      !commentBody ||
+      typeof commentBody !== 'string' ||
+      !commentBody.trim()
+    ) {
+      return c.json({ error: 'body is required' }, 400);
+    }
+
+    const comment = issue.comments[commentIndex];
+    if (comment) {
+      comment.body = commentBody.trim();
+    }
+    issue.updated = new Date().toISOString();
+
+    const filename = await writeIssue(dir, issue, { closed: isClosed });
+    const relDir = isClosed ? join('.issues', 'closed') : '.issues';
+    const relPath = join(relDir, filename);
+
+    if (config.git.autoCommit) {
+      const prefix = config.git.commitPrefix;
+      const message = `${prefix} edit comment on #${id} ${issue.title}`;
+      const hash = await commitIssueChange(dir, [relPath], message);
+      if (hash) {
+        amendTracker.record(id, hash);
+      }
+    }
+
+    return c.json(issue);
+  });
+
+  // DELETE /issues/:id/comments/:commentIndex — delete a comment
+  app.delete('/issues/:id/comments/:commentIndex', async (c) => {
+    const { dir, config, amendTracker } = ctx;
+    const id = Number.parseInt(c.req.param('id'), 10);
+    const commentIndex = Number.parseInt(c.req.param('commentIndex'), 10);
+
+    if (Number.isNaN(id)) {
+      return c.json({ error: 'Invalid issue ID' }, 400);
+    }
+    if (Number.isNaN(commentIndex) || commentIndex < 0) {
+      return c.json({ error: 'Invalid comment index' }, 400);
+    }
+
+    const found = await findIssueFile(dir, id);
+    if (!found) {
+      return c.json({ error: `Issue #${id} not found` }, 404);
+    }
+    const isClosed = found.closed;
+
+    let issue: Issue;
+    try {
+      issue = await readIssue(dir, id);
+    } catch {
+      return c.json({ error: `Issue #${id} not found` }, 404);
+    }
+
+    if (commentIndex >= issue.comments.length) {
+      return c.json({ error: 'Comment index out of bounds' }, 404);
+    }
+
+    issue.comments.splice(commentIndex, 1);
+    issue.updated = new Date().toISOString();
+
+    const filename = await writeIssue(dir, issue, { closed: isClosed });
+    const relDir = isClosed ? join('.issues', 'closed') : '.issues';
+    const relPath = join(relDir, filename);
+
+    if (config.git.autoCommit) {
+      const prefix = config.git.commitPrefix;
+      const message = `${prefix} delete comment on #${id} ${issue.title}`;
+      const hash = await commitIssueChange(dir, [relPath], message);
+      if (hash) {
+        amendTracker.record(id, hash);
+      }
+    }
+
+    return c.json(issue);
+  });
+
   // PATCH /issues/:id/close — close an issue
   app.patch('/issues/:id/close', async (c) => {
     const { dir, config, amendTracker } = ctx;

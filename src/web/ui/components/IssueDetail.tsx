@@ -111,7 +111,7 @@ export function IssueDetail() {
             <h2 className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-4">
               Comments ({issue.comments.length})
             </h2>
-            <CommentList comments={issue.comments} />
+            <CommentList comments={issue.comments} issueId={issue.id} />
           </div>
 
           {/* Comment editor */}
