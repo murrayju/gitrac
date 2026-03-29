@@ -4,7 +4,13 @@ import type { IssueFilters } from '../api.ts';
 import { useIssues } from '../hooks.ts';
 import { IssueRow } from './IssueRow.tsx';
 
-type SortField = 'id' | 'title' | 'status' | 'priority' | 'assignee' | 'updated';
+type SortField =
+  | 'id'
+  | 'title'
+  | 'status'
+  | 'priority'
+  | 'assignee'
+  | 'updated';
 type SortDir = 'asc' | 'desc';
 
 const PRIORITY_ORDER: Record<Priority, number> = {
@@ -60,8 +66,7 @@ export function IssueList() {
           cmp = a.assignee.localeCompare(b.assignee);
           break;
         case 'updated':
-          cmp =
-            new Date(a.updated).getTime() - new Date(b.updated).getTime();
+          cmp = new Date(a.updated).getTime() - new Date(b.updated).getTime();
           break;
       }
       return sortDir === 'asc' ? cmp : -cmp;
@@ -126,9 +131,7 @@ export function IssueList() {
         </div>
       </div>
 
-      {error && (
-        <div className="text-red-400 text-sm mb-4">Error: {error}</div>
-      )}
+      {error && <div className="text-red-400 text-sm mb-4">Error: {error}</div>}
 
       {loading && issues.length === 0 ? (
         <div className="text-gray-500 text-sm">Loading...</div>
@@ -142,22 +145,42 @@ export function IssueList() {
                 <SortHeader field="id" current={sortField} onSort={handleSort}>
                   ID{sortIndicator('id')}
                 </SortHeader>
-                <SortHeader field="title" current={sortField} onSort={handleSort}>
+                <SortHeader
+                  field="title"
+                  current={sortField}
+                  onSort={handleSort}
+                >
                   Title{sortIndicator('title')}
                 </SortHeader>
-                <SortHeader field="status" current={sortField} onSort={handleSort}>
+                <SortHeader
+                  field="status"
+                  current={sortField}
+                  onSort={handleSort}
+                >
                   Status{sortIndicator('status')}
                 </SortHeader>
-                <SortHeader field="priority" current={sortField} onSort={handleSort}>
+                <SortHeader
+                  field="priority"
+                  current={sortField}
+                  onSort={handleSort}
+                >
                   Priority{sortIndicator('priority')}
                 </SortHeader>
-                <SortHeader field="assignee" current={sortField} onSort={handleSort}>
+                <SortHeader
+                  field="assignee"
+                  current={sortField}
+                  onSort={handleSort}
+                >
                   Assignee{sortIndicator('assignee')}
                 </SortHeader>
                 <th className="px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Labels
                 </th>
-                <SortHeader field="updated" current={sortField} onSort={handleSort}>
+                <SortHeader
+                  field="updated"
+                  current={sortField}
+                  onSort={handleSort}
+                >
                   Updated{sortIndicator('updated')}
                 </SortHeader>
               </tr>

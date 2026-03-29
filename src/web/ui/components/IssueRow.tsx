@@ -46,16 +46,12 @@ export function IssueRow({ issue }: { issue: Issue }) {
       className="border-b border-gray-800/50 hover:bg-gray-900/50 cursor-pointer transition-colors"
       onClick={() => navigate(`/issues/${issue.id}`)}
     >
-      <td className="px-3 py-2 text-sm text-gray-500 w-16">
-        #{issue.id}
-      </td>
+      <td className="px-3 py-2 text-sm text-gray-500 w-16">#{issue.id}</td>
       <td className="px-3 py-2 text-sm font-medium truncate max-w-md">
         {issue.title}
       </td>
-      <td
-        className="px-3 py-2"
-        onClick={(e) => e.stopPropagation()}
-      >
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: stopPropagation for dropdown interaction within clickable row */}
+      <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
         <Dropdown
           value={issue.status}
           options={STATUSES}
@@ -65,10 +61,8 @@ export function IssueRow({ issue }: { issue: Issue }) {
           <StatusBadge status={issue.status} onClick={() => {}} />
         </Dropdown>
       </td>
-      <td
-        className="px-3 py-2"
-        onClick={(e) => e.stopPropagation()}
-      >
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: stopPropagation for dropdown interaction within clickable row */}
+      <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
         <Dropdown
           value={issue.priority}
           options={PRIORITIES}

@@ -29,7 +29,8 @@ export function CommentEditor({ issueId }: { issueId: number }) {
 
   async function handleSubmit() {
     if (!editor) return;
-    const md = editor.storage.markdown.getMarkdown() as string;
+    // biome-ignore lint/suspicious/noExplicitAny: tiptap-markdown extends storage dynamically
+    const md = (editor.storage as any).markdown.getMarkdown() as string;
     if (!md.trim()) return;
 
     setSubmitting(true);

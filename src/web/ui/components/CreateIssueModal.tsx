@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Priority } from '../../../core/types.ts';
 import { createIssue } from '../api.ts';
@@ -18,6 +18,11 @@ export function CreateIssuePage() {
   const [labelInput, setLabelInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    titleRef.current?.focus();
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -58,20 +63,18 @@ export function CreateIssuePage() {
     <div className="p-6 max-w-2xl mx-auto">
       <h1 className="text-lg font-semibold mb-6">New Issue</h1>
 
-      {error && (
-        <div className="text-red-400 text-sm mb-4">Error: {error}</div>
-      )}
+      {error && <div className="text-red-400 text-sm mb-4">Error: {error}</div>}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Title */}
         <div>
           <input
+            ref={titleRef}
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Issue title"
             className="w-full bg-transparent text-lg font-medium border-b border-gray-700 focus:border-blue-500 outline-none pb-2 placeholder:text-gray-600"
-            autoFocus
             required
           />
         </div>
@@ -79,10 +82,14 @@ export function CreateIssuePage() {
         {/* Priority */}
         <div className="flex gap-4">
           <div className="flex-1">
-            <label className="block text-xs text-gray-500 uppercase tracking-wider mb-1">
+            <label
+              htmlFor="create-priority"
+              className="block text-xs text-gray-500 uppercase tracking-wider mb-1"
+            >
               Priority
             </label>
             <select
+              id="create-priority"
               value={priority}
               onChange={(e) => setPriority(e.target.value as Priority)}
               className="bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-300 w-full"
@@ -97,10 +104,14 @@ export function CreateIssuePage() {
 
           {/* Assignee */}
           <div className="flex-1">
-            <label className="block text-xs text-gray-500 uppercase tracking-wider mb-1">
+            <label
+              htmlFor="create-assignee"
+              className="block text-xs text-gray-500 uppercase tracking-wider mb-1"
+            >
               Assignee
             </label>
             <input
+              id="create-assignee"
               type="text"
               value={assignee}
               onChange={(e) => setAssignee(e.target.value)}
@@ -112,7 +123,10 @@ export function CreateIssuePage() {
 
         {/* Labels */}
         <div>
-          <label className="block text-xs text-gray-500 uppercase tracking-wider mb-1">
+          <label
+            htmlFor="create-label-input"
+            className="block text-xs text-gray-500 uppercase tracking-wider mb-1"
+          >
             Labels
           </label>
           <div className="flex flex-wrap gap-1 mb-2">
@@ -134,6 +148,7 @@ export function CreateIssuePage() {
           </div>
           <div className="flex gap-1">
             <input
+              id="create-label-input"
               type="text"
               value={labelInput}
               onChange={(e) => setLabelInput(e.target.value)}
@@ -164,9 +179,9 @@ export function CreateIssuePage() {
 
         {/* Description */}
         <div>
-          <label className="block text-xs text-gray-500 uppercase tracking-wider mb-1">
+          <span className="block text-xs text-gray-500 uppercase tracking-wider mb-1">
             Description
-          </label>
+          </span>
           <IssueEditor content="" onChange={setDescription} />
         </div>
 

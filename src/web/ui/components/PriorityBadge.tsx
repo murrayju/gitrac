@@ -26,22 +26,21 @@ export function PriorityBadge({
   const color = PRIORITY_COLORS[priority] ?? 'bg-gray-500';
   const label = PRIORITY_LABELS[priority] ?? priority;
 
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="inline-flex items-center gap-1.5 text-xs text-gray-300 cursor-pointer hover:opacity-80"
+      >
+        <span className={`inline-block w-2 h-2 rounded-full ${color}`} />
+        {label}
+      </button>
+    );
+  }
+
   return (
-    <span
-      role={onClick ? 'button' : undefined}
-      tabIndex={onClick ? 0 : undefined}
-      onClick={onClick}
-      onKeyDown={
-        onClick
-          ? (e) => {
-              if (e.key === 'Enter' || e.key === ' ') onClick();
-            }
-          : undefined
-      }
-      className={`inline-flex items-center gap-1.5 text-xs text-gray-300 ${
-        onClick ? 'cursor-pointer hover:opacity-80' : ''
-      }`}
-    >
+    <span className="inline-flex items-center gap-1.5 text-xs text-gray-300">
       <span className={`inline-block w-2 h-2 rounded-full ${color}`} />
       {label}
     </span>

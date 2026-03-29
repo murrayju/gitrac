@@ -22,15 +22,16 @@ function avatarColor(name: string): string {
 
 export function CommentList({ comments }: { comments: Comment[] }) {
   if (comments.length === 0) {
-    return (
-      <div className="text-gray-500 text-sm py-4">No comments yet.</div>
-    );
+    return <div className="text-gray-500 text-sm py-4">No comments yet.</div>;
   }
 
   return (
     <div className="space-y-4">
-      {comments.map((comment, i) => (
-        <div key={`${comment.timestamp}-${i}`} className="flex gap-3">
+      {comments.map((comment) => (
+        <div
+          key={`${comment.author}-${comment.timestamp}`}
+          className="flex gap-3"
+        >
           <div
             className={`w-8 h-8 rounded-full ${avatarColor(comment.author)} flex items-center justify-center text-xs font-medium text-white shrink-0`}
           >

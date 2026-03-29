@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { updateIssue } from '../api.ts';
 import { useIssue } from '../hooks.ts';
@@ -14,6 +14,14 @@ export function IssueDetail() {
   const { issue, loading, error } = useIssue(issueId);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  // Focus input when entering edit mode
+  useEffect(() => {
+    if (editingTitle && titleInputRef.current) {
+      titleInputRef.current.focus();
+    }
+  }, [editingTitle]);
 
   if (loading && !issue) {
     return <div className="p-6 text-gray-500">Loading...</div>;
@@ -58,6 +66,7 @@ export function IssueDetail() {
           </div>
           {editingTitle ? (
             <input
+              ref={titleInputRef}
               type="text"
               value={titleDraft}
               onChange={(e) => setTitleDraft(e.target.value)}
@@ -67,21 +76,23 @@ export function IssueDetail() {
                 if (e.key === 'Escape') setEditingTitle(false);
               }}
               className="w-full text-xl font-semibold bg-transparent border-b border-gray-700 focus:border-blue-500 outline-none pb-1 mb-4"
-              autoFocus
             />
           ) : (
-            <h1
-              className="text-xl font-semibold mb-4 cursor-pointer hover:text-gray-300"
-              onClick={startEditTitle}
-              title="Click to edit"
-            >
-              {issue.title}
-            </h1>
+            <div className="mb-4">
+              <button
+                type="button"
+                className="text-xl font-semibold cursor-pointer hover:text-gray-300 bg-transparent border-none p-0 text-left"
+                onClick={startEditTitle}
+                title="Click to edit"
+              >
+                {issue.title}
+              </button>
+            </div>
           )}
 
           <div className="text-xs text-gray-500 mb-6">
-            Created by {issue.createdBy} {relativeTime(issue.created)}{' '}
-            &middot; Updated {relativeTime(issue.updated)}
+            Created by {issue.createdBy} {relativeTime(issue.created)} &middot;
+            Updated {relativeTime(issue.updated)}
           </div>
 
           {/* Description editor */}

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Issue, Priority, Status } from '../../../core/types.ts';
 import { updateIssue } from '../api.ts';
 import { useConfig } from '../hooks.ts';
@@ -36,6 +36,13 @@ export function MetadataPanel({ issue }: { issue: Issue }) {
   const [assignee, setAssignee] = useState(issue.assignee);
   const [editingAssignee, setEditingAssignee] = useState(false);
   const [labelInput, setLabelInput] = useState('');
+  const assigneeRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editingAssignee && assigneeRef.current) {
+      assigneeRef.current.focus();
+    }
+  }, [editingAssignee]);
 
   async function handleStatusChange(status: Status) {
     await updateIssue(issue.id, { status });
@@ -104,6 +111,7 @@ export function MetadataPanel({ issue }: { issue: Issue }) {
         </div>
         {editingAssignee ? (
           <input
+            ref={assigneeRef}
             type="text"
             value={assignee}
             onChange={(e) => setAssignee(e.target.value)}
@@ -112,7 +120,6 @@ export function MetadataPanel({ issue }: { issue: Issue }) {
               if (e.key === 'Enter') handleAssigneeSave();
             }}
             className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm text-gray-300 w-full"
-            autoFocus
           />
         ) : (
           <button

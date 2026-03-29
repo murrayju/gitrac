@@ -26,21 +26,21 @@ export function StatusBadge({
   const style = STATUS_STYLES[status] ?? 'bg-gray-700 text-gray-300';
   const label = STATUS_LABELS[status] ?? status;
 
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`inline-block px-2 py-0.5 rounded text-xs font-medium cursor-pointer hover:opacity-80 ${style}`}
+      >
+        {label}
+      </button>
+    );
+  }
+
   return (
     <span
-      role={onClick ? 'button' : undefined}
-      tabIndex={onClick ? 0 : undefined}
-      onClick={onClick}
-      onKeyDown={
-        onClick
-          ? (e) => {
-              if (e.key === 'Enter' || e.key === ' ') onClick();
-            }
-          : undefined
-      }
-      className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${style} ${
-        onClick ? 'cursor-pointer hover:opacity-80' : ''
-      }`}
+      className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${style}`}
     >
       {label}
     </span>

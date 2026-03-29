@@ -1,5 +1,5 @@
-import { useState } from 'react';
 import type { ReactNode } from 'react';
+import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useGitStatus } from '../hooks.ts';
 import { BranchWarning } from './BranchWarning.tsx';
@@ -23,10 +23,11 @@ export function Layout({ children }: { children: ReactNode }) {
 
       {/* Sidebar overlay for mobile */}
       {sidebarOpen && (
-        <div
+        <button
+          type="button"
           className="md:hidden fixed inset-0 bg-black/50 z-30"
           onClick={() => setSidebarOpen(false)}
-          onKeyDown={() => {}}
+          aria-label="Close sidebar"
         />
       )}
 

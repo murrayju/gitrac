@@ -28,9 +28,13 @@ export function Dropdown<T extends string>({
 
   return (
     <div ref={ref} className="relative inline-block">
-      <div onClick={() => setOpen(!open)} onKeyDown={() => {}}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="appearance-none bg-transparent border-none p-0 cursor-pointer"
+      >
         {children}
-      </div>
+      </button>
       {open && (
         <div className="absolute z-50 mt-1 min-w-32 rounded border border-gray-700 bg-gray-900 shadow-lg py-1">
           {options.map((opt) => (

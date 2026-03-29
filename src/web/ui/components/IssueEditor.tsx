@@ -1,8 +1,14 @@
+import type { Editor } from '@tiptap/core';
 import Placeholder from '@tiptap/extension-placeholder';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { useCallback, useEffect, useRef } from 'react';
 import { Markdown } from 'tiptap-markdown';
+
+function getMarkdown(editor: Editor): string {
+  // biome-ignore lint/suspicious/noExplicitAny: tiptap-markdown extends storage dynamically
+  return (editor.storage as any).markdown.getMarkdown() as string;
+}
 
 export function IssueEditor({
   content,
@@ -19,17 +25,14 @@ export function IssueEditor({
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
-  const handleUpdate = useCallback(
-    ({ editor }: { editor: { storage: { markdown: { getMarkdown: () => string } } } }) => {
-      if (!onChangeRef.current) return;
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(() => {
-        const md = editor.storage.markdown.getMarkdown() as string;
-        onChangeRef.current?.(md);
-      }, 500);
-    },
-    [],
-  );
+  const handleUpdate = useCallback(({ editor }: { editor: Editor }) => {
+    if (!onChangeRef.current) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      const md = getMarkdown(editor);
+      onChangeRef.current?.(md);
+    }, 500);
+  }, []);
 
   const editor = useEditor({
     extensions: [

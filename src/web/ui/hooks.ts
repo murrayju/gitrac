@@ -1,12 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Config, Issue } from '../../core/types.ts';
-import {
-  fetchConfig,
-  fetchGitStatus,
-  fetchIssue,
-  fetchIssues,
-} from './api.ts';
 import type { GitStatus, IssueFilters } from './api.ts';
+import { fetchConfig, fetchGitStatus, fetchIssue, fetchIssues } from './api.ts';
 
 export function useSSE(onEvent: () => void): void {
   const onEventRef = useRef(onEvent);
