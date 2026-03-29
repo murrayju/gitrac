@@ -1,0 +1,27 @@
+version: 1
+nextId: 1
+statuses:
+  - backlog
+  - todo
+  - in_progress
+  - done
+  - cancelled
+labels:
+  - bug
+  - feature
+  - enhancement
+  - docs
+  - chore
+priorities:
+  - urgent
+  - high
+  - medium
+  - low
+  - none
+defaultStatus: backlog
+defaultPriority: medium
+git:
+  autoCommit: true
+  autoPush: false
+  commitPrefix: 'issue:'
+  defaultBranch: main
