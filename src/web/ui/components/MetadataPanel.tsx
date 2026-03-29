@@ -4,6 +4,7 @@ import { updateIssue } from '../api.ts';
 import { useConfig } from '../hooks.ts';
 import { Dropdown } from './Dropdown.tsx';
 import { LabelBadge } from './LabelBadge.tsx';
+import { LabelPicker } from './LabelPicker.tsx';
 import { PriorityBadge } from './PriorityBadge.tsx';
 import { StatusBadge } from './StatusBadge.tsx';
 
@@ -36,7 +37,6 @@ export function MetadataPanel({ issue }: { issue: Issue }) {
   const { config } = useConfig();
   const [assignee, setAssignee] = useState(issue.assignee);
   const [editingAssignee, setEditingAssignee] = useState(false);
-  const [labelInput, setLabelInput] = useState('');
   const assigneeRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -60,24 +60,17 @@ export function MetadataPanel({ issue }: { issue: Issue }) {
     }
   }
 
-  async function handleRemoveLabel(label: string) {
-    const newLabels = issue.labels.filter((l) => l !== label);
+  async function handleToggleLabel(label: string) {
+    const newLabels = issue.labels.includes(label)
+      ? issue.labels.filter((l) => l !== label)
+      : [...issue.labels, label];
     await updateIssue(issue.id, { labels: newLabels });
   }
 
-  const availableLabels = Object.keys(config?.labels ?? {}).filter(
-    (l) => !issue.labels.includes(l),
-  );
-
-  async function handleAddLabel(value?: string) {
-    const trimmed = (value ?? labelInput).trim();
-    if (!trimmed || issue.labels.includes(trimmed)) return;
-    setLabelInput('');
-    await updateIssue(issue.id, { labels: [...issue.labels, trimmed] });
-  }
-
-  function handleLabelInputChange(value: string) {
-    setLabelInput(value);
+  async function handleCreateLabel(label: string) {
+    if (!issue.labels.includes(label)) {
+      await updateIssue(issue.id, { labels: [...issue.labels, label] });
+    }
   }
 
   return (
@@ -147,28 +140,21 @@ export function MetadataPanel({ issue }: { issue: Issue }) {
               key={label}
               label={label}
               color={config?.labels[label]}
-              onRemove={() => handleRemoveLabel(label)}
+              onRemove={() => handleToggleLabel(label)}
             />
           ))}
         </div>
-        <div className="flex gap-1">
-          <input
-            type="text"
-            value={labelInput}
-            onChange={(e) => handleLabelInputChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleAddLabel();
-            }}
-            placeholder="Add label..."
-            list="available-labels"
-            className="bg-white border border-gray-300 rounded px-2 py-1 text-xs text-gray-700 placeholder:text-gray-400 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-300 dark:placeholder:text-gray-600 flex-1"
-          />
-          <datalist id="available-labels">
-            {availableLabels?.map((l) => (
-              <option key={l} value={l} />
-            ))}
-          </datalist>
-        </div>
+        <LabelPicker
+          selectedLabels={issue.labels}
+          availableLabels={config?.labels ?? {}}
+          onToggleLabel={handleToggleLabel}
+          onCreateLabel={handleCreateLabel}
+          trigger={
+            <span className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 cursor-pointer">
+              + Add label
+            </span>
+          }
+        />
       </div>
     </div>
   );

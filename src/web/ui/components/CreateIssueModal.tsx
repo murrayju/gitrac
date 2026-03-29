@@ -5,6 +5,7 @@ import { createIssue } from '../api.ts';
 import { useConfig } from '../hooks.ts';
 import { IssueEditor } from './IssueEditor.tsx';
 import { LabelBadge } from './LabelBadge.tsx';
+import { LabelPicker } from './LabelPicker.tsx';
 
 const PRIORITIES: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
 
@@ -16,7 +17,6 @@ export function CreateIssueModal({ onClose }: { onClose: () => void }) {
   const [assignee, setAssignee] = useState('');
   const [labels, setLabels] = useState<string[]>([]);
   const [description, setDescription] = useState('');
-  const [labelInput, setLabelInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
@@ -73,23 +73,16 @@ export function CreateIssueModal({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const availableLabels = Object.keys(config?.labels ?? {}).filter(
-    (l) => !labels.includes(l),
-  );
-
-  function addLabel(value?: string) {
-    const trimmed = (value ?? labelInput).trim();
-    if (!trimmed || labels.includes(trimmed)) return;
-    setLabels([...labels, trimmed]);
-    setLabelInput('');
+  function handleToggleLabel(label: string) {
+    setLabels((prev) =>
+      prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label],
+    );
   }
 
-  function handleLabelInputChange(value: string) {
-    setLabelInput(value);
-  }
-
-  function removeLabel(label: string) {
-    setLabels(labels.filter((l) => l !== label));
+  function handleCreateLabel(label: string) {
+    if (!labels.includes(label)) {
+      setLabels((prev) => [...prev, label]);
+    }
   }
 
   function handleBackdropClick(e: React.MouseEvent) {
@@ -185,44 +178,30 @@ export function CreateIssueModal({ onClose }: { onClose: () => void }) {
 
             {/* Labels */}
             <div>
-              <label
-                htmlFor="create-label-input"
-                className="block text-xs text-gray-500 uppercase tracking-wider mb-1"
-              >
+              <span className="block text-xs text-gray-500 uppercase tracking-wider mb-1">
                 Labels
-              </label>
+              </span>
               <div className="flex flex-wrap gap-1 mb-2">
                 {labels.map((label) => (
                   <LabelBadge
                     key={label}
                     label={label}
                     color={config?.labels[label]}
-                    onRemove={() => removeLabel(label)}
+                    onRemove={() => handleToggleLabel(label)}
                   />
                 ))}
               </div>
-              <div className="flex gap-1">
-                <input
-                  id="create-label-input"
-                  type="text"
-                  value={labelInput}
-                  onChange={(e) => handleLabelInputChange(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      addLabel();
-                    }
-                  }}
-                  placeholder="Add label..."
-                  list="create-available-labels"
-                  className="bg-white border border-gray-300 rounded px-2 py-1 text-xs text-gray-700 placeholder:text-gray-400 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-300 dark:placeholder:text-gray-600 flex-1"
-                />
-                <datalist id="create-available-labels">
-                  {availableLabels?.map((l) => (
-                    <option key={l} value={l} />
-                  ))}
-                </datalist>
-              </div>
+              <LabelPicker
+                selectedLabels={labels}
+                availableLabels={config?.labels ?? {}}
+                onToggleLabel={handleToggleLabel}
+                onCreateLabel={handleCreateLabel}
+                trigger={
+                  <span className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 cursor-pointer">
+                    + Add label
+                  </span>
+                }
+              />
             </div>
 
             {/* Description */}
