@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "biome check",
     "test": "./bun test",
-    "check": "./bun i --silent && ./bun run typecheck && ./bun run lint --write && ./bun run test"
+    "check": "./bun i --silent && ./bun run typecheck && ./bun run lint --write && ./bun test --only-failures"
   },
   "dependencies": {
     "@tiptap/extension-placeholder": "^3.21.0",
