@@ -96,10 +96,7 @@ function formatHumanDetail(issue: Issue): string {
 /**
  * Format a list of issues in the specified output format.
  */
-export function formatIssueList(
-  issues: Issue[],
-  format: OutputFormat,
-): string {
+export function formatIssueList(issues: Issue[], format: OutputFormat): string {
   switch (format) {
     case 'human':
       return formatHumanList(issues);
@@ -113,10 +110,7 @@ export function formatIssueList(
 /**
  * Format a single issue detail in the specified output format.
  */
-export function formatIssueDetail(
-  issue: Issue,
-  format: OutputFormat,
-): string {
+export function formatIssueDetail(issue: Issue, format: OutputFormat): string {
   switch (format) {
     case 'human':
       return formatHumanDetail(issue);
