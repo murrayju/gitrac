@@ -1,14 +1,14 @@
 ---
 id: 10
 title: Label config is redundant
-status: in_progress
+status: done
 priority: low
 assignee: Justin Murray
 labels:
   - enhancement
 created: '2026-03-29T17:18:06.619Z'
 createdBy: web
-updated: '2026-03-29T18:09:55.787Z'
+updated: '2026-03-29T18:18:31.608Z'
 ---
 
 The config currently defines both a list of labels, and a map of colors.
