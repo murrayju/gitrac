@@ -6,6 +6,7 @@ import { cors } from 'hono/cors';
 import type { Config } from '../core/types.ts';
 import { AmendTracker } from '../git/amend-tracker.ts';
 import { getBranchWarning } from '../git/status.ts';
+import { assetRoutes } from './routes/assets.ts';
 import { configRoutes } from './routes/config.ts';
 import { eventsRoute } from './routes/events.ts';
 import { gitRoutes } from './routes/git.ts';
@@ -75,6 +76,7 @@ export function createApp(ctx: ServerContext): Hono {
 
   // API routes
   app.route('/api', issueRoutes(ctx));
+  app.route('/api', assetRoutes(ctx));
   app.route('/api', configRoutes(ctx));
   app.route('/api', gitRoutes(ctx));
   app.route('/api', eventsRoute(ctx));

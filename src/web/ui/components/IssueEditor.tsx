@@ -1,9 +1,11 @@
 import type { Editor } from '@tiptap/core';
+import Image from '@tiptap/extension-image';
 import Placeholder from '@tiptap/extension-placeholder';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { useCallback, useEffect, useRef } from 'react';
 import { Markdown } from 'tiptap-markdown';
+import { ImageUpload } from '../lib/image-upload-plugin.ts';
 
 function getMarkdown(editor: Editor): string {
   // biome-ignore lint/suspicious/noExplicitAny: tiptap-markdown extends storage dynamically
@@ -37,6 +39,8 @@ export function IssueEditor({
   const editor = useEditor({
     extensions: [
       StarterKit,
+      Image.configure({ inline: false, allowBase64: false }),
+      ImageUpload,
       Placeholder.configure({ placeholder }),
       Markdown.configure({
         html: false,
