@@ -74,7 +74,7 @@ export function CreateIssuePage() {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Issue title"
-            className="w-full bg-transparent text-lg font-medium border-b border-gray-700 focus:border-blue-500 outline-none pb-2 placeholder:text-gray-600"
+            className="w-full bg-transparent text-lg font-medium border-b border-gray-300 dark:border-gray-700 focus:border-blue-500 outline-none pb-2 placeholder:text-gray-400 dark:placeholder:text-gray-600"
             required
           />
         </div>
@@ -92,7 +92,7 @@ export function CreateIssuePage() {
               id="create-priority"
               value={priority}
               onChange={(e) => setPriority(e.target.value as Priority)}
-              className="bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-300 w-full"
+              className="bg-white border border-gray-300 rounded px-2 py-1.5 text-sm text-gray-700 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-300 w-full"
             >
               {PRIORITIES.map((p) => (
                 <option key={p} value={p}>
@@ -116,7 +116,7 @@ export function CreateIssuePage() {
               value={assignee}
               onChange={(e) => setAssignee(e.target.value)}
               placeholder="Unassigned"
-              className="bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-300 placeholder:text-gray-600 w-full"
+              className="bg-white border border-gray-300 rounded px-2 py-1.5 text-sm text-gray-700 placeholder:text-gray-400 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-300 dark:placeholder:text-gray-600 w-full"
             />
           </div>
         </div>
@@ -133,13 +133,13 @@ export function CreateIssuePage() {
             {labels.map((label) => (
               <span
                 key={label}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-gray-800 text-gray-300"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
               >
                 {label}
                 <button
                   type="button"
                   onClick={() => removeLabel(label)}
-                  className="text-gray-500 hover:text-gray-300"
+                  className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
                 >
                   ×
                 </button>
@@ -160,7 +160,7 @@ export function CreateIssuePage() {
               }}
               placeholder="Add label..."
               list="create-available-labels"
-              className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300 placeholder:text-gray-600 flex-1"
+              className="bg-white border border-gray-300 rounded px-2 py-1 text-xs text-gray-700 placeholder:text-gray-400 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-300 dark:placeholder:text-gray-600 flex-1"
             />
             <datalist id="create-available-labels">
               {availableLabels?.map((l) => (
@@ -170,7 +170,7 @@ export function CreateIssuePage() {
             <button
               type="button"
               onClick={addLabel}
-              className="text-xs text-gray-500 hover:text-gray-300 px-2"
+              className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 px-2"
             >
               +
             </button>

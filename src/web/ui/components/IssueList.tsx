@@ -126,7 +126,7 @@ export function IssueList() {
             placeholder="Assignee..."
             value={assigneeFilter}
             onChange={(e) => setAssigneeFilter(e.target.value)}
-            className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm text-gray-300 placeholder:text-gray-600 w-32"
+            className="bg-white border border-gray-300 rounded px-2 py-1 text-sm text-gray-700 placeholder:text-gray-400 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-300 dark:placeholder:text-gray-600 w-32"
           />
         </div>
       </div>
@@ -141,7 +141,7 @@ export function IssueList() {
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-gray-800 text-left">
+              <tr className="border-b border-gray-200 dark:border-gray-800 text-left">
                 <SortHeader field="id" current={sortField} onSort={handleSort}>
                   ID{sortIndicator('id')}
                 </SortHeader>
@@ -210,8 +210,8 @@ function SortHeader({
 }) {
   return (
     <th
-      className={`px-3 py-2 text-xs font-medium uppercase tracking-wider cursor-pointer select-none hover:text-gray-300 ${
-        field === current ? 'text-gray-300' : 'text-gray-500'
+      className={`px-3 py-2 text-xs font-medium uppercase tracking-wider cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300 ${
+        field === current ? 'text-gray-700 dark:text-gray-300' : 'text-gray-500'
       }`}
       onClick={() => onSort(field)}
     >
@@ -235,7 +235,7 @@ function FilterSelect({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm text-gray-300"
+      className="bg-white border border-gray-300 rounded px-2 py-1 text-sm text-gray-700 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-300"
     >
       {options.map((opt) => (
         <option key={opt.value} value={opt.value}>

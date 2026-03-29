@@ -39,7 +39,7 @@ export function CommentList({ comments }: { comments: Comment[] }) {
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-sm font-medium text-gray-200">
+              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
                 {comment.author}
               </span>
               <span
@@ -49,7 +49,7 @@ export function CommentList({ comments }: { comments: Comment[] }) {
                 {relativeTime(comment.timestamp)}
               </span>
             </div>
-            <div className="text-sm text-gray-300 whitespace-pre-wrap">
+            <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
               {comment.body}
             </div>
           </div>

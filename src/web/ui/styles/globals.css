@@ -7,13 +7,6 @@ body {
     Arial, sans-serif;
 }
 
-/* Light mode overrides */
-html.light body {
-  --tw-bg-opacity: 1;
-  background-color: rgb(249 250 251);
-  color: rgb(17 24 39);
-}
-
 /* Tiptap placeholder styling */
 .tiptap p.is-editor-empty:first-child::before {
   color: #6b7280;
@@ -26,4 +19,21 @@ html.light body {
 /* Tiptap focus ring */
 .tiptap:focus {
   outline: none;
+}
+
+/* Tiptap prose styling for light mode */
+.tiptap.prose {
+  --tw-prose-body: rgb(31 41 55);
+  --tw-prose-headings: rgb(17 24 39);
+  --tw-prose-links: rgb(37 99 235);
+  --tw-prose-bold: rgb(17 24 39);
+  --tw-prose-code: rgb(17 24 39);
+}
+
+.dark .tiptap.prose {
+  --tw-prose-body: rgb(209 213 219);
+  --tw-prose-headings: rgb(243 244 246);
+  --tw-prose-links: rgb(96 165 250);
+  --tw-prose-bold: rgb(243 244 246);
+  --tw-prose-code: rgb(243 244 246);
 }

@@ -31,7 +31,7 @@ export function PriorityBadge({
       <button
         type="button"
         onClick={onClick}
-        className="inline-flex items-center gap-1.5 text-xs text-gray-300 cursor-pointer hover:opacity-80"
+        className="inline-flex items-center gap-1.5 text-xs text-gray-700 dark:text-gray-300 cursor-pointer hover:opacity-80"
       >
         <span className={`inline-block w-2 h-2 rounded-full ${color}`} />
         {label}
@@ -40,7 +40,7 @@ export function PriorityBadge({
   }
 
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs text-gray-300">
+    <span className="inline-flex items-center gap-1.5 text-xs text-gray-700 dark:text-gray-300">
       <span className={`inline-block w-2 h-2 rounded-full ${color}`} />
       {label}
     </span>

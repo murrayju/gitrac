@@ -43,7 +43,7 @@ export function IssueRow({ issue }: { issue: Issue }) {
 
   return (
     <tr
-      className="border-b border-gray-800/50 hover:bg-gray-900/50 cursor-pointer transition-colors"
+      className="border-b border-gray-200/50 dark:border-gray-800/50 hover:bg-gray-100/50 dark:hover:bg-gray-900/50 cursor-pointer transition-colors"
       onClick={() => navigate(`/issues/${issue.id}`)}
     >
       <td className="px-3 py-2 text-sm text-gray-500 w-16">#{issue.id}</td>
@@ -72,7 +72,7 @@ export function IssueRow({ issue }: { issue: Issue }) {
           <PriorityBadge priority={issue.priority} onClick={() => {}} />
         </Dropdown>
       </td>
-      <td className="px-3 py-2 text-sm text-gray-400">
+      <td className="px-3 py-2 text-sm text-gray-600 dark:text-gray-400">
         {issue.assignee || '—'}
       </td>
       <td className="px-3 py-2">
@@ -80,7 +80,7 @@ export function IssueRow({ issue }: { issue: Issue }) {
           {issue.labels.map((label) => (
             <span
               key={label}
-              className="px-1.5 py-0.5 rounded text-xs bg-gray-800 text-gray-400"
+              className="px-1.5 py-0.5 rounded text-xs bg-gray-200 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
             >
               {label}
             </span>

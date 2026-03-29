@@ -15,7 +15,7 @@ export function Layout({ children }: { children: ReactNode }) {
       {/* Mobile sidebar toggle */}
       <button
         type="button"
-        className="md:hidden fixed top-3 left-3 z-50 p-2 rounded bg-gray-800 text-gray-300"
+        className="md:hidden fixed top-3 left-3 z-50 p-2 rounded bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
         onClick={() => setSidebarOpen(!sidebarOpen)}
       >
         {sidebarOpen ? '✕' : '☰'}
@@ -33,7 +33,7 @@ export function Layout({ children }: { children: ReactNode }) {
 
       {/* Sidebar */}
       <aside
-        className={`fixed md:static z-40 w-56 shrink-0 flex flex-col border-r border-gray-800 dark:bg-gray-950 bg-white h-full transition-transform md:translate-x-0 ${
+        className={`fixed md:static z-40 w-56 shrink-0 flex flex-col border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 h-full transition-transform md:translate-x-0 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -64,7 +64,7 @@ export function Layout({ children }: { children: ReactNode }) {
           </NavLink>
         </nav>
 
-        <div className="px-4 py-3 border-t border-gray-800">
+        <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-800">
           <ThemeToggle />
         </div>
       </aside>
@@ -100,8 +100,8 @@ function NavLink({
       onClick={onClick}
       className={`block px-3 py-1.5 rounded text-sm ${
         active
-          ? 'bg-gray-800 text-gray-100 dark:bg-gray-800 dark:text-gray-100'
-          : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-900'
+          ? 'bg-gray-200 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
+          : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-900'
       }`}
     >
       {children}
