@@ -1,14 +1,14 @@
 ---
 id: 13
 title: Improve formatting in text editor
-status: in_progress
+status: done
 priority: medium
 assignee: Justin Murray
 labels:
   - enhancement
 created: '2026-03-29T17:31:32.790Z'
 createdBy: web
-updated: '2026-03-29T18:31:33.401Z'
+updated: '2026-03-29T18:34:59.627Z'
 ---
 
 When editing the markdown in the wysiwyg editor, it can be hard to see some of the formatting. For example, `inline code` and 
