@@ -1,8 +1,10 @@
 import { useNavigate } from 'react-router-dom';
 import type { Issue, Priority, Status } from '../../../core/types.ts';
 import { updateIssue } from '../api.ts';
+import { useConfig } from '../hooks.ts';
 import { relativeTime } from '../lib/time.ts';
 import { Dropdown } from './Dropdown.tsx';
+import { LabelBadge } from './LabelBadge.tsx';
 import { PriorityBadge } from './PriorityBadge.tsx';
 import { StatusBadge } from './StatusBadge.tsx';
 
@@ -32,6 +34,7 @@ const PRIORITY_LABELS: Record<Priority, string> = {
 
 export function IssueRow({ issue }: { issue: Issue }) {
   const navigate = useNavigate();
+  const { config } = useConfig();
 
   async function handleStatusChange(status: Status) {
     await updateIssue(issue.id, { status });
@@ -78,12 +81,11 @@ export function IssueRow({ issue }: { issue: Issue }) {
       <td className="px-3 py-2">
         <div className="flex gap-1 flex-wrap">
           {issue.labels.map((label) => (
-            <span
+            <LabelBadge
               key={label}
-              className="px-1.5 py-0.5 rounded text-xs bg-gray-200 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
-            >
-              {label}
-            </span>
+              label={label}
+              color={config?.labelColors[label]}
+            />
           ))}
         </div>
       </td>

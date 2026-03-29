@@ -3,6 +3,7 @@ import type { Issue, Priority, Status } from '../../../core/types.ts';
 import { updateIssue } from '../api.ts';
 import { useConfig } from '../hooks.ts';
 import { Dropdown } from './Dropdown.tsx';
+import { LabelBadge } from './LabelBadge.tsx';
 import { PriorityBadge } from './PriorityBadge.tsx';
 import { StatusBadge } from './StatusBadge.tsx';
 
@@ -147,19 +148,12 @@ export function MetadataPanel({ issue }: { issue: Issue }) {
         </div>
         <div className="flex flex-wrap gap-1 mb-2">
           {issue.labels.map((label) => (
-            <span
+            <LabelBadge
               key={label}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
-            >
-              {label}
-              <button
-                type="button"
-                onClick={() => handleRemoveLabel(label)}
-                className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-              >
-                ×
-              </button>
-            </span>
+              label={label}
+              color={config?.labelColors[label]}
+              onRemove={() => handleRemoveLabel(label)}
+            />
           ))}
         </div>
         <div className="flex gap-1">

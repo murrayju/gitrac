@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Hono } from 'hono';
+import { ensureLabelColors } from '../../core/config.ts';
 import { parseIssue } from '../../core/issue.ts';
 import type { Issue, Status } from '../../core/types.ts';
 import {
@@ -12,12 +13,48 @@ import {
   moveToReopen,
   readConfig,
   readIssue,
+  writeConfig,
   writeIssue,
 } from '../../fs/issue-store.ts';
 import { commitIssueChange } from '../../git/operations.ts';
 import type { ServerContext } from '../server.ts';
 
 const CLOSED_STATUSES: Status[] = ['done', 'cancelled'];
+
+/**
+ * Ensure any new labels used on an issue get assigned colors in the config.
+ * Returns the list of extra files to include in the git commit if config was updated.
+ */
+async function syncLabelColors(
+  ctx: ServerContext,
+  labels: string[],
+): Promise<string[]> {
+  const newLabels = labels.filter((l) => !ctx.config.labelColors[l]);
+  if (newLabels.length === 0) return [];
+
+  const freshConfig = await readConfig(ctx.dir);
+  const updatedColors = ensureLabelColors(labels, freshConfig.labelColors);
+
+  // Check if any colors actually changed
+  const changed = labels.some(
+    (l) => freshConfig.labelColors[l] !== updatedColors[l],
+  );
+  if (!changed) return [];
+
+  freshConfig.labelColors = updatedColors;
+
+  // Also add any truly new labels to the labels list
+  for (const label of newLabels) {
+    if (!freshConfig.labels.includes(label)) {
+      freshConfig.labels.push(label);
+    }
+  }
+
+  await writeConfig(ctx.dir, freshConfig);
+  ctx.config = freshConfig;
+
+  return [join('.issues', 'config.yaml')];
+}
 
 export function issueRoutes(ctx: ServerContext): Hono {
   const app = new Hono();
@@ -129,13 +166,18 @@ export function issueRoutes(ctx: ServerContext): Hono {
     };
 
     const filename = await writeIssue(dir, issue);
+    const extraFiles = await syncLabelColors(ctx, issue.labels);
 
     if (config.git.autoCommit) {
       const prefix = config.git.commitPrefix;
       const message = `${prefix} create #${id} ${issue.title}`;
       const hash = await commitIssueChange(
         dir,
-        [join('.issues', filename), join('.issues', 'config.yaml')],
+        [
+          join('.issues', filename),
+          join('.issues', 'config.yaml'),
+          ...extraFiles,
+        ],
         message,
       );
       if (hash) {
@@ -174,24 +216,18 @@ export function issueRoutes(ctx: ServerContext): Hono {
     issue.updated = new Date().toISOString();
 
     const filename = await writeIssue(dir, issue);
+    const extraFiles = await syncLabelColors(ctx, issue.labels);
+    const allFiles = [join('.issues', filename), ...extraFiles];
 
     if (config.git.autoCommit) {
       const prefix = config.git.commitPrefix;
       const message = `${prefix} update #${id} ${issue.title}`;
       const canAmend = await amendTracker.canAmend(dir, id);
       if (canAmend) {
-        const hash = await amendTracker.amend(
-          dir,
-          [join('.issues', filename)],
-          message,
-        );
+        const hash = await amendTracker.amend(dir, allFiles, message);
         amendTracker.record(id, hash);
       } else {
-        const hash = await commitIssueChange(
-          dir,
-          [join('.issues', filename)],
-          message,
-        );
+        const hash = await commitIssueChange(dir, allFiles, message);
         if (hash) {
           amendTracker.record(id, hash);
         }

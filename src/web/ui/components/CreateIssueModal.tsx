@@ -4,6 +4,7 @@ import type { Priority } from '../../../core/types.ts';
 import { createIssue } from '../api.ts';
 import { useConfig } from '../hooks.ts';
 import { IssueEditor } from './IssueEditor.tsx';
+import { LabelBadge } from './LabelBadge.tsx';
 
 const PRIORITIES: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
 
@@ -195,19 +196,12 @@ export function CreateIssueModal({ onClose }: { onClose: () => void }) {
               </label>
               <div className="flex flex-wrap gap-1 mb-2">
                 {labels.map((label) => (
-                  <span
+                  <LabelBadge
                     key={label}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                  >
-                    {label}
-                    <button
-                      type="button"
-                      onClick={() => removeLabel(label)}
-                      className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-                    >
-                      &times;
-                    </button>
-                  </span>
+                    label={label}
+                    color={config?.labelColors[label]}
+                    onRemove={() => removeLabel(label)}
+                  />
                 ))}
               </div>
               <div className="flex gap-1">

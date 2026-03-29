@@ -12,6 +12,12 @@ labels:
   - enhancement
   - docs
   - chore
+labelColors:
+  bug: "#e05d5d"
+  feature: "#58a6e0"
+  enhancement: "#4dba6f"
+  docs: "#d4a843"
+  chore: "#b065d6"
 priorities:
   - urgent
   - high
