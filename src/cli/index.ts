@@ -1,9 +1,11 @@
 import { Command } from 'commander';
+import { registerCloseCommand } from './commands/close.ts';
 import { registerCommentCommand } from './commands/comment.ts';
 import { registerCreateCommand } from './commands/create.ts';
 import { registerEditCommand } from './commands/edit.ts';
 import { registerInitCommand } from './commands/init.ts';
 import { registerListCommand } from './commands/list.ts';
+import { registerReopenCommand } from './commands/reopen.ts';
 import { registerShowCommand } from './commands/show.ts';
 
 export function createProgram(): Command {
@@ -33,6 +35,8 @@ export function createProgram(): Command {
   registerShowCommand(program);
   registerEditCommand(program);
   registerCommentCommand(program);
+  registerCloseCommand(program);
+  registerReopenCommand(program);
 
   return program;
 }
