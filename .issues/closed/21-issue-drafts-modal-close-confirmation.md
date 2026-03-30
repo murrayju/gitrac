@@ -8,7 +8,7 @@ labels:
   - feature
 created: '2026-03-30T00:34:48.918Z'
 createdBy: web
-updated: '2026-03-30T01:26:42.006Z'
+updated: '2026-03-30T01:27:53.507Z'
 ---
 
 Currently, when filling out the new issue modal, if you close it (whether accidental or intentional), all your progress is lost. Instead, (debounced) edits should be implicitly persisted in a drafts folder (use a timestamp for the filename). This way, even if you hard-reload the tab, it'll survive.
@@ -58,3 +58,42 @@ Implemented issue drafts and modal close confirmation feature:
 
 **App.tsx**: Added /drafts route
 **.gitignore**: Added .issues/drafts/ to prevent drafts from being committed
+
+### Justin Murray — 2026-03-30T01:27:53.507Z
+
+Implemented full issue drafts feature with auto-save, close confirmation, drafts page, and sidebar integration.
+
+Backend:
+- Created src/web/routes/drafts.ts with GET /drafts (list), PUT /drafts/:filename (save), DELETE /drafts/:filename
+- Drafts stored as JSON files in .issues/drafts/ (gitignored)
+- Registered draft routes in src/web/server.ts
+
+Frontend API + hooks:
+- Added Draft type, fetchDrafts(), saveDraft(), deleteDraft() to src/web/ui/api.ts
+- Added useDrafts() hook in src/web/ui/hooks.ts
+
+CreateIssueModal.tsx:
+- Auto-saves drafts (debounced 1s) whenever form state changes
+- Shows close confirmation dialog (Delete draft / Save draft / Cancel) when there's content
+- Accepts initialDraft prop for loading saved drafts
+- Deletes draft on successful issue submission
+- onClose now accepts reason ('submitted'|'deleted'|'saved') for parent coordination
+
+Layout.tsx:
+- Added LayoutContext with openCreateModal(draft?) and refreshDrafts
+- Drafts nav link appears with badge count when drafts exist
+- Modal state now tracks optional draft for pre-populating
+
+App.tsx:
+- Added /drafts route
+
+DraftList.tsx (new):
+- Table view of all drafts with title, priority, last saved time
+- Click to reopen draft in modal, delete button per row
+- Uses relativeTime utility for timestamps
+
+Other:
+- Added .issues/drafts/ to .gitignore
+- Added src/web/ui/lib/time.ts with relativeTime utility
+
+Files affected: src/web/routes/drafts.ts (new), src/web/ui/components/DraftList.tsx (new), src/web/server.ts, src/web/ui/api.ts, src/web/ui/hooks.ts, src/web/ui/components/CreateIssueModal.tsx, src/web/ui/components/Layout.tsx, src/web/ui/App.tsx, .gitignore
