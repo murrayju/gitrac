@@ -31,7 +31,7 @@ export function Dropdown<T extends string>({
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="appearance-none bg-transparent border-none p-0 cursor-pointer"
+        className="appearance-none bg-transparent border-none p-0 cursor-pointer flex items-center justify-center"
       >
         {children}
       </button>

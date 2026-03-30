@@ -333,7 +333,7 @@ export function CreateIssueModal({
             />
 
             {/* Description — borderless editor */}
-            <div className="mb-4 min-h-[100px]">
+            <div className="-mt-3 -mx-4 min-h-25">
               <IssueEditor
                 content={description}
                 onChange={setDescription}
@@ -345,7 +345,7 @@ export function CreateIssueModal({
 
             {/* Bottom bar: pills + submit */}
             <div className="flex items-center justify-between gap-2 pt-3 border-t border-gray-200 dark:border-gray-800">
-              <div className="flex items-center gap-1 flex-wrap">
+              <div className="flex flex-row items-center gap-2 flex-wrap">
                 {/* Status pill */}
                 <Dropdown
                   value={status}
