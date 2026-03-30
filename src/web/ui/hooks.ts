@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Config, Issue } from '../../core/types.ts';
-import type { GitStatus, IssueFilters } from './api.ts';
-import { fetchConfig, fetchGitStatus, fetchIssue, fetchIssues } from './api.ts';
+import type { Draft, GitStatus, IssueFilters } from './api.ts';
+import {
+  fetchConfig,
+  fetchDrafts,
+  fetchGitStatus,
+  fetchIssue,
+  fetchIssues,
+} from './api.ts';
 
 export function useSSE(onEvent: () => void): void {
   const onEventRef = useRef(onEvent);
@@ -151,4 +157,28 @@ export function useGitStatus(): {
   }, []);
 
   return { gitStatus, loading, error };
+}
+
+export function useDrafts(): {
+  drafts: Draft[];
+  loading: boolean;
+  refresh: () => void;
+} {
+  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(() => {
+    fetchDrafts()
+      .then((data) => setDrafts(data))
+      .catch(() => {
+        // ignore
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { drafts, loading, refresh };
 }

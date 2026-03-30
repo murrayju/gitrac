@@ -1,4 +1,5 @@
 import { Route, Routes, useParams } from 'react-router-dom';
+import { DraftList } from './components/DraftList.tsx';
 import { IssueDetail } from './components/IssueDetail.tsx';
 import { IssueList } from './components/IssueList.tsx';
 import { Layout } from './components/Layout.tsx';
@@ -14,6 +15,7 @@ export function App() {
       <Routes>
         <Route path="/" element={<IssueList />} />
         <Route path="/issues/:id" element={<IssueDetailWrapper />} />
+        <Route path="/drafts" element={<DraftList />} />
       </Routes>
     </Layout>
   );

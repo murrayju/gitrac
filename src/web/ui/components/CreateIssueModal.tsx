@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Priority, Status } from '../../../core/types.ts';
-import { createIssue, uploadAsset } from '../api.ts';
+import type { Draft } from '../api.ts';
+import { createIssue, deleteDraft, saveDraft, uploadAsset } from '../api.ts';
 import { useConfig } from '../hooks.ts';
 import { Dropdown } from './Dropdown.tsx';
 import { IssueEditor } from './IssueEditor.tsx';
@@ -27,19 +28,32 @@ const STATUS_LABELS: Record<Status, string> = {
   cancelled: 'Cancelled',
 };
 
-export function CreateIssueModal({ onClose }: { onClose: () => void }) {
+export interface CreateIssueModalProps {
+  onClose: (reason?: 'submitted' | 'deleted' | 'saved') => void;
+  initialDraft?: Draft;
+}
+
+export function CreateIssueModal({
+  onClose,
+  initialDraft,
+}: CreateIssueModalProps) {
   const navigate = useNavigate();
   const { config } = useConfig();
-  const [title, setTitle] = useState('');
+  const [title, setTitle] = useState(initialDraft?.title ?? '');
   const [status, setStatus] = useState<Status>(
-    config?.defaultStatus ?? 'backlog',
+    (initialDraft?.status as Status) ?? config?.defaultStatus ?? 'backlog',
   );
-  const [priority, setPriority] = useState<Priority>('none');
-  const [assignee, setAssignee] = useState('');
-  const [labels, setLabels] = useState<string[]>([]);
-  const [description, setDescription] = useState('');
+  const [priority, setPriority] = useState<Priority>(
+    (initialDraft?.priority as Priority) ?? 'none',
+  );
+  const [assignee, setAssignee] = useState(initialDraft?.assignee ?? '');
+  const [labels, setLabels] = useState<string[]>(initialDraft?.labels ?? []);
+  const [description, setDescription] = useState(
+    initialDraft?.description ?? '',
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showConfirm, setShowConfirm] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -47,19 +61,70 @@ export function CreateIssueModal({ onClose }: { onClose: () => void }) {
     insertImage: (url: string, alt: string) => void;
   } | null>(null);
 
+  // Draft filename — reuse from initialDraft or generate new
+  const draftFilenameRef = useRef<string>(
+    initialDraft?.filename ?? `draft-${Date.now()}.json`,
+  );
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasMountedRef = useRef(false);
+
+  const hasContent = title.trim() !== '' || description.trim() !== '';
+
+  // Auto-save draft (debounced 1 second)
+  useEffect(() => {
+    // Skip first render to avoid saving the initial state immediately
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
+
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      if (!hasContent) return;
+      saveDraft(draftFilenameRef.current, {
+        title,
+        description,
+        status,
+        priority,
+        assignee,
+        labels,
+      }).catch(() => {
+        // Silently ignore save failures
+      });
+    }, 1000);
+
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, [title, description, status, priority, assignee, labels, hasContent]);
+
   // Focus title input on mount
   useEffect(() => {
     titleRef.current?.focus();
   }, []);
 
-  // Handle Escape key to close
+  // Attempt to close — show confirmation if there's content
+  const attemptClose = useCallback(() => {
+    if (showConfirm) return;
+    if (hasContent) {
+      setShowConfirm(true);
+    } else {
+      onClose();
+    }
+  }, [hasContent, onClose, showConfirm]);
+
+  // Handle Escape key
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose();
+        if (showConfirm) {
+          setShowConfirm(false);
+        } else {
+          attemptClose();
+        }
       }
     },
-    [onClose],
+    [attemptClose, showConfirm],
   );
 
   useEffect(() => {
@@ -74,6 +139,33 @@ export function CreateIssueModal({ onClose }: { onClose: () => void }) {
       document.body.style.overflow = '';
     };
   }, []);
+
+  async function handleDeleteDraft() {
+    try {
+      await deleteDraft(draftFilenameRef.current);
+    } catch {
+      // ignore
+    }
+    onClose('deleted');
+  }
+
+  async function handleSaveDraft() {
+    if (hasContent) {
+      try {
+        await saveDraft(draftFilenameRef.current, {
+          title,
+          description,
+          status,
+          priority,
+          assignee,
+          labels,
+        });
+      } catch {
+        // ignore
+      }
+    }
+    onClose('saved');
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -90,7 +182,13 @@ export function CreateIssueModal({ onClose }: { onClose: () => void }) {
         assignee: assignee.trim() || undefined,
         description,
       });
-      onClose();
+      // Clean up draft on successful creation
+      try {
+        await deleteDraft(draftFilenameRef.current);
+      } catch {
+        // ignore
+      }
+      onClose('submitted');
       navigate(`/issues/${issue.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create issue');
@@ -113,7 +211,7 @@ export function CreateIssueModal({ onClose }: { onClose: () => void }) {
 
   function handleBackdropClick(e: React.MouseEvent) {
     if (e.target === backdropRef.current) {
-      onClose();
+      attemptClose();
     }
   }
 
@@ -195,7 +293,7 @@ export function CreateIssueModal({ onClose }: { onClose: () => void }) {
         <div className="flex justify-end px-4 pt-3">
           <button
             type="button"
-            onClick={onClose}
+            onClick={attemptClose}
             className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
             aria-label="Close"
           >
@@ -237,7 +335,7 @@ export function CreateIssueModal({ onClose }: { onClose: () => void }) {
             {/* Description — borderless editor */}
             <div className="mb-4 min-h-[100px]">
               <IssueEditor
-                content=""
+                content={description}
                 onChange={setDescription}
                 placeholder="Add description..."
                 borderless
@@ -320,6 +418,59 @@ export function CreateIssueModal({ onClose }: { onClose: () => void }) {
               </button>
             </div>
           </form>
+        </div>
+      </div>
+
+      {/* Close confirmation overlay */}
+      {showConfirm && (
+        <CloseConfirmDialog
+          onDeleteDraft={handleDeleteDraft}
+          onSaveDraft={handleSaveDraft}
+          onCancel={() => setShowConfirm(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function CloseConfirmDialog({
+  onDeleteDraft,
+  onSaveDraft,
+  onCancel,
+}: {
+  onDeleteDraft: () => void;
+  onSaveDraft: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center">
+      <div className="rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-2xl p-6 max-w-sm w-full mx-4">
+        <h3 className="text-sm font-semibold mb-2">You have unsaved changes</h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">
+          Would you like to save this draft before closing?
+        </p>
+        <div className="flex items-center gap-2 justify-end">
+          <button
+            type="button"
+            onClick={onDeleteDraft}
+            className="px-3 py-1.5 text-sm rounded-lg text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/50 transition-colors"
+          >
+            Delete draft
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-3 py-1.5 text-sm rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onSaveDraft}
+            className="px-4 py-1.5 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors"
+          >
+            Save draft
+          </button>
         </div>
       </div>
     </div>

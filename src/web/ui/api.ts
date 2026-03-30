@@ -1,5 +1,16 @@
 import type { Config, Issue, Priority, Status } from '../../core/types.ts';
 
+export interface Draft {
+  filename: string;
+  title: string;
+  description: string;
+  status: string;
+  priority: string;
+  assignee: string;
+  labels: string[];
+  savedAt: string;
+}
+
 export interface GitStatus {
   branch: string;
   defaultBranch: string;
@@ -140,6 +151,26 @@ export async function fetchGitStatus(): Promise<GitStatus> {
 export interface AssetUploadResult {
   filename: string;
   url: string;
+}
+
+export async function fetchDrafts(): Promise<Draft[]> {
+  return request<Draft[]>('/api/drafts');
+}
+
+export async function saveDraft(
+  filename: string,
+  data: Omit<Draft, 'filename' | 'savedAt'>,
+): Promise<Draft> {
+  return request<Draft>(`/api/drafts/${filename}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteDraft(filename: string): Promise<void> {
+  await request<{ ok: boolean }>(`/api/drafts/${filename}`, {
+    method: 'DELETE',
+  });
 }
 
 export async function uploadAsset(file: File): Promise<AssetUploadResult> {

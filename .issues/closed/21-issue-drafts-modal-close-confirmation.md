@@ -8,7 +8,7 @@ labels:
   - feature
 created: '2026-03-30T00:34:48.918Z'
 createdBy: web
-updated: '2026-03-30T01:27:53.507Z'
+updated: '2026-03-30T01:27:58.139Z'
 ---
 
 Currently, when filling out the new issue modal, if you close it (whether accidental or intentional), all your progress is lost. Instead, (debounced) edits should be implicitly persisted in a drafts folder (use a timestamp for the filename). This way, even if you hard-reload the tab, it'll survive.
