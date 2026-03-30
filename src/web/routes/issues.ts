@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Hono } from 'hono';
+import { extractAssetRefs } from '../../core/assets.ts';
 import { ensureLabelColors } from '../../core/config.ts';
 import { parseIssue } from '../../core/issue.ts';
 import { issueFilename } from '../../core/slug.ts';
@@ -48,6 +49,15 @@ async function syncLabelColors(
   ctx.config = freshConfig;
 
   return [join('.issues', 'config.yaml')];
+}
+
+/** Collect .issues/assets/ paths for all assets referenced by the issue */
+function referencedAssetPaths(issue: Issue): string[] {
+  const allContent = [
+    issue.description,
+    ...issue.comments.map((c) => c.body),
+  ].join('\n');
+  return extractAssetRefs(allContent).map((f) => join('.issues', 'assets', f));
 }
 
 export function issueRoutes(ctx: ServerContext): Hono {
@@ -162,12 +172,14 @@ export function issueRoutes(ctx: ServerContext): Hono {
     if (config.git.autoCommit) {
       const prefix = config.git.commitPrefix;
       const message = `${prefix} create #${id} ${issue.title}`;
+      const assetPaths = referencedAssetPaths(issue);
       const hash = await commitIssueChange(
         dir,
         [
           join('.issues', filename),
           join('.issues', 'config.yaml'),
           ...extraFiles,
+          ...assetPaths,
         ],
         message,
       );
@@ -243,6 +255,9 @@ export function issueRoutes(ctx: ServerContext): Hono {
       allFiles.push(oldRelPath);
     }
 
+    const assetPaths = referencedAssetPaths(issue);
+    allFiles.push(...assetPaths);
+
     if (config.git.autoCommit) {
       const prefix = config.git.commitPrefix;
       const message = `${prefix} update #${id} ${issue.title}`;
@@ -312,7 +327,12 @@ export function issueRoutes(ctx: ServerContext): Hono {
     if (config.git.autoCommit) {
       const prefix = config.git.commitPrefix;
       const message = `${prefix} comment on #${id} ${issue.title}`;
-      const hash = await commitIssueChange(dir, [relPath], message);
+      const assetPaths = referencedAssetPaths(issue);
+      const hash = await commitIssueChange(
+        dir,
+        [relPath, ...assetPaths],
+        message,
+      );
       if (hash) {
         amendTracker.record(id, hash);
       }
@@ -375,7 +395,12 @@ export function issueRoutes(ctx: ServerContext): Hono {
     if (config.git.autoCommit) {
       const prefix = config.git.commitPrefix;
       const message = `${prefix} edit comment on #${id} ${issue.title}`;
-      const hash = await commitIssueChange(dir, [relPath], message);
+      const assetPaths = referencedAssetPaths(issue);
+      const hash = await commitIssueChange(
+        dir,
+        [relPath, ...assetPaths],
+        message,
+      );
       if (hash) {
         amendTracker.record(id, hash);
       }
@@ -459,9 +484,14 @@ export function issueRoutes(ctx: ServerContext): Hono {
     if (config.git.autoCommit) {
       const prefix = config.git.commitPrefix;
       const message = `${prefix} close #${id} ${issue.title}`;
+      const assetPaths = referencedAssetPaths(issue);
       const hash = await commitIssueChange(
         dir,
-        [join('.issues', filename), join('.issues', 'closed', filename)],
+        [
+          join('.issues', filename),
+          join('.issues', 'closed', filename),
+          ...assetPaths,
+        ],
         message,
       );
       if (hash) {
@@ -503,9 +533,14 @@ export function issueRoutes(ctx: ServerContext): Hono {
     if (config.git.autoCommit) {
       const prefix = config.git.commitPrefix;
       const message = `${prefix} reopen #${id} ${issue.title}`;
+      const assetPaths = referencedAssetPaths(issue);
       const hash = await commitIssueChange(
         dir,
-        [join('.issues', filename), join('.issues', 'closed', filename)],
+        [
+          join('.issues', filename),
+          join('.issues', 'closed', filename),
+          ...assetPaths,
+        ],
         message,
       );
       if (hash) {
