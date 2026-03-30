@@ -1,14 +1,14 @@
 ---
 id: 23
 title: Manage whitespace after attached images
-status: backlog
+status: in_progress
 priority: low
-assignee: ''
+assignee: Justin Murray
 labels:
   - bug
 created: '2026-03-30T00:46:45.111Z'
 createdBy: web
-updated: '2026-03-30T00:46:45.111Z'
+updated: '2026-03-30T01:33:24.078Z'
 ---
 
 We always render attached images on their own line. But the resulting markdown file will have no whitespace between the image the the following text, unless the user enters an additional newline.
