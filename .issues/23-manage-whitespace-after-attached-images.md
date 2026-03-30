@@ -1,0 +1,22 @@
+---
+id: 23
+title: Manage whitespace after attached images
+status: backlog
+priority: low
+assignee: ''
+labels:
+  - bug
+created: '2026-03-30T00:46:45.111Z'
+createdBy: web
+updated: '2026-03-30T00:46:45.111Z'
+---
+
+We always render attached images on their own line. But the resulting markdown file will have no whitespace between the image the the following text, unless the user enters an additional newline.
+
+Example: editor looks like this
+
+![image.png](/api/issues/assets/Npdi-e0xQ5kocRgv8Mw1b.png)And the file looks like this
+
+![image.png](/api/issues/assets/Xhaw8jAamH3QZn7WD3BvO.png)
+
+I'm concerned that this might not render well in some markdown viewers. The whitespace in the file should better reflect what the user sees in the editor.
