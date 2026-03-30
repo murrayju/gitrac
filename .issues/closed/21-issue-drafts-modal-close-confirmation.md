@@ -1,14 +1,14 @@
 ---
 id: 21
 title: 'Issue drafts, modal close confirmation'
-status: in_progress
+status: done
 priority: medium
 assignee: Justin Murray
 labels:
   - feature
 created: '2026-03-30T00:34:48.918Z'
 createdBy: web
-updated: '2026-03-30T01:26:38.256Z'
+updated: '2026-03-30T01:26:42.006Z'
 ---
 
 Currently, when filling out the new issue modal, if you close it (whether accidental or intentional), all your progress is lost. Instead, (debounced) edits should be implicitly persisted in a drafts folder (use a timestamp for the filename). This way, even if you hard-reload the tab, it'll survive.
