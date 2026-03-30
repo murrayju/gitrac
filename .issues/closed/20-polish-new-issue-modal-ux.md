@@ -13,7 +13,7 @@ updated: '2026-03-30T01:20:23.527Z'
 
 I'd like to give the new issue modal a more polished look and feel. Here's the Linear modal, for reference:
 
-![image.png](/api/issues/assets/oU6loS-SP2_5R3pzXo0Q5.png)Things I like:
+![image.png](/.issues/assets/oU6loS-SP2_5R3pzXo0Q5.png)Things I like:
 
 - Lack of border around title and description
 
@@ -31,11 +31,11 @@ I'd like to give the new issue modal a more polished look and feel. Here's the L
 
 - Same label picker as on issue page. Multiple labels collapse in the pill, are shown on hover
 
-  ![image.png](/api/issues/assets/qu-uqmewqJBbRoIWk69dl.png)
+  ![image.png](/.issues/assets/qu-uqmewqJBbRoIWk69dl.png)
 
-![image.png](/api/issues/assets/EnBeimmxbO-5A3-rd_qpe.png)Here is our modal, for reference
+![image.png](/.issues/assets/EnBeimmxbO-5A3-rd_qpe.png)Here is our modal, for reference
 
-![image.png](/api/issues/assets/IW0COsqnvKt7RMRWxzops.png)
+![image.png](/.issues/assets/IW0COsqnvKt7RMRWxzops.png)
 
 ---
 

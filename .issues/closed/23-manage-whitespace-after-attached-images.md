@@ -15,9 +15,9 @@ We always render attached images on their own line. But the resulting markdown f
 
 Example: editor looks like this
 
-![image.png](/api/issues/assets/Npdi-e0xQ5kocRgv8Mw1b.png)And the file looks like this
+![image.png](/.issues/assets/Npdi-e0xQ5kocRgv8Mw1b.png)And the file looks like this
 
-![image.png](/api/issues/assets/Xhaw8jAamH3QZn7WD3BvO.png)
+![image.png](/.issues/assets/Xhaw8jAamH3QZn7WD3BvO.png)
 
 I'm concerned that this might not render well in some markdown viewers. The whitespace in the file should better reflect what the user sees in the editor.
 

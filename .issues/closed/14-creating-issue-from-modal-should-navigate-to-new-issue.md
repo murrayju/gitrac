@@ -20,6 +20,6 @@ When submitting a new issue from the modal, it should immediately navigate to th
 
 Actually, upon further inspection, this seems to be partially implemented but buggy. Submitting does go to the new route, and the title updates, but the issue description remains from the prior view.
 
-![image.png](/api/issues/assets/kTMoYR7M2qNpuIGlrOSeq.png)(see the title from #14, with the description from #13)
+![image.png](/.issues/assets/kTMoYR7M2qNpuIGlrOSeq.png)(see the title from #14, with the description from #13)
 
 We may need to use `key` on react components to force rerendering, or something.

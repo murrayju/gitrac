@@ -6,7 +6,7 @@ import { cors } from 'hono/cors';
 import type { Config } from '../core/types.ts';
 import { AmendTracker } from '../git/amend-tracker.ts';
 import { getBranchWarning } from '../git/status.ts';
-import { assetRoutes } from './routes/assets.ts';
+import { assetRoutes, serveAsset } from './routes/assets.ts';
 import { configRoutes } from './routes/config.ts';
 import { draftRoutes } from './routes/drafts.ts';
 import { eventsRoute } from './routes/events.ts';
@@ -82,6 +82,10 @@ export function createApp(ctx: ServerContext): Hono {
   app.route('/api', configRoutes(ctx));
   app.route('/api', gitRoutes(ctx));
   app.route('/api', eventsRoute(ctx));
+
+  // Serve issue assets at their repo path (/.issues/assets/:filename)
+  // so markdown image URLs work in both the web UI and on GitHub.
+  app.get('/.issues/assets/:filename', serveAsset(ctx));
 
   // Static file serving for built UI assets.
   // Try multiple locations: relative to executable (compiled binary), then cwd.

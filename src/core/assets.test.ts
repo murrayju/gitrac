@@ -4,7 +4,7 @@ import { extractAssetRefs } from './assets.ts';
 describe('extractAssetRefs', () => {
   test('extracts image refs from markdown', () => {
     const md =
-      '![image.png](/api/issues/assets/abc123.png)\n\nSome text\n\n![other](/api/issues/assets/def456.jpg)';
+      '![image.png](/.issues/assets/abc123.png)\n\nSome text\n\n![other](/.issues/assets/def456.jpg)';
     expect(extractAssetRefs(md)).toEqual(['abc123.png', 'def456.jpg']);
   });
 
@@ -13,13 +13,12 @@ describe('extractAssetRefs', () => {
   });
 
   test('deduplicates refs', () => {
-    const md =
-      '![a](/api/issues/assets/abc.png) ![b](/api/issues/assets/abc.png)';
+    const md = '![a](/.issues/assets/abc.png) ![b](/.issues/assets/abc.png)';
     expect(extractAssetRefs(md)).toEqual(['abc.png']);
   });
 
   test('handles inline refs', () => {
-    const md = 'See /api/issues/assets/foo.webp for details';
+    const md = 'See /.issues/assets/foo.webp for details';
     expect(extractAssetRefs(md)).toEqual(['foo.webp']);
   });
 });

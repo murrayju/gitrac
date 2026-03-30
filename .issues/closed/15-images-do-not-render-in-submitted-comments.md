@@ -13,4 +13,4 @@ updated: '2026-03-29T18:44:19.915Z'
 
 While the comment editor does allow for pasting images, and these look nice while editing - the images do not render after the comment is submitted.
 
-![image.png](/api/issues/assets/FkfSkg-uPkHzY8b0KlLVG.png)
+![image.png](/.issues/assets/FkfSkg-uPkHzY8b0KlLVG.png)

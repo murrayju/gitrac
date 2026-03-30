@@ -19,6 +19,6 @@ code blocks
 
 Can be hard to distinguish from normal text.
 
-![image.png](/api/issues/assets/6eDAP4QuD9P-mbl6vrlf2.png)These should have a background color and subtle border applied to help them stand out. Mimic how this looks in Linear
+![image.png](/.issues/assets/6eDAP4QuD9P-mbl6vrlf2.png)These should have a background color and subtle border applied to help them stand out. Mimic how this looks in Linear
 
-![image.png](/api/issues/assets/ZpQI0XZLQsmyQPVpyhsI5.png)
+![image.png](/.issues/assets/ZpQI0XZLQsmyQPVpyhsI5.png)

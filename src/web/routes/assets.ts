@@ -30,6 +30,38 @@ function assetsDir(dir: string): string {
   return join(dir, '.issues', 'assets');
 }
 
+/** Serve a single asset file by filename. Shared by API and direct routes. */
+export function serveAsset(
+  ctx: ServerContext,
+): (c: { req: { param: (name: string) => string } }) => Promise<Response> {
+  return async (c) => {
+    const { dir } = ctx;
+    const filename = c.req.param('filename');
+
+    // Prevent path traversal
+    if (filename.includes('/') || filename.includes('..')) {
+      return Response.json({ error: 'Invalid filename' }, { status: 400 });
+    }
+
+    const filePath = join(assetsDir(dir), filename);
+    const file = Bun.file(filePath);
+
+    if (!(await file.exists())) {
+      return Response.json({ error: 'Asset not found' }, { status: 404 });
+    }
+
+    const ext = extname(filename).toLowerCase();
+    const contentType = MIME_TYPES[ext] ?? 'application/octet-stream';
+
+    return new Response(file, {
+      headers: {
+        'Content-Type': contentType,
+        'Cache-Control': 'public, max-age=31536000, immutable',
+      },
+    });
+  };
+}
+
 export function assetRoutes(ctx: ServerContext): Hono {
   const app = new Hono();
 
@@ -60,37 +92,12 @@ export function assetRoutes(ctx: ServerContext): Hono {
     const buffer = await file.arrayBuffer();
     await Bun.write(dest, buffer);
 
-    const url = `/api/issues/assets/${filename}`;
+    const url = `/.issues/assets/${filename}`;
     return c.json({ filename, url }, 201);
   });
 
-  // GET /issues/assets/:filename — serve an image
-  app.get('/issues/assets/:filename', async (c) => {
-    const { dir } = ctx;
-    const filename = c.req.param('filename');
-
-    // Prevent path traversal
-    if (filename.includes('/') || filename.includes('..')) {
-      return c.json({ error: 'Invalid filename' }, 400);
-    }
-
-    const filePath = join(assetsDir(dir), filename);
-    const file = Bun.file(filePath);
-
-    if (!(await file.exists())) {
-      return c.json({ error: 'Asset not found' }, 404);
-    }
-
-    const ext = extname(filename).toLowerCase();
-    const contentType = MIME_TYPES[ext] ?? 'application/octet-stream';
-
-    return new Response(file, {
-      headers: {
-        'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=31536000, immutable',
-      },
-    });
-  });
+  // GET /issues/assets/:filename — serve an image (legacy /api path)
+  app.get('/issues/assets/:filename', serveAsset(ctx));
 
   return app;
 }
