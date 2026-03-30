@@ -3,7 +3,13 @@ import Image from '@tiptap/extension-image';
 import Placeholder from '@tiptap/extension-placeholder';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import { useCallback, useEffect, useRef } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+} from 'react';
 import { Markdown } from 'tiptap-markdown';
 import { ImageUpload } from '../lib/image-upload-plugin.ts';
 
@@ -12,17 +18,29 @@ function getMarkdown(editor: Editor): string {
   return (editor.storage as any).markdown.getMarkdown() as string;
 }
 
-export function IssueEditor({
-  content,
-  onChange,
-  placeholder = 'Describe the issue...',
-  editable = true,
-}: {
-  content: string;
-  onChange?: (markdown: string) => void;
-  placeholder?: string;
-  editable?: boolean;
-}) {
+export interface IssueEditorHandle {
+  insertImage: (url: string, alt: string) => void;
+}
+
+export const IssueEditor = forwardRef<
+  IssueEditorHandle,
+  {
+    content: string;
+    onChange?: (markdown: string) => void;
+    placeholder?: string;
+    editable?: boolean;
+    borderless?: boolean;
+  }
+>(function IssueEditor(
+  {
+    content,
+    onChange,
+    placeholder = 'Describe the issue...',
+    editable = true,
+    borderless = false,
+  },
+  ref,
+) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -59,6 +77,18 @@ export function IssueEditor({
     },
   });
 
+  useImperativeHandle(
+    ref,
+    () => ({
+      insertImage(url: string, alt: string) {
+        if (editor) {
+          editor.chain().focus().setImage({ src: url, alt }).run();
+        }
+      },
+    }),
+    [editor],
+  );
+
   // Update editable state
   useEffect(() => {
     if (editor && editor.isEditable !== editable) {
@@ -73,9 +103,13 @@ export function IssueEditor({
     };
   }, []);
 
+  const wrapperClasses = borderless
+    ? ''
+    : 'rounded border border-gray-200 bg-gray-50/50 dark:border-gray-800 dark:bg-gray-900/50';
+
   return (
-    <div className="rounded border border-gray-200 bg-gray-50/50 dark:border-gray-800 dark:bg-gray-900/50">
+    <div className={wrapperClasses}>
       <EditorContent editor={editor} />
     </div>
   );
-}
+});
