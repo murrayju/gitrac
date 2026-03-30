@@ -83,7 +83,17 @@ This sets `assignee` to your git user and `status` to `in_progress`, and commits
 
 Write code, run tests — the normal development workflow. The issue file in `.issues/` serves as your spec.
 
-### 4. Close with the code change
+### 4. Document what was done
+
+**Always add a comment before closing.** The comment should read like a PR description:
+
+```bash
+gitrac comment <id> "Summary of changes: what was fixed/added, why, files affected, and any notable decisions."
+```
+
+The comment becomes part of the issue's permanent history. Write it for someone who needs to understand what happened without reading every diff line.
+
+### 5. Close with the code change
 
 This is the key pattern. Close the issue **in the same commit** as the code change:
 
@@ -91,7 +101,7 @@ This is the key pattern. Close the issue **in the same commit** as the code chan
 # Close the issue without auto-committing
 gitrac close <id> --no-commit
 
-# Stage everything together: code changes + the closed issue file
+# Stage everything together: code changes + comment + the closed issue file
 git add -A
 
 # One atomic commit
@@ -100,7 +110,7 @@ git commit -m "fix: resolve the problem (#<id>)"
 
 This creates a single commit that contains both the code fix and the issue state change. Anyone looking at the commit sees exactly what was fixed and why.
 
-### 5. Verify
+### 6. Verify
 
 ```bash
 gitrac ls              # issue should no longer appear
@@ -141,6 +151,7 @@ This is useful for programmatic decision-making about which issue to work on.
 | Editing issue files directly | Bypasses git auto-commit, may produce invalid format | Use the CLI |
 | Forgetting `--no-commit` on close | Creates two commits instead of one | Close with `--no-commit`, then `git add -A && git commit` |
 | Working on closed issues | They live in `closed/` and are done | Check `gitrac show <id>` first |
+| Closing without a comment | Loses context about what was done and why | Always `gitrac comment <id> "..."` before closing |
 
 ## Creating Issues
 
