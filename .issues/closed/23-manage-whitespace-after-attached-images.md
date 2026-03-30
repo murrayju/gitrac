@@ -8,7 +8,7 @@ labels:
   - bug
 created: '2026-03-30T00:46:45.111Z'
 createdBy: web
-updated: '2026-03-30T01:38:05.385Z'
+updated: '2026-03-30T01:38:09.415Z'
 ---
 
 We always render attached images on their own line. But the resulting markdown file will have no whitespace between the image the the following text, unless the user enters an additional newline.
