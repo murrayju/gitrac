@@ -1,14 +1,14 @@
 ---
 id: 20
 title: Polish new issue modal ux
-status: backlog
+status: in_progress
 priority: medium
-assignee: ''
+assignee: Justin Murray
 labels:
   - enhancement
 created: '2026-03-30T00:17:28.574Z'
 createdBy: web
-updated: '2026-03-30T00:17:41.910Z'
+updated: '2026-03-30T01:13:43.101Z'
 ---
 
 I'd like to give the new issue modal a more polished look and feel. Here's the Linear modal, for reference:
