@@ -249,7 +249,10 @@ export function issueRoutes(ctx: ServerContext): Hono {
       const canAmend = await amendTracker.canAmend(dir, id);
       if (canAmend) {
         const hash = await amendTracker.amend(dir, allFiles, message);
-        amendTracker.record(id, hash);
+        const dropped = await amendTracker.dropIfNoOp(dir);
+        if (!dropped) {
+          amendTracker.record(id, hash);
+        }
       } else {
         const hash = await commitIssueChange(dir, allFiles, message);
         if (hash) {

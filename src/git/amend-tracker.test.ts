@@ -106,4 +106,157 @@ describe('AmendTracker', () => {
     const tracker = new AmendTracker();
     expect(await tracker.canAmend(dir, 1)).toBe(false);
   });
+
+  describe('dropIfNoOp', () => {
+    // Helper: set up repo with an issue file committed as the "base" state.
+    // Returns the base version string.
+    async function setupIssueBase(git: ReturnType<typeof simpleGit>) {
+      const base = [
+        '---',
+        'id: 1',
+        'title: Test Issue',
+        'updated: 2026-03-28T12:00:00.000Z',
+        '---',
+        '',
+        'Description here.',
+      ].join('\n');
+      await Bun.write(join(dir, 'issue.md'), base);
+      await git.add('.');
+      await git.commit('add issue');
+      return base;
+    }
+
+    test('drops commit when only updated: timestamp changed', async () => {
+      const tracker = new AmendTracker();
+      const git = simpleGit(dir);
+
+      const base = await setupIssueBase(git);
+
+      // Simulate a web edit: change title (creates a new commit)
+      const v2 = base
+        .replace('title: Test Issue', 'title: Changed Title')
+        .replace(
+          'updated: 2026-03-28T12:00:00.000Z',
+          'updated: 2026-03-28T13:00:00.000Z',
+        );
+      await Bun.write(join(dir, 'issue.md'), v2);
+      await git.add('.');
+      const editCommit = await git.commit('edit issue');
+      tracker.record(1, editCommit.commit);
+
+      // User reverts the title, but timestamp changes again
+      const v3 = base.replace(
+        'updated: 2026-03-28T12:00:00.000Z',
+        'updated: 2026-03-28T14:30:00.000Z',
+      );
+      await Bun.write(join(dir, 'issue.md'), v3);
+      await tracker.amend(dir, ['issue.md'], 'update issue');
+
+      const dropped = await tracker.dropIfNoOp(dir);
+      expect(dropped).toBe(true);
+
+      // Commit should be gone — back to initial + add issue
+      const logAfter = await git.log();
+      expect(logAfter.total).toBe(2);
+      expect(logAfter.latest?.message).toBe('add issue');
+    });
+
+    test('does NOT drop commit with real content changes', async () => {
+      const tracker = new AmendTracker();
+      const git = simpleGit(dir);
+
+      const base = await setupIssueBase(git);
+
+      // Simulate a web edit with a real change
+      const v2 = base
+        .replace('Description here.', 'Updated description.')
+        .replace(
+          'updated: 2026-03-28T12:00:00.000Z',
+          'updated: 2026-03-28T14:30:00.000Z',
+        );
+      await Bun.write(join(dir, 'issue.md'), v2);
+      await git.add('.');
+      const editCommit = await git.commit('edit issue');
+      tracker.record(1, editCommit.commit);
+
+      // Amend (timestamp changes again but content change persists)
+      const v3 = v2.replace(
+        'updated: 2026-03-28T14:30:00.000Z',
+        'updated: 2026-03-28T15:00:00.000Z',
+      );
+      await Bun.write(join(dir, 'issue.md'), v3);
+      await tracker.amend(dir, ['issue.md'], 'update issue');
+
+      const dropped = await tracker.dropIfNoOp(dir);
+      expect(dropped).toBe(false);
+
+      // Commit should still be there
+      const log = await git.log();
+      expect(log.total).toBe(3);
+      expect(log.latest?.message).toBe('update issue');
+    });
+
+    test('clears tracker state after dropping', async () => {
+      const tracker = new AmendTracker();
+      const git = simpleGit(dir);
+
+      const base = await setupIssueBase(git);
+
+      // Create an edit commit, then revert everything except timestamp
+      const v2 = base
+        .replace('title: Test Issue', 'title: Changed Title')
+        .replace(
+          'updated: 2026-03-28T12:00:00.000Z',
+          'updated: 2026-03-28T13:00:00.000Z',
+        );
+      await Bun.write(join(dir, 'issue.md'), v2);
+      await git.add('.');
+      const editCommit = await git.commit('edit issue');
+      tracker.record(1, editCommit.commit);
+
+      const v3 = base.replace(
+        'updated: 2026-03-28T12:00:00.000Z',
+        'updated: 2026-03-28T14:30:00.000Z',
+      );
+      await Bun.write(join(dir, 'issue.md'), v3);
+      await tracker.amend(dir, ['issue.md'], 'update issue');
+
+      await tracker.dropIfNoOp(dir);
+
+      // Tracker state should be cleared — canAmend should return false
+      expect(await tracker.canAmend(dir, 1)).toBe(false);
+    });
+
+    test('working tree is clean after dropping', async () => {
+      const tracker = new AmendTracker();
+      const git = simpleGit(dir);
+
+      const base = await setupIssueBase(git);
+
+      // Create edit commit, then revert to only-timestamp diff
+      const v2 = base
+        .replace('title: Test Issue', 'title: Changed Title')
+        .replace(
+          'updated: 2026-03-28T12:00:00.000Z',
+          'updated: 2026-03-28T13:00:00.000Z',
+        );
+      await Bun.write(join(dir, 'issue.md'), v2);
+      await git.add('.');
+      const editCommit = await git.commit('edit issue');
+      tracker.record(1, editCommit.commit);
+
+      const v3 = base.replace(
+        'updated: 2026-03-28T12:00:00.000Z',
+        'updated: 2026-03-28T14:30:00.000Z',
+      );
+      await Bun.write(join(dir, 'issue.md'), v3);
+      await tracker.amend(dir, ['issue.md'], 'update issue');
+
+      await tracker.dropIfNoOp(dir);
+
+      // Working tree should be clean
+      const status = await git.status();
+      expect(status.isClean()).toBe(true);
+    });
+  });
 });

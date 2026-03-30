@@ -62,4 +62,45 @@ export class AmendTracker {
     const result = await git.commit(message, undefined, { '--amend': null });
     return result.commit;
   }
+
+  /**
+   * After amending, check if the commit is effectively a no-op
+   * (only the `updated` timestamp changed). If so, drop the commit
+   * by resetting HEAD back one.
+   */
+  async dropIfNoOp(dir: string): Promise<boolean> {
+    const git = simpleGit(dir);
+
+    // Get the diff between HEAD and its parent
+    const diff = await git.diff(['HEAD~1', 'HEAD']);
+
+    // If there's no diff at all, drop
+    if (!diff.trim()) {
+      await git.reset(['--hard', 'HEAD~1']);
+      this.clear();
+      return true;
+    }
+
+    // Check if all changed lines are just `updated:` timestamp changes
+    const lines = diff.split('\n');
+    const changedLines = lines.filter(
+      (l) =>
+        (l.startsWith('+') || l.startsWith('-')) &&
+        !l.startsWith('+++') &&
+        !l.startsWith('---'),
+    );
+
+    // Every changed line should be an `updated:` timestamp line
+    const isNoOp =
+      changedLines.length > 0 &&
+      changedLines.every((l) => /^[+-]updated:\s/.test(l));
+
+    if (isNoOp) {
+      await git.reset(['--hard', 'HEAD~1']);
+      this.clear();
+      return true;
+    }
+
+    return false;
+  }
 }
