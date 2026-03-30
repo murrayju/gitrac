@@ -22,6 +22,7 @@ export function registerEditCommand(program: Command): void {
     .option('-p, --priority <priority>', 'New priority')
     .option('-a, --assignee <assignee>', 'New assignee')
     .option('-l, --labels <labels>', 'New labels (comma-separated)')
+    .option('-c, --comment <text>', 'Add a comment with this edit')
     .action(
       async (
         idStr: string,
@@ -31,6 +32,7 @@ export function registerEditCommand(program: Command): void {
           priority?: string;
           assignee?: string;
           labels?: string;
+          comment?: string;
         },
       ) => {
         const globalOpts = program.opts();
@@ -72,7 +74,27 @@ export function registerEditCommand(program: Command): void {
           issue.labels = options.labels.split(',').map((l) => l.trim());
         }
 
-        issue.updated = new Date().toISOString();
+        const now = new Date().toISOString();
+        issue.updated = now;
+
+        if (options.comment) {
+          // Resolve author for comment
+          let author = globalOpts.author || '';
+          if (!author) {
+            try {
+              const { default: simpleGit } = await import('simple-git');
+              const git = simpleGit(dir);
+              author = (await git.getConfig('user.name')).value || 'unknown';
+            } catch {
+              author = 'unknown';
+            }
+          }
+          issue.comments.push({
+            author,
+            timestamp: now,
+            body: options.comment,
+          });
+        }
 
         const nowClosed = isClosedStatus(issue.status);
         const newFilename = await writeIssue(dir, issue, {

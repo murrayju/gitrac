@@ -15,7 +15,8 @@ export function registerReopenCommand(program: Command): void {
   program
     .command('reopen <id>')
     .description('Reopen a closed issue')
-    .action(async (idStr: string) => {
+    .option('-c, --comment <text>', 'Add a comment when reopening')
+    .action(async (idStr: string, options: { comment?: string }) => {
       const globalOpts = program.opts();
       const dir = globalOpts.dir || process.cwd();
 
@@ -33,6 +34,18 @@ export function registerReopenCommand(program: Command): void {
         process.exit(1);
       }
 
+      // Resolve author for comments
+      let author = globalOpts.author || '';
+      if (!author) {
+        try {
+          const { default: simpleGit } = await import('simple-git');
+          const git = simpleGit(dir);
+          author = (await git.getConfig('user.name')).value || 'unknown';
+        } catch {
+          author = 'unknown';
+        }
+      }
+
       try {
         // Move from closed to open first
         await moveToReopen(dir, id);
@@ -40,7 +53,17 @@ export function registerReopenCommand(program: Command): void {
         // Read, update status, write
         const issue = await readIssue(dir, id);
         issue.status = 'backlog';
-        issue.updated = new Date().toISOString();
+        const now = new Date().toISOString();
+        issue.updated = now;
+
+        if (options.comment) {
+          issue.comments.push({
+            author,
+            timestamp: now,
+            body: options.comment,
+          });
+        }
+
         await writeIssue(dir, issue);
 
         const format = (globalOpts.output || 'human') as OutputFormat;

@@ -16,7 +16,8 @@ export function registerClaimCommand(program: Command): void {
   program
     .command('claim <id>')
     .description('Claim an issue (assign to yourself and set in_progress)')
-    .action(async (idStr: string) => {
+    .option('-c, --comment <text>', 'Add a comment when claiming')
+    .action(async (idStr: string, options: { comment?: string }) => {
       const globalOpts = program.opts();
       const dir = globalOpts.dir || process.cwd();
 
@@ -58,7 +59,16 @@ export function registerClaimCommand(program: Command): void {
         const issue = await readIssue(dir, id);
         issue.assignee = author;
         issue.status = 'in_progress';
-        issue.updated = new Date().toISOString();
+        const now = new Date().toISOString();
+        issue.updated = now;
+
+        if (options.comment) {
+          issue.comments.push({
+            author,
+            timestamp: now,
+            body: options.comment,
+          });
+        }
 
         // Claiming always sets in_progress (not a closed status), so write to open dir
         const filename = await writeIssue(dir, issue);

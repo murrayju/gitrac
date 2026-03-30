@@ -57,6 +57,7 @@ When installed as a binary, replace `./bun index.ts` with `gitrac` in all exampl
 | `gitrac claim <id>` | Assign to yourself + set in_progress |
 | `gitrac close <id>` | Close an issue (moves to closed/) |
 | `gitrac close <id> --no-commit` | Close without committing (for atomic commits) |
+| `gitrac close <id> -c "text"` | Close with an inline comment |
 | `gitrac comment <id> "text"` | Add a comment |
 | `gitrac edit <id> -s todo` | Update status |
 | `gitrac ls -o json` | Machine-readable output |
@@ -85,23 +86,29 @@ Write code, run tests — the normal development workflow. The issue file in `.i
 
 ### 4. Document what was done
 
-**Always add a comment before closing.** The comment should read like a PR description:
+**Always add a comment before closing.** The comment should read like a PR description. You can either use the standalone comment command or the `--comment` / `-c` flag on close:
 
 ```bash
+# Standalone comment
 gitrac comment <id> "Summary of changes: what was fixed/added, why, files affected, and any notable decisions."
+
+# Or inline with close (preferred for atomic workflows)
+gitrac close <id> --no-commit --comment "Summary of changes"
 ```
 
 The comment becomes part of the issue's permanent history. Write it for someone who needs to understand what happened without reading every diff line.
+
+The `--comment` / `-c` flag is also available on `claim`, `edit`, and `reopen`.
 
 ### 5. Close with the code change
 
 This is the key pattern. Close the issue **in the same commit** as the code change:
 
 ```bash
-# Close the issue without auto-committing
-gitrac close <id> --no-commit
+# Close the issue with a comment, without auto-committing
+gitrac close <id> --no-commit -c "Summary of what was done"
 
-# Stage everything together: code changes + comment + the closed issue file
+# Stage everything together: code changes + the closed issue file
 git add -A
 
 # One atomic commit

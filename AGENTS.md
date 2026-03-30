@@ -131,7 +131,7 @@ Comment body here. Headings in comments are escaped with `\#`.
 1. Run `./gitrac ls` to see open issues
 2. Pick one and claim it: `./gitrac claim <id>`
 3. Implement the fix/feature
-4. Add a comment summarizing what was done: `./gitrac comment <id> "text"` — write it like a PR description (what changed, why, files affected, notable decisions)
-5. Close the issue: `./gitrac close <id> --no-commit` (use `--no-commit` so you can commit the code changes, comment, and close together)
+4. Add a comment summarizing what was done: `./gitrac comment <id> "text"` — or use `--comment` flag on close
+5. Close the issue: `./gitrac close <id> --no-commit --comment "summary of changes"` (use `--no-commit` so you can commit the code changes, comment, and close together)
 6. Commit everything together (code + issue changes) with a descriptive message referencing the issue number
 7. Run `./bun run check` before pushing
