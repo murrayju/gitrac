@@ -8,7 +8,7 @@ labels:
   - enhancement
 created: '2026-03-30T00:17:28.574Z'
 createdBy: web
-updated: '2026-03-30T01:13:43.101Z'
+updated: '2026-03-30T01:20:20.087Z'
 ---
 
 I'd like to give the new issue modal a more polished look and feel. Here's the Linear modal, for reference:
@@ -36,3 +36,28 @@ I'd like to give the new issue modal a more polished look and feel. Here's the L
 ![image.png](/api/issues/assets/EnBeimmxbO-5A3-rd_qpe.png)Here is our modal, for reference
 
 ![image.png](/api/issues/assets/IW0COsqnvKt7RMRWxzops.png)
+
+---
+
+### Justin Murray — 2026-03-30T01:20:20.087Z
+
+Redesigned the CreateIssueModal with a Linear-inspired look and feel.
+
+Changes to CreateIssueModal.tsx:
+- Removed 'New Issue' header, replaced with just a close (x) SVG button in top-right
+- Borderless title input (no underline/border, clean large placeholder text)
+- Borderless description editor via new borderless prop on IssueEditor
+- Bottom pill bar with status (StatusBadge+Dropdown), priority (PriorityBadge+Dropdown), assignee (new AssigneePill component with click-to-edit), labels (LabelPicker with smart collapse: 0 labels shows icon pill, 1 shows badge, 2+ shows count with hover tooltip)
+- Paperclip attachment button opens file dialog, uploads via uploadAsset, inserts into editor
+- Rounded submit button (rounded-full)
+- Removed Cancel button (x is sufficient)
+- Larger border radius on modal (rounded-xl)
+- Removed all section labels (Priority, Assignee, etc.)
+- Added status field (defaults to config.defaultStatus)
+
+Changes to IssueEditor.tsx:
+- Converted to forwardRef with IssueEditorHandle interface exposing insertImage(url, alt)
+- Added borderless prop to remove border/background wrapper
+- Backward-compatible with existing IssueDetail usage
+
+Files affected: src/web/ui/components/CreateIssueModal.tsx, src/web/ui/components/IssueEditor.tsx
