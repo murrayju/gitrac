@@ -7,15 +7,20 @@ A CLI tool and web UI for managing project issues as markdown files in a git rep
 This project uses gitrac to track its own issues. The `.issues/` directory contains the active issues for this project. Use the gitrac CLI (or web UI) to view, create, and manage them.
 
 ```bash
-./bun index.ts ls                    # list open issues
-./bun index.ts show <id>             # view an issue
-./bun index.ts create -t "title"     # create an issue
-./bun index.ts claim <id>            # assign to yourself + set in_progress
-./bun index.ts close <id>            # close an issue
-./bun index.ts                       # start the web UI at http://localhost:3000
+./gitrac ls                    # list open issues
+./gitrac show <id>             # view an issue
+./gitrac create -t "title"     # create an issue
+./gitrac claim <id>            # assign to yourself + set in_progress
+./gitrac comment <id> -b "text" # add a comment
+./gitrac close <id>            # close an issue
+./gitrac                       # start the web UI at http://localhost:3000
 ```
 
 When working on a task, claim the corresponding issue first. Close it in the same commit that implements the fix when possible.
+
+### Slash Commands
+
+Use `/work-backlog` in OpenCode to automatically work through the issue backlog in order. See `.opencode/commands/` for details.
 
 ## Project Structure
 
@@ -53,13 +58,13 @@ No global installs required. The `./bun` script auto-downloads the pinned Bun ve
 ### Running
 
 ```bash
-./bun index.ts <command>           # run CLI directly
-./bun index.ts                     # start web server on :3000
+./gitrac <command>                 # run CLI directly
+./gitrac                           # start web server on :3000
 ```
 
 For web UI development with hot reload, run both:
 ```bash
-./bun index.ts                                    # API server on :3000
+./gitrac                                          # API server on :3000
 ./bun run vite --config vite.config.ts            # Vite dev server on :5173
 ```
 
@@ -123,8 +128,8 @@ Comment body here. Headings in comments are escaped with `\#`.
 
 ## Working on Issues
 
-1. Run `./bun index.ts ls` to see open issues
-2. Pick one and claim it: `./bun index.ts claim <id>`
+1. Run `./gitrac ls` to see open issues
+2. Pick one and claim it: `./gitrac claim <id>`
 3. Implement the fix/feature
-4. Close the issue: `./bun index.ts close <id>` (ideally in the same commit as the code change, using `--no-commit` on the close and committing everything together)
+4. Close the issue: `./gitrac close <id>` (ideally in the same commit as the code change, using `--no-commit` on the close and committing everything together)
 5. Run `./bun run check` before pushing
