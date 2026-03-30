@@ -7,6 +7,7 @@ import { Markdown } from 'tiptap-markdown';
 import type { Comment } from '../../../core/types.ts';
 import { deleteComment, updateComment } from '../api.ts';
 import { ImageUpload } from '../lib/image-upload-plugin.ts';
+import { getEditorMarkdown } from '../lib/markdown.ts';
 import { relativeTime } from '../lib/time.ts';
 import { MarkdownContent } from './MarkdownContent.tsx';
 
@@ -132,8 +133,7 @@ function InlineCommentEditor({
 
   async function handleSave() {
     if (!editor) return;
-    // biome-ignore lint/suspicious/noExplicitAny: tiptap-markdown extends storage dynamically
-    const md = (editor.storage as any).markdown.getMarkdown() as string;
+    const md = getEditorMarkdown(editor);
     if (!md.trim()) return;
     setSaving(true);
     try {

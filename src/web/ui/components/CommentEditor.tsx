@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { Markdown } from 'tiptap-markdown';
 import { addComment } from '../api.ts';
 import { ImageUpload } from '../lib/image-upload-plugin.ts';
+import { getEditorMarkdown } from '../lib/markdown.ts';
 
 export function CommentEditor({ issueId }: { issueId: number }) {
   const [submitting, setSubmitting] = useState(false);
@@ -33,8 +34,7 @@ export function CommentEditor({ issueId }: { issueId: number }) {
 
   async function handleSubmit() {
     if (!editor) return;
-    // biome-ignore lint/suspicious/noExplicitAny: tiptap-markdown extends storage dynamically
-    const md = (editor.storage as any).markdown.getMarkdown() as string;
+    const md = getEditorMarkdown(editor);
     if (!md.trim()) return;
 
     setSubmitting(true);

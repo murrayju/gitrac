@@ -12,11 +12,7 @@ import {
 } from 'react';
 import { Markdown } from 'tiptap-markdown';
 import { ImageUpload } from '../lib/image-upload-plugin.ts';
-
-function getMarkdown(editor: Editor): string {
-  // biome-ignore lint/suspicious/noExplicitAny: tiptap-markdown extends storage dynamically
-  return (editor.storage as any).markdown.getMarkdown() as string;
-}
+import { getEditorMarkdown } from '../lib/markdown.ts';
 
 export interface IssueEditorHandle {
   insertImage: (url: string, alt: string) => void;
@@ -49,7 +45,7 @@ export const IssueEditor = forwardRef<
     if (!onChangeRef.current) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      const md = getMarkdown(editor);
+      const md = getEditorMarkdown(editor);
       onChangeRef.current?.(md);
     }, 500);
   }, []);
