@@ -1,4 +1,5 @@
 import simpleGit from 'simple-git';
+import { commitIssueChange } from './operations.ts';
 import { hasRemote } from './status.ts';
 
 /**
@@ -102,5 +103,31 @@ export class AmendTracker {
     }
 
     return false;
+  }
+
+  /**
+   * Commit or amend based on whether the last commit for this issue
+   * is still the HEAD and hasn't been pushed. This is the standard
+   * pattern all web routes should use.
+   */
+  async commitOrAmend(
+    dir: string,
+    issueId: number,
+    files: string[],
+    message: string,
+  ): Promise<void> {
+    const canAmendResult = await this.canAmend(dir, issueId);
+    if (canAmendResult) {
+      const hash = await this.amend(dir, files, message);
+      const dropped = await this.dropIfNoOp(dir);
+      if (!dropped) {
+        this.record(issueId, hash);
+      }
+    } else {
+      const hash = await commitIssueChange(dir, files, message);
+      if (hash) {
+        this.record(issueId, hash);
+      }
+    }
   }
 }

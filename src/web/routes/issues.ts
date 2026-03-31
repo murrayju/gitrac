@@ -261,19 +261,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
     if (config.git.autoCommit) {
       const prefix = config.git.commitPrefix;
       const message = `${prefix} update #${id} ${issue.title}`;
-      const canAmend = await amendTracker.canAmend(dir, id);
-      if (canAmend) {
-        const hash = await amendTracker.amend(dir, allFiles, message);
-        const dropped = await amendTracker.dropIfNoOp(dir);
-        if (!dropped) {
-          amendTracker.record(id, hash);
-        }
-      } else {
-        const hash = await commitIssueChange(dir, allFiles, message);
-        if (hash) {
-          amendTracker.record(id, hash);
-        }
-      }
+      await amendTracker.commitOrAmend(dir, id, allFiles, message);
     }
 
     return c.json(issue);
@@ -328,14 +316,12 @@ export function issueRoutes(ctx: ServerContext): Hono {
       const prefix = config.git.commitPrefix;
       const message = `${prefix} comment on #${id} ${issue.title}`;
       const assetPaths = referencedAssetPaths(issue);
-      const hash = await commitIssueChange(
+      await amendTracker.commitOrAmend(
         dir,
+        id,
         [relPath, ...assetPaths],
         message,
       );
-      if (hash) {
-        amendTracker.record(id, hash);
-      }
     }
 
     return c.json(issue);
@@ -396,14 +382,12 @@ export function issueRoutes(ctx: ServerContext): Hono {
       const prefix = config.git.commitPrefix;
       const message = `${prefix} edit comment on #${id} ${issue.title}`;
       const assetPaths = referencedAssetPaths(issue);
-      const hash = await commitIssueChange(
+      await amendTracker.commitOrAmend(
         dir,
+        id,
         [relPath, ...assetPaths],
         message,
       );
-      if (hash) {
-        amendTracker.record(id, hash);
-      }
     }
 
     return c.json(issue);
@@ -449,10 +433,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
     if (config.git.autoCommit) {
       const prefix = config.git.commitPrefix;
       const message = `${prefix} delete comment on #${id} ${issue.title}`;
-      const hash = await commitIssueChange(dir, [relPath], message);
-      if (hash) {
-        amendTracker.record(id, hash);
-      }
+      await amendTracker.commitOrAmend(dir, id, [relPath], message);
     }
 
     return c.json(issue);
@@ -485,8 +466,9 @@ export function issueRoutes(ctx: ServerContext): Hono {
       const prefix = config.git.commitPrefix;
       const message = `${prefix} close #${id} ${issue.title}`;
       const assetPaths = referencedAssetPaths(issue);
-      const hash = await commitIssueChange(
+      await amendTracker.commitOrAmend(
         dir,
+        id,
         [
           join('.issues', filename),
           join('.issues', 'closed', filename),
@@ -494,9 +476,6 @@ export function issueRoutes(ctx: ServerContext): Hono {
         ],
         message,
       );
-      if (hash) {
-        amendTracker.record(id, hash);
-      }
     }
 
     return c.json(issue);
@@ -534,8 +513,9 @@ export function issueRoutes(ctx: ServerContext): Hono {
       const prefix = config.git.commitPrefix;
       const message = `${prefix} reopen #${id} ${issue.title}`;
       const assetPaths = referencedAssetPaths(issue);
-      const hash = await commitIssueChange(
+      await amendTracker.commitOrAmend(
         dir,
+        id,
         [
           join('.issues', filename),
           join('.issues', 'closed', filename),
@@ -543,9 +523,6 @@ export function issueRoutes(ctx: ServerContext): Hono {
         ],
         message,
       );
-      if (hash) {
-        amendTracker.record(id, hash);
-      }
     }
 
     return c.json(issue);

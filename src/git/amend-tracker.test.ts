@@ -107,6 +107,67 @@ describe('AmendTracker', () => {
     expect(await tracker.canAmend(dir, 1)).toBe(false);
   });
 
+  describe('commitOrAmend', () => {
+    test('first call creates a new commit', async () => {
+      const tracker = new AmendTracker();
+      const git = simpleGit(dir);
+
+      await Bun.write(join(dir, 'issue.md'), '# Issue v1');
+      await tracker.commitOrAmend(dir, 1, ['issue.md'], 'add issue');
+
+      const log = await git.log();
+      expect(log.total).toBe(2); // initial + add issue
+      expect(log.latest?.message).toBe('add issue');
+    });
+
+    test('second call for same issue amends the commit', async () => {
+      const tracker = new AmendTracker();
+      const git = simpleGit(dir);
+
+      await Bun.write(join(dir, 'issue.md'), '# Issue v1');
+      await tracker.commitOrAmend(dir, 1, ['issue.md'], 'add issue');
+
+      await Bun.write(join(dir, 'issue.md'), '# Issue v2');
+      await tracker.commitOrAmend(dir, 1, ['issue.md'], 'update issue');
+
+      const log = await git.log();
+      expect(log.total).toBe(2); // initial + amended (not 3)
+      expect(log.latest?.message).toBe('update issue');
+    });
+
+    test('third call still amends for same issue', async () => {
+      const tracker = new AmendTracker();
+      const git = simpleGit(dir);
+
+      await Bun.write(join(dir, 'issue.md'), '# Issue v1');
+      await tracker.commitOrAmend(dir, 1, ['issue.md'], 'comment on issue');
+
+      await Bun.write(join(dir, 'issue.md'), '# Issue v2');
+      await tracker.commitOrAmend(dir, 1, ['issue.md'], 'delete comment');
+
+      await Bun.write(join(dir, 'issue.md'), '# Issue v3');
+      await tracker.commitOrAmend(dir, 1, ['issue.md'], 'another comment');
+
+      const log = await git.log();
+      expect(log.total).toBe(2); // initial + one amended commit
+      expect(log.latest?.message).toBe('another comment');
+    });
+
+    test('call for different issue creates a new commit', async () => {
+      const tracker = new AmendTracker();
+      const git = simpleGit(dir);
+
+      await Bun.write(join(dir, 'issue1.md'), '# Issue 1');
+      await tracker.commitOrAmend(dir, 1, ['issue1.md'], 'add issue 1');
+
+      await Bun.write(join(dir, 'issue2.md'), '# Issue 2');
+      await tracker.commitOrAmend(dir, 2, ['issue2.md'], 'add issue 2');
+
+      const log = await git.log();
+      expect(log.total).toBe(3); // initial + issue 1 + issue 2
+    });
+  });
+
   describe('dropIfNoOp', () => {
     // Helper: set up repo with an issue file committed as the "base" state.
     // Returns the base version string.
