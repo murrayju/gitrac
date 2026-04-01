@@ -12,6 +12,7 @@ import { useDrafts, useGitStatus } from '../hooks.ts';
 import { BranchWarning } from './BranchWarning.tsx';
 import type { CreateIssueModalProps } from './CreateIssueModal.tsx';
 import { CreateIssueModal } from './CreateIssueModal.tsx';
+import { ImageLightbox } from './ImageLightbox.tsx';
 import { ShortcutsModal } from './ShortcutsModal.tsx';
 import { ThemeToggle } from './ThemeToggle.tsx';
 
@@ -41,6 +42,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [modal, setModal] = useState<ModalState>({ open: false });
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
   const openCreateModal = useCallback((draft?: Draft) => {
     setModal({ open: true, draft });
@@ -53,6 +55,15 @@ export function Layout({ children }: { children: ReactNode }) {
       refreshDrafts();
     }
   };
+
+  // Image lightbox — open on click of any .tiptap img
+  const handleContentClick = useCallback((e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.tagName === 'IMG' && target.closest('.tiptap')) {
+      e.preventDefault();
+      setLightboxSrc((target as HTMLImageElement).src);
+    }
+  }, []);
 
   // Global hotkeys
   useEffect(() => {
@@ -183,7 +194,11 @@ export function Layout({ children }: { children: ReactNode }) {
         </aside>
 
         {/* Main content */}
-        <main className="flex-1 flex flex-col overflow-hidden">
+        <main
+          className="flex-1 flex flex-col overflow-hidden"
+          onClick={handleContentClick}
+          onKeyDown={undefined}
+        >
           {gitStatus && !gitStatus.isDefaultBranch && (
             <BranchWarning
               branch={gitStatus.branch}
@@ -204,6 +219,14 @@ export function Layout({ children }: { children: ReactNode }) {
         {/* Keyboard Shortcuts Modal */}
         {shortcutsOpen && (
           <ShortcutsModal onClose={() => setShortcutsOpen(false)} />
+        )}
+
+        {/* Image Lightbox */}
+        {lightboxSrc && (
+          <ImageLightbox
+            src={lightboxSrc}
+            onClose={() => setLightboxSrc(null)}
+          />
         )}
       </div>
     </LayoutContext.Provider>

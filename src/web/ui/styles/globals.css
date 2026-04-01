@@ -135,7 +135,15 @@ body {
 /* Tiptap inline images */
 .tiptap img {
   max-width: 100%;
+  max-height: 400px;
   height: auto;
+  object-fit: contain;
   border-radius: 0.375rem;
   margin: 0.5rem 0;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.tiptap img:hover {
+  opacity: 0.9;
 }
