@@ -1,14 +1,14 @@
 ---
 id: 30
 title: Add hotkey to create new issue
-status: in_progress
+status: done
 priority: medium
 assignee: justin@tigerdata.com
 labels:
   - feature
 created: '2026-04-01T17:20:22.721Z'
 createdBy: web
-updated: '2026-04-01T18:22:15.664Z'
+updated: '2026-04-01T18:22:19.622Z'
 ---
 
 Pressing `c` should open the new issue modal
