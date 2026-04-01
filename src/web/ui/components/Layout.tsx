@@ -1,4 +1,11 @@
-import { createContext, type ReactNode, useContext, useState } from 'react';
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import type { Draft } from '../api.ts';
 import { useDrafts, useGitStatus } from '../hooks.ts';
@@ -33,9 +40,9 @@ export function Layout({ children }: { children: ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [modal, setModal] = useState<ModalState>({ open: false });
 
-  function openCreateModal(draft?: Draft) {
+  const openCreateModal = useCallback((draft?: Draft) => {
     setModal({ open: true, draft });
-  }
+  }, []);
 
   const handleModalClose: CreateIssueModalProps['onClose'] = (reason) => {
     setModal({ open: false });
@@ -44,6 +51,27 @@ export function Layout({ children }: { children: ReactNode }) {
       refreshDrafts();
     }
   };
+
+  // Global hotkey: 'c' opens create issue modal (unless typing in an input/editor)
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'c' || e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement;
+      const tag = target.tagName;
+      if (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        target.isContentEditable
+      )
+        return;
+      if (modal.open) return;
+      e.preventDefault();
+      openCreateModal();
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [modal.open, openCreateModal]);
 
   return (
     <LayoutContext.Provider value={{ openCreateModal, refreshDrafts }}>
