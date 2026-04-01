@@ -1,14 +1,14 @@
 ---
 id: 31
 title: Add a keyboard shortcuts help modal
-status: in_progress
+status: done
 priority: low
 assignee: justin@tigerdata.com
 labels:
   - feature
 created: '2026-04-01T17:25:25.074Z'
 createdBy: web
-updated: '2026-04-01T18:26:45.795Z'
+updated: '2026-04-01T18:26:58.040Z'
 ---
 
 Open with `cmd+/`, style like Linear
