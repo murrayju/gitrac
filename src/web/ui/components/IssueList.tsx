@@ -1,17 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import type { Issue, Priority, Status } from '../../../core/types.ts';
 import type { IssueFilters } from '../api.ts';
 import { useIssues } from '../hooks.ts';
+import type { SortField } from '../stores/filterStore.ts';
+import { useFilterStore } from '../stores/filterStore.ts';
 import { IssueRow } from './IssueRow.tsx';
-
-type SortField =
-  | 'id'
-  | 'title'
-  | 'status'
-  | 'priority'
-  | 'assignee'
-  | 'updated';
-type SortDir = 'asc' | 'desc';
 
 const PRIORITY_ORDER: Record<Priority, number> = {
   urgent: 0,
@@ -30,11 +23,16 @@ const STATUS_ORDER: Record<Status, number> = {
 };
 
 export function IssueList() {
-  const [statusFilter, setStatusFilter] = useState<string>('');
-  const [priorityFilter, setPriorityFilter] = useState<string>('');
-  const [assigneeFilter, setAssigneeFilter] = useState<string>('');
-  const [sortField, setSortField] = useState<SortField>('updated');
-  const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const statusFilter = useFilterStore((s) => s.statusFilter);
+  const setStatusFilter = useFilterStore((s) => s.setStatusFilter);
+  const priorityFilter = useFilterStore((s) => s.priorityFilter);
+  const setPriorityFilter = useFilterStore((s) => s.setPriorityFilter);
+  const assigneeFilter = useFilterStore((s) => s.assigneeFilter);
+  const setAssigneeFilter = useFilterStore((s) => s.setAssigneeFilter);
+  const sortField = useFilterStore((s) => s.sortField);
+  const setSortField = useFilterStore((s) => s.setSortField);
+  const sortDir = useFilterStore((s) => s.sortDir);
+  const setSortDir = useFilterStore((s) => s.setSortDir);
 
   const filters: IssueFilters = {};
   if (statusFilter) filters.status = statusFilter;
@@ -76,7 +74,7 @@ export function IssueList() {
 
   function handleSort(field: SortField) {
     if (sortField === field) {
-      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
     } else {
       setSortField(field);
       setSortDir('asc');
