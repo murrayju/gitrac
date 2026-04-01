@@ -12,6 +12,7 @@ import { useDrafts, useGitStatus } from '../hooks.ts';
 import { BranchWarning } from './BranchWarning.tsx';
 import type { CreateIssueModalProps } from './CreateIssueModal.tsx';
 import { CreateIssueModal } from './CreateIssueModal.tsx';
+import { ShortcutsModal } from './ShortcutsModal.tsx';
 import { ThemeToggle } from './ThemeToggle.tsx';
 
 interface ModalState {
@@ -39,6 +40,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const { drafts, refresh: refreshDrafts } = useDrafts();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [modal, setModal] = useState<ModalState>({ open: false });
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   const openCreateModal = useCallback((draft?: Draft) => {
     setModal({ open: true, draft });
@@ -52,10 +54,17 @@ export function Layout({ children }: { children: ReactNode }) {
     }
   };
 
-  // Global hotkey: 'c' opens create issue modal (unless typing in an input/editor)
+  // Global hotkeys
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key !== 'c' || e.metaKey || e.ctrlKey || e.altKey) return;
+      // Cmd+/ or Ctrl+/ — toggle shortcuts modal (works even in inputs)
+      if (e.key === '/' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setShortcutsOpen((prev) => !prev);
+        return;
+      }
+
+      // Ignore remaining shortcuts when typing in inputs
       const target = e.target as HTMLElement;
       const tag = target.tagName;
       if (
@@ -65,13 +74,30 @@ export function Layout({ children }: { children: ReactNode }) {
         target.isContentEditable
       )
         return;
-      if (modal.open) return;
-      e.preventDefault();
-      openCreateModal();
+
+      // '?' — toggle shortcuts modal
+      if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        setShortcutsOpen((prev) => !prev);
+        return;
+      }
+
+      // 'c' — open create issue modal
+      if (
+        e.key === 'c' &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        !modal.open &&
+        !shortcutsOpen
+      ) {
+        e.preventDefault();
+        openCreateModal();
+      }
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [modal.open, openCreateModal]);
+  }, [modal.open, shortcutsOpen, openCreateModal]);
 
   return (
     <LayoutContext.Provider value={{ openCreateModal, refreshDrafts }}>
@@ -141,8 +167,18 @@ export function Layout({ children }: { children: ReactNode }) {
             </button>
           </nav>
 
-          <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-800">
+          <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-800 space-y-2">
             <ThemeToggle />
+            <button
+              type="button"
+              onClick={() => setShortcutsOpen(true)}
+              className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+            >
+              <kbd className="inline-flex items-center justify-center w-5 h-5 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 text-[10px] font-medium">
+                ?
+              </kbd>
+              <span>Shortcuts</span>
+            </button>
           </div>
         </aside>
 
@@ -163,6 +199,11 @@ export function Layout({ children }: { children: ReactNode }) {
             onClose={handleModalClose}
             initialDraft={modal.draft}
           />
+        )}
+
+        {/* Keyboard Shortcuts Modal */}
+        {shortcutsOpen && (
+          <ShortcutsModal onClose={() => setShortcutsOpen(false)} />
         )}
       </div>
     </LayoutContext.Provider>
