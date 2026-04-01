@@ -26,3 +26,6 @@ git:
   autoPush: false
   commitPrefix: 'issue:'
   defaultBranch: main
+assignees:
+  - name: Justin Murray
+    email: justin@tigerdata.com
