@@ -8,7 +8,7 @@ labels:
   - enhancement
 created: '2026-04-01T17:31:51.220Z'
 createdBy: web
-updated: '2026-04-01T18:27:14.084Z'
+updated: '2026-04-01T18:28:25.770Z'
 ---
 
 Pasting very large images into issue descriptions and/or comments should not take over the whole screen. These should be constrained to some max width/height, and then have some controls to "zoom" (full-screen image viewer). Here's how this looks in Linear
