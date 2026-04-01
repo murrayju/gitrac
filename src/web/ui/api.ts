@@ -1,4 +1,10 @@
-import type { Config, Issue, Priority, Status } from '../../core/types.ts';
+import type {
+  Assignee,
+  Config,
+  Issue,
+  Priority,
+  Status,
+} from '../../core/types.ts';
 
 export interface Draft {
   filename: string;
@@ -141,6 +147,13 @@ export async function updateLabels(
   return request<Config>('/api/config/labels', {
     method: 'PATCH',
     body: JSON.stringify({ labels }),
+  });
+}
+
+export async function updateAssignees(assignees: Assignee[]): Promise<Config> {
+  return request<Config>('/api/config/assignees', {
+    method: 'PATCH',
+    body: JSON.stringify({ assignees }),
   });
 }
 

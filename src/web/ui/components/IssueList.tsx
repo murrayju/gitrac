@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { Issue, Priority, Status } from '../../../core/types.ts';
 import type { IssueFilters } from '../api.ts';
-import { useIssues } from '../hooks.ts';
+import { useConfig, useIssues } from '../hooks.ts';
 import type { SortField } from '../stores/filterStore.ts';
 import { useFilterStore } from '../stores/filterStore.ts';
 import { IssueRow } from './IssueRow.tsx';
@@ -23,6 +23,7 @@ const STATUS_ORDER: Record<Status, number> = {
 };
 
 export function IssueList() {
+  const { config } = useConfig();
   const statusFilter = useFilterStore((s) => s.statusFilter);
   const setStatusFilter = useFilterStore((s) => s.setStatusFilter);
   const priorityFilter = useFilterStore((s) => s.priorityFilter);
@@ -119,12 +120,17 @@ export function IssueList() {
               { value: 'none', label: 'None' },
             ]}
           />
-          <input
-            type="text"
-            placeholder="Assignee..."
+          <FilterSelect
             value={assigneeFilter}
-            onChange={(e) => setAssigneeFilter(e.target.value)}
-            className="bg-white border border-gray-300 rounded px-2 py-1 text-sm text-gray-700 placeholder:text-gray-400 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-300 dark:placeholder:text-gray-600 w-32"
+            onChange={setAssigneeFilter}
+            placeholder="Assignee"
+            options={[
+              { value: '', label: 'All assignees' },
+              ...(config?.assignees ?? []).map((a) => ({
+                value: a.email,
+                label: a.name,
+              })),
+            ]}
           />
         </div>
       </div>

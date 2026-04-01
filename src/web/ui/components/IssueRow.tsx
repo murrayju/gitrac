@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { resolveAssigneeName } from '../../../core/config.ts';
 import type { Issue, Priority, Status } from '../../../core/types.ts';
 import { updateIssue } from '../api.ts';
 import { useConfig } from '../hooks.ts';
@@ -75,8 +76,13 @@ export function IssueRow({ issue }: { issue: Issue }) {
           <PriorityBadge priority={issue.priority} onClick={() => {}} />
         </Dropdown>
       </td>
-      <td className="px-3 py-2 text-sm text-gray-600 dark:text-gray-400">
-        {issue.assignee || '—'}
+      <td
+        className="px-3 py-2 text-sm text-gray-600 dark:text-gray-400"
+        title={issue.assignee || undefined}
+      >
+        {issue.assignee
+          ? resolveAssigneeName(config?.assignees ?? [], issue.assignee)
+          : '—'}
       </td>
       <td className="px-3 py-2">
         <div className="flex gap-1 flex-wrap">

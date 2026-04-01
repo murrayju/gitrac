@@ -1,5 +1,5 @@
 import yaml from 'js-yaml';
-import type { Config, GitConfig } from './types.ts';
+import type { Assignee, Config, GitConfig } from './types.ts';
 
 const VALID_STATUSES: readonly string[] = [
   'backlog',
@@ -125,6 +125,7 @@ export function createDefaultConfig(): Config {
     nextId: 1,
     statuses: ['backlog', 'todo', 'in_progress', 'done', 'cancelled'],
     labels: ensureLabelColors(defaultLabelNames, {}),
+    assignees: [],
     priorities: ['urgent', 'high', 'medium', 'low', 'none'],
     defaultStatus: 'backlog',
     defaultPriority: 'medium',
@@ -173,6 +174,17 @@ export function validateConfig(value: unknown): value is Config {
 
   // Validate defaultPriority is in the priorities list
   if (!VALID_PRIORITIES.includes(obj.defaultPriority as string)) return false;
+
+  // Validate assignees if present (optional, defaults to [] for backward compat)
+  if (obj.assignees !== undefined) {
+    if (!Array.isArray(obj.assignees)) return false;
+    for (const a of obj.assignees) {
+      if (typeof a !== 'object' || a === null) return false;
+      const assignee = a as Record<string, unknown>;
+      if (typeof assignee.name !== 'string') return false;
+      if (typeof assignee.email !== 'string') return false;
+    }
+  }
 
   // Validate git section if present
   if (obj.git !== undefined) {
@@ -237,11 +249,39 @@ export function parseConfig(yamlStr: string): Config {
   // Remove the old field so it doesn't appear in serialized output
   delete raw.labelColors;
 
+  // Default assignees to empty array if missing (backward compat)
+  if (!raw.assignees) {
+    raw.assignees = [];
+  }
+
   if (!validateConfig(raw)) {
     throw new Error('Invalid config: validation failed');
   }
 
   return raw;
+}
+
+/**
+ * Find an assignee by email in the config's assignee list.
+ */
+export function findAssigneeByEmail(
+  assignees: Assignee[],
+  email: string,
+): Assignee | undefined {
+  return assignees.find((a) => a.email.toLowerCase() === email.toLowerCase());
+}
+
+/**
+ * Resolve an assignee string to a display name.
+ * Returns the name if found in config, otherwise returns the raw value.
+ */
+export function resolveAssigneeName(
+  assignees: Assignee[],
+  assigneeValue: string,
+): string {
+  if (!assigneeValue) return '';
+  const found = findAssigneeByEmail(assignees, assigneeValue);
+  return found ? found.name : assigneeValue;
 }
 
 /**

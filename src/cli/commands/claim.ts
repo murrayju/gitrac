@@ -1,11 +1,13 @@
 import { join } from 'node:path';
 import type { Command } from 'commander';
+import { findAssigneeByEmail } from '../../core/config.ts';
 import type { OutputFormat } from '../../core/types.ts';
 import {
   deleteIssueFile,
   findIssueFile,
   readConfig,
   readIssue,
+  writeConfig,
   writeIssue,
 } from '../../fs/issue-store.ts';
 import { commitIssueChange, pushIfConfigured } from '../../git/operations.ts';
@@ -35,15 +37,17 @@ export function registerClaimCommand(program: Command): void {
         process.exit(1);
       }
 
-      // Get current user
-      let author = globalOpts.author || '';
-      if (!author) {
+      // Get current user name and email
+      let authorName = globalOpts.author || '';
+      let authorEmail = '';
+      if (!authorName) {
         try {
           const { default: simpleGit } = await import('simple-git');
           const git = simpleGit(dir);
-          author = (await git.getConfig('user.name')).value || 'unknown';
+          authorName = (await git.getConfig('user.name')).value || 'unknown';
+          authorEmail = (await git.getConfig('user.email')).value || '';
         } catch {
-          author = 'unknown';
+          authorName = 'unknown';
         }
       }
 
@@ -57,14 +61,26 @@ export function registerClaimCommand(program: Command): void {
         const oldFilename = found.filename;
 
         const issue = await readIssue(dir, id);
-        issue.assignee = author;
+        // Use email as the canonical identifier if available, else fall back to name
+        issue.assignee = authorEmail || authorName;
         issue.status = 'in_progress';
+
+        // Add user to config.assignees if not already present (by email)
+        let configChanged = false;
+        if (
+          authorEmail &&
+          !findAssigneeByEmail(config.assignees, authorEmail)
+        ) {
+          config.assignees.push({ name: authorName, email: authorEmail });
+          await writeConfig(dir, config);
+          configChanged = true;
+        }
         const now = new Date().toISOString();
         issue.updated = now;
 
         if (options.comment) {
           issue.comments.push({
-            author,
+            author: authorName,
             timestamp: now,
             body: options.comment,
           });
@@ -85,6 +101,9 @@ export function registerClaimCommand(program: Command): void {
           const filesToCommit = [join('.issues', filename)];
           if (wasClosed) {
             filesToCommit.push(join('.issues', 'closed', oldFilename));
+          }
+          if (configChanged) {
+            filesToCommit.push(join('.issues', 'config.yaml'));
           }
           await commitIssueChange(
             dir,

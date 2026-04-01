@@ -39,6 +39,11 @@ export interface IssueFrontmatter {
   updated: string;
 }
 
+export interface Assignee {
+  name: string;
+  email: string;
+}
+
 export interface GitConfig {
   autoCommit: boolean;
   autoPush: boolean;
@@ -51,6 +56,7 @@ export interface Config {
   nextId: number;
   statuses: Status[];
   labels: Record<string, string>;
+  assignees: Assignee[];
   priorities: Priority[];
   defaultStatus: Status;
   defaultPriority: Priority;

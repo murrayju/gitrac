@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { resolveAssigneeName } from '../../../core/config.ts';
 import type { Priority, Status } from '../../../core/types.ts';
 import type { Draft } from '../api.ts';
 import { createIssue, deleteDraft, saveDraft, uploadAsset } from '../api.ts';
 import { useConfig } from '../hooks.ts';
+import { AssigneePicker } from './AssigneePicker.tsx';
 import { Dropdown } from './Dropdown.tsx';
 import { IssueEditor } from './IssueEditor.tsx';
 import { LabelBadge } from './LabelBadge.tsx';
@@ -366,7 +368,31 @@ export function CreateIssueModal({
                 </Dropdown>
 
                 {/* Assignee pill */}
-                <AssigneePill assignee={assignee} onChange={setAssignee} />
+                <AssigneePicker
+                  value={assignee}
+                  onChange={setAssignee}
+                  trigger={
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer transition-colors">
+                      <svg
+                        className="w-3.5 h-3.5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                        />
+                      </svg>
+                      {assignee
+                        ? resolveAssigneeName(config?.assignees ?? [], assignee)
+                        : 'Assignee'}
+                    </span>
+                  }
+                />
 
                 {/* Labels pill */}
                 <LabelPicker
@@ -474,78 +500,5 @@ function CloseConfirmDialog({
         </div>
       </div>
     </div>
-  );
-}
-
-/** Inline assignee pill — click to type, blur or Enter to confirm */
-function AssigneePill({
-  assignee,
-  onChange,
-}: {
-  assignee: string;
-  onChange: (v: string) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(assignee);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setValue(assignee);
-  }, [assignee]);
-
-  useEffect(() => {
-    if (editing) {
-      inputRef.current?.focus();
-    }
-  }, [editing]);
-
-  function commit() {
-    setEditing(false);
-    onChange(value.trim());
-  }
-
-  if (editing) {
-    return (
-      <input
-        ref={inputRef}
-        type="text"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') commit();
-          if (e.key === 'Escape') {
-            setValue(assignee);
-            setEditing(false);
-          }
-        }}
-        placeholder="Assignee"
-        className="w-24 bg-transparent border border-gray-300 dark:border-gray-600 rounded-full px-2 py-0.5 text-xs text-gray-700 dark:text-gray-300 outline-none focus:border-blue-500"
-      />
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={() => setEditing(true)}
-      className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer transition-colors"
-    >
-      <svg
-        className="w-3.5 h-3.5"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-        aria-hidden="true"
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-        />
-      </svg>
-      {assignee || 'Assignee'}
-    </button>
   );
 }

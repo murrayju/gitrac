@@ -2,9 +2,11 @@ import { describe, expect, test } from 'bun:test';
 import {
   createDefaultConfig,
   ensureLabelColors,
+  findAssigneeByEmail,
   generateLabelColor,
   hslToHex,
   parseConfig,
+  resolveAssigneeName,
   serializeConfig,
   validateConfig,
 } from './config.ts';
@@ -21,6 +23,11 @@ statuses:
 labels:
   bug: "#e05d5d"
   feature: "#58a6e0"
+assignees:
+  - name: Alice
+    email: alice@example.com
+  - name: Bob
+    email: bob@example.com
 priorities:
   - urgent
   - high
@@ -50,6 +57,10 @@ describe('parseConfig', () => {
     ]);
     expect(config.labels.bug).toBe('#e05d5d');
     expect(config.labels.feature).toBe('#58a6e0');
+    expect(config.assignees).toEqual([
+      { name: 'Alice', email: 'alice@example.com' },
+      { name: 'Bob', email: 'bob@example.com' },
+    ]);
     expect(config.defaultStatus).toBe('backlog');
     expect(config.defaultPriority).toBe('medium');
     expect(config.git.autoCommit).toBe(true);
@@ -205,6 +216,7 @@ describe('createDefaultConfig', () => {
       'docs',
       'chore',
     ]);
+    expect(config.assignees).toEqual([]);
     expect(config.priorities).toEqual([
       'urgent',
       'high',
@@ -331,5 +343,119 @@ describe('ensureLabelColors', () => {
     const result = ensureLabelColors(['bug', 'feature'], existing);
     expect(result.bug).toBe('#custom1');
     expect(result.feature).toBe('#custom2');
+  });
+});
+
+describe('assignees', () => {
+  test('defaults assignees to empty array when missing from YAML', () => {
+    const yaml = `
+version: 1
+nextId: 1
+statuses:
+  - backlog
+  - todo
+  - in_progress
+  - done
+  - cancelled
+labels: {}
+priorities:
+  - urgent
+  - high
+  - medium
+  - low
+  - none
+defaultStatus: backlog
+defaultPriority: medium
+`;
+    const config = parseConfig(yaml);
+    expect(config.assignees).toEqual([]);
+  });
+
+  test('parses assignees from YAML', () => {
+    const config = parseConfig(VALID_YAML);
+    expect(config.assignees).toHaveLength(2);
+    expect(config.assignees[0]).toEqual({
+      name: 'Alice',
+      email: 'alice@example.com',
+    });
+  });
+
+  test('serializes and re-parses assignees', () => {
+    const config = createDefaultConfig();
+    config.assignees = [{ name: 'Test User', email: 'test@example.com' }];
+    const yaml = serializeConfig(config);
+    const parsed = parseConfig(yaml);
+    expect(parsed.assignees).toEqual([
+      { name: 'Test User', email: 'test@example.com' },
+    ]);
+  });
+
+  test('validates assignees must be array of objects with name and email', () => {
+    const config = createDefaultConfig();
+
+    // Invalid: non-array
+    expect(validateConfig({ ...config, assignees: 'not-array' })).toBe(false);
+
+    // Invalid: array of non-objects
+    expect(validateConfig({ ...config, assignees: ['string'] })).toBe(false);
+
+    // Invalid: missing email
+    expect(validateConfig({ ...config, assignees: [{ name: 'Test' }] })).toBe(
+      false,
+    );
+
+    // Invalid: missing name
+    expect(
+      validateConfig({
+        ...config,
+        assignees: [{ email: 'test@example.com' }],
+      }),
+    ).toBe(false);
+
+    // Valid
+    expect(
+      validateConfig({
+        ...config,
+        assignees: [{ name: 'Test', email: 'test@example.com' }],
+      }),
+    ).toBe(true);
+  });
+});
+
+describe('findAssigneeByEmail', () => {
+  const assignees = [
+    { name: 'Alice', email: 'alice@example.com' },
+    { name: 'Bob', email: 'bob@example.com' },
+  ];
+
+  test('finds assignee by email (case-insensitive)', () => {
+    expect(findAssigneeByEmail(assignees, 'Alice@Example.COM')).toEqual({
+      name: 'Alice',
+      email: 'alice@example.com',
+    });
+  });
+
+  test('returns undefined for unknown email', () => {
+    expect(
+      findAssigneeByEmail(assignees, 'unknown@example.com'),
+    ).toBeUndefined();
+  });
+});
+
+describe('resolveAssigneeName', () => {
+  const assignees = [{ name: 'Alice', email: 'alice@example.com' }];
+
+  test('returns name when email matches', () => {
+    expect(resolveAssigneeName(assignees, 'alice@example.com')).toBe('Alice');
+  });
+
+  test('returns raw value when no match', () => {
+    expect(resolveAssigneeName(assignees, 'unknown@example.com')).toBe(
+      'unknown@example.com',
+    );
+  });
+
+  test('returns empty string for empty input', () => {
+    expect(resolveAssigneeName(assignees, '')).toBe('');
   });
 });
