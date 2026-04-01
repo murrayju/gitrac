@@ -1,14 +1,14 @@
 ---
 id: 28
 title: Add a favicon
-status: in_progress
+status: done
 priority: low
 assignee: justin@tigerdata.com
 labels:
   - enhancement
 created: '2026-04-01T17:11:16.158Z'
 createdBy: web
-updated: '2026-04-01T17:58:22.478Z'
+updated: '2026-04-01T17:58:25.862Z'
 ---
 
 The favicon is currently unset. Generate an interesting on-brand icon to use as a placeholder for now, and configure it.
