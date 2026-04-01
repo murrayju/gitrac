@@ -1,8 +1,9 @@
+import { Extension } from '@tiptap/core';
 import Image from '@tiptap/extension-image';
 import Placeholder from '@tiptap/extension-placeholder';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Markdown } from 'tiptap-markdown';
 import type { Comment } from '../../../core/types.ts';
 import { deleteComment, updateComment } from '../api.ts';
@@ -109,6 +110,19 @@ function InlineCommentEditor({
   onCancel: () => void;
 }) {
   const [saving, setSaving] = useState(false);
+  const saveRef = useRef<() => void>(null);
+
+  const SubmitShortcut = Extension.create({
+    name: 'submitShortcut',
+    addKeyboardShortcuts() {
+      return {
+        'Mod-Enter': () => {
+          saveRef.current?.();
+          return true;
+        },
+      };
+    },
+  });
 
   const editor = useEditor({
     extensions: [
@@ -121,6 +135,7 @@ function InlineCommentEditor({
         transformPastedText: true,
         transformCopiedText: true,
       }),
+      SubmitShortcut,
     ],
     content: initialBody,
     editorProps: {
@@ -131,7 +146,7 @@ function InlineCommentEditor({
     },
   });
 
-  async function handleSave() {
+  const handleSave = useCallback(async () => {
     if (!editor) return;
     const md = getEditorMarkdown(editor);
     if (!md.trim()) return;
@@ -141,7 +156,9 @@ function InlineCommentEditor({
     } finally {
       setSaving(false);
     }
-  }
+  }, [editor, onSave]);
+
+  saveRef.current = handleSave;
 
   return (
     <div>

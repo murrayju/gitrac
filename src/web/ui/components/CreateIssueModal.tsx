@@ -58,6 +58,7 @@ export function CreateIssueModal({
   const [showConfirm, setShowConfirm] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<{
     insertImage: (url: string, alt: string) => void;
@@ -115,7 +116,7 @@ export function CreateIssueModal({
     }
   }, [hasContent, onClose, showConfirm]);
 
-  // Handle Escape key
+  // Handle Escape key and Cmd+Enter submit
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -124,6 +125,10 @@ export function CreateIssueModal({
         } else {
           attemptClose();
         }
+      }
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        formRef.current?.requestSubmit();
       }
     },
     [attemptClose, showConfirm],
@@ -322,7 +327,7 @@ export function CreateIssueModal({
             <div className="text-red-400 text-sm mb-4">Error: {error}</div>
           )}
 
-          <form onSubmit={handleSubmit}>
+          <form ref={formRef} onSubmit={handleSubmit}>
             {/* Title — borderless */}
             <input
               ref={titleRef}

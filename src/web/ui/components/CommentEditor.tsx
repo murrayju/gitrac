@@ -1,8 +1,9 @@
+import { Extension } from '@tiptap/core';
 import Image from '@tiptap/extension-image';
 import Placeholder from '@tiptap/extension-placeholder';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Markdown } from 'tiptap-markdown';
 import { addComment } from '../api.ts';
 import { ImageUpload } from '../lib/image-upload-plugin.ts';
@@ -10,6 +11,19 @@ import { getEditorMarkdown } from '../lib/markdown.ts';
 
 export function CommentEditor({ issueId }: { issueId: number }) {
   const [submitting, setSubmitting] = useState(false);
+  const submitRef = useRef<() => void>(null);
+
+  const SubmitShortcut = Extension.create({
+    name: 'submitShortcut',
+    addKeyboardShortcuts() {
+      return {
+        'Mod-Enter': () => {
+          submitRef.current?.();
+          return true;
+        },
+      };
+    },
+  });
 
   const editor = useEditor({
     extensions: [
@@ -22,6 +36,7 @@ export function CommentEditor({ issueId }: { issueId: number }) {
         transformPastedText: true,
         transformCopiedText: true,
       }),
+      SubmitShortcut,
     ],
     content: '',
     editorProps: {
@@ -32,7 +47,7 @@ export function CommentEditor({ issueId }: { issueId: number }) {
     },
   });
 
-  async function handleSubmit() {
+  const handleSubmit = useCallback(async () => {
     if (!editor) return;
     const md = getEditorMarkdown(editor);
     if (!md.trim()) return;
@@ -44,7 +59,9 @@ export function CommentEditor({ issueId }: { issueId: number }) {
     } finally {
       setSubmitting(false);
     }
-  }
+  }, [editor, issueId]);
+
+  submitRef.current = handleSubmit;
 
   return (
     <div>
