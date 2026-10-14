@@ -1,14 +1,14 @@
 ---
 id: 43
 title: CLI cannot set an issue description
-status: todo
+status: in_progress
 priority: high
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - feature
 created: '2026-10-14T21:43:46.806Z'
 createdBy: Justin Murray
-updated: '2026-10-14T21:43:46.806Z'
+updated: '2026-10-14T23:11:55.874Z'
 ---
 
 Neither `create` nor `edit` accepts a description. Agents therefore can't create well-specified issues without editing the markdown file directly, which the skill explicitly says not to do.
