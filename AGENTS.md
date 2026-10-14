@@ -15,6 +15,7 @@ This project uses gitrac to track its own issues. The `.issues/` directory conta
 ./gitrac close <id>            # close an issue
 ./gitrac                       # start the web UI at http://localhost:3000
 ./gitrac serve -p 4000         # same, on another port (or: ./gitrac --port 4000)
+./gitrac serve --host 0.0.0.0  # listen on all interfaces (default: 127.0.0.1 only; no auth!)
 ```
 
 When working on a task, claim the corresponding issue first. Close it in the same commit that implements the fix when possible.
@@ -70,7 +71,7 @@ For web UI development with hot reload, run both:
 ./bun run vite --config vite.config.ts            # Vite dev server on :5173
 ```
 
-Open `http://localhost:5173` — Vite proxies API requests to the backend.
+Open `http://localhost:5173` — Vite proxies API requests to the backend at `127.0.0.1:3000`, keeping the browser's `Host` so it matches `Origin`. The server sends no CORS headers and rejects cross-origin mutations and unknown `Host` names (DNS rebinding) with 403, so don't add `changeOrigin: true` to the proxy or call the API cross-origin. See "Security" under "Web UI" in `docs/specs/`.
 
 ### Testing
 
@@ -101,6 +102,7 @@ This builds the React UI with Vite, then compiles the CLI into a standalone bina
 - **Bun APIs preferred** over Node.js equivalents (`Bun.file()`, `Bun.write()`, etc.)
 - **`node:` prefix** for Node.js built-in imports
 - **Resolve the project root via `resolveProjectOptions`** (`src/cli/global-options.ts`) at the start of every CLI command (not `getGlobalOptions`, whose `dir` is just `--dir`/cwd). It runs `git rev-parse --show-toplevel` so gitrac works from any subdirectory, and prints a friendly error if not in a git repo or `.issues/` isn't initialized (pass `{ requireInit: false }` for `init`).
+- **Web routes are same-origin only** — `requestGuard` (`src/web/security.ts`) runs on every request; don't add CORS. Uploads are capped (`MAX_UPLOAD_BYTES`) and SVG is not allowed.
 - **Mutations must hold the repo lock** — wrap the whole read-modify-write-commit of any new CLI command in `withMutationLock` (`src/cli/global-options.ts`) and add the `mutationLock` middleware (`src/web/lock.ts`) to any new mutating web route. Keep interactive input (prompts, stdin) outside the lock. See "Concurrency" in `docs/specs/`.
 
 ## Issue File Format

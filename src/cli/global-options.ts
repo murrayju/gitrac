@@ -6,6 +6,7 @@ import { LockTimeoutError } from '../fs/lock.ts';
 import { withRepoLock } from '../git/lock.ts';
 import { commitIssueChange, pushIfConfigured } from '../git/operations.ts';
 import { getGitRoot } from '../git/status.ts';
+import { DEFAULT_HOST } from '../web/security.ts';
 
 /**
  * Normalized view of the program-level (global) CLI options.
@@ -35,6 +36,8 @@ export interface GlobalOptions {
   push: boolean | undefined;
   /** Web server port (from the long-only `--port`; default 3000). See `serve -p`. */
   port: number;
+  /** Web server bind interface (from the long-only `--host`; default 127.0.0.1). */
+  host: string;
 }
 
 interface RawGlobalOptions {
@@ -44,6 +47,7 @@ interface RawGlobalOptions {
   commit?: boolean;
   push?: boolean;
   port?: string;
+  host?: string;
 }
 
 export function getGlobalOptions(program: Command): GlobalOptions {
@@ -55,6 +59,7 @@ export function getGlobalOptions(program: Command): GlobalOptions {
     commit: raw.commit !== false,
     push: typeof raw.push === 'boolean' ? raw.push : undefined,
     port: Number.parseInt(raw.port ?? '3000', 10),
+    host: raw.host || DEFAULT_HOST,
   };
 }
 

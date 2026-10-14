@@ -178,6 +178,19 @@ describe('serve / bare gitrac port resolution', () => {
   test('serve honors --dir', () => {
     expect(resolve(['--dir', '/tmp/x', 'serve']).dir).toBe('/tmp/x');
   });
+
+  test('binds to loopback (127.0.0.1) by default', () => {
+    expect(resolve([]).host).toBe('127.0.0.1');
+    expect(resolve(['serve']).host).toBe('127.0.0.1');
+  });
+
+  test('bare gitrac --host 0.0.0.0', () => {
+    expect(resolve(['--host', '0.0.0.0']).host).toBe('0.0.0.0');
+  });
+
+  test('serve --host 0.0.0.0', () => {
+    expect(resolve(['serve', '--host', '0.0.0.0']).host).toBe('0.0.0.0');
+  });
 });
 
 // --- End-to-end: run real commands through Commander in a scratch repo ---

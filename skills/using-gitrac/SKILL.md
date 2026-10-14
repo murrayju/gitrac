@@ -65,7 +65,7 @@ When installed as a binary, replace `./bun index.ts` with `gitrac` in all exampl
 | `gitrac comment <id> "text"` | Add a comment |
 | `gitrac edit <id> -s todo` | Update status |
 | `gitrac ls -o json` | Machine-readable output |
-| `gitrac serve -p 4000` | Start the web UI (bare `gitrac` also serves, on :3000) |
+| `gitrac serve -p 4000` | Start the web UI (bare `gitrac` also serves, on :3000). Binds 127.0.0.1; `--host 0.0.0.0` exposes it to the network (no auth) |
 
 ## The Workflow
 

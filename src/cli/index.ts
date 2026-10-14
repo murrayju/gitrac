@@ -35,6 +35,10 @@ export function createProgram(): Command {
     // `create -p high`). Program-level options are matched anywhere in argv,
     // so a global `-p` would swallow them. `serve` accepts `-p, --port`.
     .option('--port <port>', 'Port for the web server (default: 3000)')
+    .option(
+      '--host <host>',
+      'Interface for the web server (default: 127.0.0.1)',
+    )
     .action(async () => {
       // Bare `gitrac` is an alias for `gitrac serve`.
       await runServe(resolveServeOptions(program));

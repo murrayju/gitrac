@@ -153,8 +153,8 @@ src/
 
 | Command | Aliases | Description |
 |---------|---------|------------|
-| `gitrac` | | Start web UI (default; alias for `gitrac serve`). Accepts `--port <port>`. |
-| `gitrac serve` | | Start web UI. `-p, --port <port>` (default: 3000). |
+| `gitrac` | | Start web UI (default; alias for `gitrac serve`). Accepts `--port <port>` and `--host <host>`. |
+| `gitrac serve` | | Start web UI. `-p, --port <port>` (default: 3000), `--host <host>` (default: `127.0.0.1`). |
 | `gitrac init` | | Initialize `.issues/` in current repo. Errors if already exists (use `--force` to reinitialize). Errors if not in a git repo. |
 | `gitrac create` | `new`, `add` | Create a new issue (interactive or via flags) |
 | `gitrac list` | `ls` | List issues with filters. Default sort: ID ascending. |
@@ -175,6 +175,7 @@ src/
 | `--author <name>` | Override comment author (default: `git config user.name`) |
 | `--dir <path>` | Directory to locate the project from (default: cwd). Any path inside the repo works. |
 | `--port <port>` | Web server port for bare `gitrac` (long form only; `serve` also accepts `-p`) |
+| `--host <host>` | Web server bind interface (default `127.0.0.1`; e.g. `0.0.0.0` for all interfaces) |
 
 **Project root resolution:** every command (including `serve` / bare `gitrac`) resolves the project root once, via `git rev-parse --show-toplevel` starting from `--dir` (or the cwd), so gitrac works from any subdirectory of the repo. `.issues/` always lives at that root. Outside a git repo, commands exit 1 with `Error: Not inside a git repository`; if `.issues/config.yaml` is missing, every command except `init` exits 1 with a message to run `gitrac init`.
 
@@ -273,6 +274,19 @@ When current branch != `config.git.defaultBranch`, display prominent warning in 
 
 Bun HTTP server with Hono router. Serves REST API and pre-built React SPA static assets. File watcher (`fs.watch`) on `.issues/` directory detects external changes; events pushed to UI via SSE for live updates.
 
+### Security
+
+The server has no authentication, so exposure is limited instead (`src/web/security.ts`):
+
+- **Loopback by default.** Binds `127.0.0.1`. `--host <host>` opts into another interface (`0.0.0.0` = all); the server then prints a warning that anyone who can reach it can read/modify issues and create commits.
+- **No CORS.** The UI is same-origin and the Vite dev server proxies `/api`, so no `Access-Control-*` headers are sent; other sites can't read API responses.
+- **Host check (DNS rebinding), all requests.** The `Host` header must be an IP literal, `localhost` / `*.localhost`, or the exact name passed to `--host`; anything else gets 403. (A rebinding attack needs an attacker-controlled domain name, which this rejects.) If you bind to all interfaces, reach the server by IP, or pass the name you'll use as `--host`.
+- **Origin check (CSRF), mutating requests.** For anything but GET/HEAD/OPTIONS, an `Origin` header must have the same host:port as `Host`; without `Origin`, a `Sec-Fetch-Site` other than `same-origin`/`none` is rejected. Requests with neither header (curl, scripts) are allowed.
+- **Vite dev proxy.** `vite.config.ts` proxies `/api` to `http://127.0.0.1:3000` with `changeOrigin: false`, so the browser's `Host` (`localhost:5173`) and `Origin` (`http://localhost:5173`) still match and pass both checks.
+- **Uploads.** `POST /api/issues/assets` accepts PNG, JPEG, GIF, WebP, BMP, and ICO up to 10 MiB (413 above that). SVG is rejected — it can carry script and would be served from the app's origin.
+- **Serving assets.** Assets are served with `X-Content-Type-Options: nosniff` and `Content-Security-Policy: default-src 'none'; …; sandbox`, so a file opened directly (e.g. an SVG committed earlier) can't run script in the app's origin. Unknown file types are sent as `application/octet-stream` with `Content-Disposition: attachment`.
+- All request bodies are capped at 11 MiB (`maxRequestBodySize`).
+
 ### API Routes
 
 | Method | Route | Description |
@@ -287,6 +301,7 @@ Bun HTTP server with Hono router. Serves REST API and pre-built React SPA static
 | GET | `/api/config` | Get project config |
 | GET | `/api/git/status` | Branch, push state, warnings |
 | GET | `/api/events` | SSE stream for live updates (file change notifications) |
+| POST | `/api/issues/assets` | Upload an image (multipart `file`; no SVG; max 10 MiB) |
 
 ### React UI
 
