@@ -153,7 +153,8 @@ src/
 
 | Command | Aliases | Description |
 |---------|---------|------------|
-| `gitrac` | | Start web UI (default) |
+| `gitrac` | | Start web UI (default; alias for `gitrac serve`). Accepts `--port <port>`. |
+| `gitrac serve` | | Start web UI. `-p, --port <port>` (default: 3000). |
 | `gitrac init` | | Initialize `.issues/` in current repo. Errors if already exists (use `--force` to reinitialize). Errors if not in a git repo. |
 | `gitrac create` | `new`, `add` | Create a new issue (interactive or via flags) |
 | `gitrac list` | `ls` | List issues with filters. Default sort: ID ascending. |
@@ -173,8 +174,11 @@ src/
 | `--no-commit` | Skip git commit entirely |
 | `--author <name>` | Override comment author (default: `git config user.name`) |
 | `--dir <path>` | Override issues directory (validated to be within the current git repo) |
+| `--port <port>` | Web server port for bare `gitrac` (long form only; `serve` also accepts `-p`) |
 
 Global flags may appear before or after the subcommand (`gitrac --no-commit close 1` and `gitrac close 1 --no-commit` are equivalent). `--no-commit` applies to every mutating command (`init`, `create`, `edit`, `comment`, `close`, `reopen`, `claim`) and also suppresses push. If both `--push` and `--no-push` are given, the last one wins.
+
+Because global flags are matched anywhere on the command line, they must not define short flags that subcommands also use. In particular `-p` belongs to the subcommands (`create -p high`, `edit -p high`, `serve -p 4000`); the global port option is long-only (`--port`).
 
 ### Create Flags
 

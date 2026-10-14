@@ -1,6 +1,4 @@
 import { Command } from 'commander';
-import { readConfig } from '../fs/issue-store.ts';
-import { startServer } from '../web/server.ts';
 import { registerClaimCommand } from './commands/claim.ts';
 import { registerCloseCommand } from './commands/close.ts';
 import { registerCommentCommand } from './commands/comment.ts';
@@ -9,8 +7,12 @@ import { registerEditCommand } from './commands/edit.ts';
 import { registerInitCommand } from './commands/init.ts';
 import { registerListCommand } from './commands/list.ts';
 import { registerReopenCommand } from './commands/reopen.ts';
+import {
+  registerServeCommand,
+  resolveServeOptions,
+  runServe,
+} from './commands/serve.ts';
 import { registerShowCommand } from './commands/show.ts';
-import { getGlobalOptions } from './global-options.ts';
 
 export function createProgram(): Command {
   const program = new Command();
@@ -29,22 +31,16 @@ export function createProgram(): Command {
     .option('--no-commit', 'Do not auto-commit changes')
     .option('--author <name>', 'Author name for comments')
     .option('--dir <path>', 'Path to the project root (default: cwd)')
-    .option('-p, --port <port>', 'Port for the web server', '3000')
+    // Long-only on purpose: subcommands own short flags like `-p` (e.g.
+    // `create -p high`). Program-level options are matched anywhere in argv,
+    // so a global `-p` would swallow them. `serve` accepts `-p, --port`.
+    .option('--port <port>', 'Port for the web server (default: 3000)')
     .action(async () => {
-      const { dir, port } = getGlobalOptions(program);
-
-      try {
-        const config = await readConfig(dir);
-        await startServer({ dir, port, config });
-      } catch {
-        console.error(
-          'Error: Could not start server. Is this a gitrac project?',
-        );
-        console.error('Run "gitrac init" to initialize the .issues directory.');
-        process.exit(1);
-      }
+      // Bare `gitrac` is an alias for `gitrac serve`.
+      await runServe(resolveServeOptions(program));
     });
 
+  registerServeCommand(program);
   registerInitCommand(program);
   registerCreateCommand(program);
   registerListCommand(program);

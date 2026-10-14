@@ -24,7 +24,7 @@ export interface GlobalOptions {
    * defer to `config.git.autoPush`. The last flag on the command line wins.
    */
   push: boolean | undefined;
-  /** Web server port (from `-p, --port`). */
+  /** Web server port (from the long-only `--port`; default 3000). See `serve -p`. */
   port: number;
 }
 

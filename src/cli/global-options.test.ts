@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Command } from 'commander';
 import simpleGit from 'simple-git';
-import { readConfig, writeConfig } from '../fs/issue-store.ts';
+import { readConfig, readIssue, writeConfig } from '../fs/issue-store.ts';
+import { resolveServeOptions } from './commands/serve.ts';
 import { getGlobalOptions } from './global-options.ts';
 import { createProgram } from './index.ts';
 
@@ -85,6 +86,97 @@ describe('getGlobalOptions (real Commander parsing)', () => {
     expect(opts.author).toBe('Bob');
     expect(opts.output).toBe('json');
     expect(opts.port).toBe(4000);
+  });
+
+  test('-p is not a global option (bare `gitrac -p` is rejected)', () => {
+    const program = createProgram();
+    program.action(() => {});
+    program.exitOverride();
+    program.configureOutput({ writeErr: () => {} });
+    expect(() => program.parse(['node', 'gitrac', '-p', '4000'])).toThrow(
+      /unknown option '-p'/,
+    );
+  });
+});
+
+describe('short-flag collisions', () => {
+  test('no subcommand short flag is shadowed by a program-level flag', () => {
+    const program = createProgram();
+    const globalShorts = new Set(
+      program.options.map((o) => o.short).filter(Boolean),
+    );
+    const collisions: string[] = [];
+    for (const cmd of program.commands) {
+      for (const opt of cmd.options) {
+        if (opt.short && globalShorts.has(opt.short)) {
+          collisions.push(`${cmd.name()} ${opt.short}`);
+        }
+      }
+    }
+    expect(collisions).toEqual([]);
+  });
+});
+
+describe('create/edit -p (real Commander parsing)', () => {
+  function subOpts(args: string[], name: string): Record<string, unknown> {
+    const program = parseOnly(args);
+    const cmd = program.commands.find((c) => c.name() === name);
+    if (!cmd) throw new Error(`no ${name} command`);
+    return cmd.opts();
+  }
+
+  test('create -p high sets priority', () => {
+    expect(subOpts(['create', '-t', 'x', '-p', 'high'], 'create')).toEqual(
+      expect.objectContaining({ title: 'x', priority: 'high' }),
+    );
+  });
+
+  test('create -p high with global flags before the subcommand', () => {
+    expect(
+      subOpts(['-o', 'json', 'create', '-p', 'high', '-t', 'x'], 'create')
+        .priority,
+    ).toBe('high');
+  });
+
+  test('edit -p high sets priority', () => {
+    expect(subOpts(['edit', '1', '-p', 'high'], 'edit').priority).toBe('high');
+  });
+});
+
+describe('serve / bare gitrac port resolution', () => {
+  function resolve(args: string[]) {
+    const program = parseOnly(args);
+    const serve = program.commands.find((c) => c.name() === 'serve');
+    const usedServe = args.includes('serve');
+    return resolveServeOptions(program, usedServe ? serve : undefined);
+  }
+
+  test('bare gitrac defaults to port 3000', () => {
+    expect(resolve([]).port).toBe(3000);
+  });
+
+  test('bare gitrac --port 4000', () => {
+    expect(resolve(['--port', '4000']).port).toBe(4000);
+  });
+
+  test('serve defaults to port 3000', () => {
+    expect(resolve(['serve']).port).toBe(3000);
+  });
+
+  test('serve -p 4000', () => {
+    expect(resolve(['serve', '-p', '4000']).port).toBe(4000);
+  });
+
+  test('serve --port 4000', () => {
+    expect(resolve(['serve', '--port', '4000']).port).toBe(4000);
+  });
+
+  test('serve -p wins over a global --port', () => {
+    expect(resolve(['--port', '1234', 'serve', '-p', '4000']).port).toBe(4000);
+  });
+
+  test('serve honors --dir', () => {
+    expect(resolve(['--dir', '/tmp/x', 'serve']).dir).toBe('/tmp/x');
   });
 });
 
@@ -189,6 +281,21 @@ describe('end-to-end through Commander', () => {
         expect(await commitCount()).toBe(before);
         const status = await simpleGit(dir).status();
         expect(status.files.length).toBeGreaterThan(0);
+      });
+
+      test('create -p high persists priority', async () => {
+        await run('create', '-t', 'First', '-p', 'high', '--no-commit');
+        const config = await readConfig(dir);
+        expect(config.defaultPriority).not.toBe('high');
+        const issue = await readIssue(dir, 1);
+        expect(issue.priority).toBe('high');
+      });
+
+      test('edit -p high persists priority', async () => {
+        await run('create', '-t', 'First', '-p', 'low', '--no-commit');
+        await run('edit', '1', '-p', 'high', '--no-commit');
+        const issue = await readIssue(dir, 1);
+        expect(issue.priority).toBe('high');
       });
 
       test('create without --no-commit commits', async () => {

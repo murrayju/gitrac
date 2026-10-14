@@ -14,6 +14,7 @@ This project uses gitrac to track its own issues. The `.issues/` directory conta
 ./gitrac comment <id> "text"    # add a comment
 ./gitrac close <id>            # close an issue
 ./gitrac                       # start the web UI at http://localhost:3000
+./gitrac serve -p 4000         # same, on another port (or: ./gitrac --port 4000)
 ```
 
 When working on a task, claim the corresponding issue first. Close it in the same commit that implements the fix when possible.
@@ -59,7 +60,8 @@ No global installs required. The `./bun` script auto-downloads the pinned Bun ve
 
 ```bash
 ./gitrac <command>                 # run CLI directly
-./gitrac                           # start web server on :3000
+./gitrac                           # start web server on :3000 (alias for `serve`)
+./gitrac serve -p 4000             # start web server on :4000
 ```
 
 For web UI development with hot reload, run both:
