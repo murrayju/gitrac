@@ -105,3 +105,37 @@ function splitContent(content: string): {
     commentsSection: commentLines.join('\n').trim(),
   };
 }
+
+/**
+ * Remove the top-level `updated:` key from the YAML frontmatter of an issue
+ * file, leaving everything else (including any `updated:` text in the body)
+ * untouched. Returns null if the content has no frontmatter block.
+ */
+function stripFrontmatterUpdated(markdown: string): string | null {
+  const lines = markdown.split(/\r?\n/);
+  if (lines[0]?.trim() !== '---') {
+    return null;
+  }
+  const end = lines.findIndex((l, i) => i > 0 && l.trim() === '---');
+  if (end === -1) {
+    return null;
+  }
+  const frontmatter = lines
+    .slice(1, end)
+    .filter((l) => !/^updated\s*:/.test(l));
+  return [lines[0], ...frontmatter, ...lines.slice(end)].join('\n');
+}
+
+/**
+ * True if two issue file contents are identical except for the frontmatter
+ * `updated:` timestamp. Only the top-level frontmatter key counts — an
+ * `updated:` line in the description or comments is a real change.
+ */
+export function differsOnlyInUpdated(before: string, after: string): boolean {
+  if (before === after) {
+    return true;
+  }
+  const a = stripFrontmatterUpdated(before);
+  const b = stripFrontmatterUpdated(after);
+  return a !== null && b !== null && a === b;
+}

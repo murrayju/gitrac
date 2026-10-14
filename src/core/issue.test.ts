@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { parseIssue, serializeIssue } from './issue.ts';
+import { differsOnlyInUpdated, parseIssue, serializeIssue } from './issue.ts';
 
 const FULL_ISSUE = `---
 id: 1
@@ -169,5 +169,44 @@ describe('serializeIssue', () => {
     expect(parts.length).toBe(3);
     // No trailing ---
     expect(serialized.trimEnd().endsWith('---')).toBe(false);
+  });
+});
+
+describe('differsOnlyInUpdated', () => {
+  const doc = (updated: string, body = 'Body.') =>
+    `---\nid: 1\ntitle: T\nupdated: '${updated}'\n---\n\n${body}\n`;
+
+  test('true for identical content', () => {
+    expect(differsOnlyInUpdated(doc('a'), doc('a'))).toBe(true);
+  });
+
+  test('true when only the frontmatter updated: value differs', () => {
+    expect(differsOnlyInUpdated(doc('a'), doc('b'))).toBe(true);
+  });
+
+  test('false when the body differs', () => {
+    expect(differsOnlyInUpdated(doc('a'), doc('b', 'Other.'))).toBe(false);
+  });
+
+  test('false when an updated: line in the body differs', () => {
+    expect(
+      differsOnlyInUpdated(doc('a', 'updated: x'), doc('a', 'updated: y')),
+    ).toBe(false);
+  });
+
+  test('false when another frontmatter field differs', () => {
+    expect(
+      differsOnlyInUpdated(doc('a'), doc('b').replace('title: T', 'title: U')),
+    ).toBe(false);
+  });
+
+  test('false when only a nested (indented) updated: key differs', () => {
+    const a = '---\nid: 1\nmeta:\n  updated: x\n---\n';
+    const b = '---\nid: 1\nmeta:\n  updated: y\n---\n';
+    expect(differsOnlyInUpdated(a, b)).toBe(false);
+  });
+
+  test('false for differing content without frontmatter', () => {
+    expect(differsOnlyInUpdated('updated: a\n', 'updated: b\n')).toBe(false);
   });
 });
