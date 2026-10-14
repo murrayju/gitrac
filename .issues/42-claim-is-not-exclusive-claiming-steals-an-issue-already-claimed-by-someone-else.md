@@ -3,15 +3,15 @@ id: 42
 title: >-
   Claim is not exclusive — claiming steals an issue already claimed by someone
   else
-status: todo
+status: in_progress
 priority: high
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
   - feature
 created: '2026-10-14T21:43:46.806Z'
 createdBy: Justin Murray
-updated: '2026-10-14T21:43:46.806Z'
+updated: '2026-10-14T22:56:47.137Z'
 ---
 
 `gitrac claim` unconditionally overwrites `assignee`. If alice claims #2 and then bob claims #2, bob silently wins. The skill claims "Other agents will see the issue is taken", which is false.
