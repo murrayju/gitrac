@@ -313,7 +313,7 @@ When current branch != `config.git.defaultBranch`, display prominent warning in 
 
 ### Server
 
-Bun HTTP server with Hono router. Serves REST API and pre-built React SPA static assets. File watcher (`fs.watch`) on `.issues/` directory detects external changes; events pushed to UI via SSE for live updates.
+Bun HTTP server with Hono router. Serves REST API and pre-built React SPA static assets. File watcher (`fs.watch`) on `.issues/` directory detects external changes; events pushed to UI via SSE for live updates. The SSE stream (`GET /api/events`) is long-lived: the route lifts Bun's idle timeout for that request only and writes a `: keep-alive` comment every 5s (so proxies don't drop it either). It sends a `connected` event on every (re)connect and an `issues-changed` event on each change; the UI refetches on both, so changes made while it was disconnected are never missed.
 
 ### Security
 
@@ -343,7 +343,7 @@ The server has no authentication, so exposure is limited instead (`src/web/secur
 | PATCH | `/api/issues/:id/reopen` | Reopen issue |
 | GET | `/api/config` | Get project config |
 | GET | `/api/git/status` | Branch, push state, warnings |
-| GET | `/api/events` | SSE stream for live updates (file change notifications) |
+| GET | `/api/events` | SSE stream for live updates: `connected` on (re)connect, `issues-changed` on file changes, `: keep-alive` comments every 5s |
 | POST | `/api/issues/assets` | Upload an image (multipart `file`; no SVG; max 10 MiB) |
 
 ### React UI

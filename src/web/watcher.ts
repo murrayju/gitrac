@@ -54,6 +54,11 @@ export class IssueWatcher {
     this.listeners.delete(listener);
   }
 
+  /** Number of registered change listeners (e.g. open SSE streams). */
+  listenerCount(): number {
+    return this.listeners.size;
+  }
+
   private debounceEmit(): void {
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);

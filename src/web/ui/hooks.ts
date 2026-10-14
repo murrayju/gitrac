@@ -20,6 +20,13 @@ export function useSSE(onEvent: () => void): void {
     function connect() {
       es = new EventSource('/api/events');
 
+      // The server sends `connected` on every (re)connect. Refetch then so
+      // changes emitted while we were disconnected (or between the initial
+      // fetch and the stream opening) are never missed.
+      es.addEventListener('connected', () => {
+        onEventRef.current();
+      });
+
       es.addEventListener('issues-changed', () => {
         onEventRef.current();
       });
