@@ -16,6 +16,7 @@ import {
   withMutationLock,
 } from '../global-options.ts';
 import { formatIssueDetail } from '../output.ts';
+import { resolveTextOptionOrExit } from '../text-input.ts';
 import { exitWithErrors } from '../validation.ts';
 
 export function registerEditCommand(program: Command): void {
@@ -27,6 +28,11 @@ export function registerEditCommand(program: Command): void {
     .option('-p, --priority <priority>', 'New priority')
     .option('-a, --assignee <assignee>', 'New assignee')
     .option('-l, --labels <labels>', 'New labels (comma-separated)')
+    .option('-d, --description <text>', 'New description (markdown)')
+    .option(
+      '--description-file <path>',
+      'Read the new description from a file (`-` for stdin)',
+    )
     .option('-c, --comment <text>', 'Add a comment with this edit')
     .action(
       async (
@@ -38,6 +44,8 @@ export function registerEditCommand(program: Command): void {
           assignee?: string;
           labels?: string;
           comment?: string;
+          description?: string;
+          descriptionFile?: string;
         },
       ) => {
         const globalOpts = await resolveProjectOptions(program);
@@ -48,6 +56,14 @@ export function registerEditCommand(program: Command): void {
           console.error('Error: Invalid issue ID.');
           process.exit(1);
         }
+
+        // Read the description (possibly from stdin) before taking the lock.
+        const newDescription = await resolveTextOptionOrExit({
+          inline: options.description,
+          file: options.descriptionFile,
+          inlineFlag: '--description',
+          fileFlag: '--description-file',
+        });
 
         await withMutationLock(globalOpts, async () => {
           const config = await readConfig(dir);
@@ -69,6 +85,7 @@ export function registerEditCommand(program: Command): void {
               status: options.status,
               priority: options.priority,
               assignee: options.assignee,
+              description: newDescription,
               labels:
                 options.labels !== undefined
                   ? parseLabelList(options.labels)
@@ -77,7 +94,8 @@ export function registerEditCommand(program: Command): void {
             config,
           );
           if (!fields.valid) exitWithErrors(fields.errors);
-          const { title, status, priority, assignee, labels } = fields.values;
+          const { title, status, priority, assignee, labels, description } =
+            fields.values;
 
           // Apply changes
           if (title !== undefined) issue.title = title;
@@ -85,6 +103,7 @@ export function registerEditCommand(program: Command): void {
           if (priority !== undefined) issue.priority = priority;
           if (assignee !== undefined) issue.assignee = assignee;
           if (labels !== undefined) issue.labels = labels;
+          if (description !== undefined) issue.description = description;
 
           const now = new Date().toISOString();
           issue.updated = now;

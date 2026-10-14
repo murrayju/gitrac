@@ -17,6 +17,7 @@ import {
   withMutationLock,
 } from '../global-options.ts';
 import { formatIssueDetail } from '../output.ts';
+import { resolveTextOptionOrExit } from '../text-input.ts';
 import { exitWithErrors } from '../validation.ts';
 
 export function registerCreateCommand(program: Command): void {
@@ -30,6 +31,11 @@ export function registerCreateCommand(program: Command): void {
     .option('-l, --labels <labels>', 'Comma-separated labels')
     .option('-a, --assignee <assignee>', 'Assignee')
     .option('-s, --status <status>', 'Initial status')
+    .option('-d, --description <text>', 'Issue description (markdown)')
+    .option(
+      '--description-file <path>',
+      'Read the description from a file (`-` for stdin)',
+    )
     .action(
       async (options: {
         title?: string;
@@ -37,9 +43,19 @@ export function registerCreateCommand(program: Command): void {
         labels?: string;
         assignee?: string;
         status?: string;
+        description?: string;
+        descriptionFile?: string;
       }) => {
         const globalOpts = await resolveProjectOptions(program);
         const { dir } = globalOpts;
+
+        // Read the description (possibly from stdin) before taking the lock.
+        const description = await resolveTextOptionOrExit({
+          inline: options.description,
+          file: options.descriptionFile,
+          inlineFlag: '--description',
+          fileFlag: '--description-file',
+        });
 
         let title = options.title;
         if (!title) {
@@ -75,6 +91,7 @@ export function registerCreateCommand(program: Command): void {
               status: options.status,
               priority: options.priority,
               assignee: options.assignee,
+              description,
               labels:
                 options.labels !== undefined
                   ? parseLabelList(options.labels)
@@ -97,7 +114,7 @@ export function registerCreateCommand(program: Command): void {
             created: now,
             createdBy: author,
             updated: now,
-            description: '',
+            description: values.description ?? '',
             comments: [],
           };
           // Final gate on the assembled issue (e.g. config defaults that

@@ -12,13 +12,24 @@ import {
   withMutationLock,
 } from '../global-options.ts';
 import { formatIssueDetail } from '../output.ts';
+import { readStdin, resolveTextOptionOrExit } from '../text-input.ts';
+
+interface Opts {
+  bodyFile?: string;
+}
 
 export function registerCommentCommand(program: Command): void {
   program
     .command('comment <id> [body]')
     .alias('c')
-    .description('Add a comment to an issue')
-    .action(async (idStr: string, body?: string) => {
+    .description(
+      'Add a comment to an issue (body from argument, --body-file, or piped stdin)',
+    )
+    .option(
+      '-F, --body-file <path>',
+      'Read the comment body from a file (`-` for stdin)',
+    )
+    .action(async (idStr: string, body: string | undefined, o: Opts) => {
       const globalOpts = await resolveProjectOptions(program);
       const { dir } = globalOpts;
 
@@ -28,10 +39,15 @@ export function registerCommentCommand(program: Command): void {
         process.exit(1);
       }
 
-      let commentBody = body;
-      if (!commentBody) {
-        // Read from stdin
-        commentBody = await readStdin();
+      let commentBody = await resolveTextOptionOrExit({
+        inline: body,
+        file: o.bodyFile,
+        inlineFlag: 'a body argument',
+        fileFlag: '--body-file',
+      });
+      if (commentBody === undefined) {
+        // Implicit stdin fallback when input is piped
+        commentBody = (await readStdin({ onlyIfPiped: true })).trim();
       }
       if (!commentBody) {
         console.error('Error: Comment body is required.');
@@ -83,16 +99,4 @@ export function registerCommentCommand(program: Command): void {
         );
       });
     });
-}
-
-async function readStdin(): Promise<string> {
-  // Check if stdin has data (not a TTY)
-  if (process.stdin.isTTY) {
-    return '';
-  }
-  const chunks: Buffer[] = [];
-  for await (const chunk of process.stdin) {
-    chunks.push(chunk as Buffer);
-  }
-  return Buffer.concat(chunks).toString('utf-8').trim();
 }

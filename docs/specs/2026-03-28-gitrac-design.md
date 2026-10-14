@@ -162,8 +162,8 @@ src/
 | `gitrac create` | `new`, `add` | Create a new issue (interactive or via flags) |
 | `gitrac list` | `ls` | List issues with filters. Default sort: ID ascending. |
 | `gitrac show <id>` | `view` | Show full issue detail |
-| `gitrac edit <id>` | | Edit issue metadata (status, priority, assignee, labels). Metadata only — description editing is via web UI or direct file editing. |
-| `gitrac comment <id>` | `c` | Add a comment |
+| `gitrac edit <id>` | | Edit issue fields (title, status, priority, assignee, labels, description). See [Text Input](#text-input). |
+| `gitrac comment <id> [body]` | `c` | Add a comment. Body from the argument, `-F, --body-file <path\|->`, or piped stdin. |
 | `gitrac close <id>` | | Close issue (moves to `.issues/closed/`). `--cancelled` flag sets status to `cancelled` instead of `done`. |
 | `gitrac reopen <id>` | | Reopen issue (moves back to `.issues/`) |
 | `gitrac claim <id>` | | Assign to self + set status to `in_progress`. Exclusive: see [Claiming](#claiming). |
@@ -207,8 +207,26 @@ Exit codes: `1` general error, `3` claimed by someone else, `4` issue is closed.
 ```
 gitrac create --title "Fix login" --priority high --labels bug,auth
 gitrac create -t "Fix login" -p high -l bug,auth
+gitrac create -t "Fix login" -d "Steps to reproduce: ..."
+gitrac create -t "Fix login" --description-file desc.md
 gitrac create   # interactive mode — prompts for title, priority, etc.
 ```
+
+### Text Input
+
+Long text can be passed inline or read from a file; `-` reads stdin.
+
+| Command | Inline | From file / stdin |
+|---------|--------|-------------------|
+| `create`, `edit` | `-d, --description <text>` | `--description-file <path\|->` |
+| `comment` | `[body]` argument | `-F, --body-file <path\|->` |
+
+- Giving both the inline and file form is an error (exit 1, nothing written).
+- File paths are relative to the current working directory (not `--dir`). A missing file exits 1.
+- Text is trimmed (it is trimmed on read-back anyway). `edit -d ""` clears the description; an empty comment body is rejected.
+- `edit` replaces the whole description; comments are untouched.
+- `comment` with no body argument and no `--body-file` still reads stdin when it is piped (not a TTY).
+- Input is read before the repo mutation lock is taken.
 
 ### List Filters
 

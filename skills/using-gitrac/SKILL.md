@@ -63,8 +63,10 @@ When installed as a binary, replace `./bun index.ts` with `gitrac` in all exampl
 | `gitrac close <id>` | Close an issue (moves to closed/) |
 | `gitrac close <id> --no-commit` | Close without committing (for atomic commits) |
 | `gitrac close <id> -c "text"` | Close with an inline comment |
-| `gitrac comment <id> "text"` | Add a comment |
+| `gitrac create -t "title" --description-file desc.md` | Create with a markdown description (`-` = stdin; or `-d "text"`) |
+| `gitrac comment <id> "text"` | Add a comment (or `--body-file <path\|->`) |
 | `gitrac edit <id> -s todo` | Update status |
+| `gitrac edit <id> -d "text"` | Replace the description (or `--description-file <path\|->`) |
 | `gitrac ls -o json` | Machine-readable output |
 | `gitrac serve -p 4000` | Start the web UI (bare `gitrac` also serves, on :3000). Binds 127.0.0.1; `--host 0.0.0.0` exposes it to the network (no auth) |
 
@@ -180,8 +182,19 @@ When you discover a bug or identify needed work during development:
 gitrac create -t "Brief description" -p high -l bug
 ```
 
-Flags: `-t` title (required), `-p` priority, `-l` labels (comma-separated), `-a` assignee, `-s` status.
+Flags: `-t` title (required), `-p` priority, `-l` labels (comma-separated), `-a` assignee, `-s` status, `-d` description (markdown), `--description-file <path|->` description from a file or stdin (`-`).
 
 Status and priority must be one of the values in `.issues/config.yaml` — anything else is rejected (exit 1, nothing written). New labels are added to the config automatically with a color.
 
-Don't over-describe in the title — the issue file supports a full markdown description that you can edit later via the web UI or directly.
+Don't over-describe in the title — put details (context, acceptance criteria) in the markdown description. For multi-line text, use a heredoc instead of shell-quoting:
+
+```bash
+gitrac create -t "Fix login timeout" -p high -l bug --description-file - <<'EOF'
+Sessions expire after 5 minutes instead of 30.
+
+## Acceptance criteria
+- Session lifetime honors `SESSION_TTL`
+EOF
+```
+
+`gitrac edit <id> -d "..."` / `--description-file` replaces the description later; `gitrac comment <id> --body-file -` does the same for long comments. Passing both the inline and file form is an error.
