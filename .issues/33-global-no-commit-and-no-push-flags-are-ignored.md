@@ -1,14 +1,14 @@
 ---
 id: 33
 title: Global --no-commit and --no-push flags are ignored
-status: todo
+status: in_progress
 priority: urgent
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-14T21:43:46.806Z'
 createdBy: Justin Murray
-updated: '2026-10-14T21:43:46.806Z'
+updated: '2026-10-14T21:44:09.715Z'
 ---
 
 Commander stores negated options under the positive name: `--no-commit` sets `opts().commit === false` and `--no-push` sets `opts().push === false`. Every command reads `globalOpts.noCommit` / `globalOpts.noPush`, which are never set.
