@@ -1,14 +1,14 @@
 ---
 id: 61
 title: SSE event stream disconnects every ~10s and drops change events
-status: todo
+status: in_progress
 priority: high
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-14T23:35:48.022Z'
 createdBy: Justin Murray
-updated: '2026-10-14T23:35:48.022Z'
+updated: '2026-10-14T23:36:01.291Z'
 ---
 
 Found while browser-testing #45. The `/api/events` SSE connection is torn down roughly every 10 seconds (`net::ERR_INCOMPLETE_CHUNKED_ENCODING` in the browser console, followed by a reconnect 3s later).
