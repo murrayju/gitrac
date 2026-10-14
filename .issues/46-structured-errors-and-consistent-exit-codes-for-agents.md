@@ -1,14 +1,14 @@
 ---
 id: 46
 title: Structured errors and consistent exit codes for agents
-status: todo
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - enhancement
 created: '2026-10-14T21:43:46.806Z'
 createdBy: Justin Murray
-updated: '2026-10-14T21:43:46.806Z'
+updated: '2026-10-14T23:36:02.188Z'
 ---
 
 Errors are a mix of `console.error` strings and raw uncaught stack traces (e.g. simple-git errors, ENOENT). With `-o json` agents get unparseable output on failure.
