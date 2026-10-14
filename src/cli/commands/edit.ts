@@ -10,7 +10,11 @@ import {
   writeIssue,
 } from '../../fs/issue-store.ts';
 import { getGitRoot } from '../../git/status.ts';
-import { commitAndMaybePush, getGlobalOptions } from '../global-options.ts';
+import {
+  commitAndMaybePush,
+  getGlobalOptions,
+  withMutationLock,
+} from '../global-options.ts';
 import { formatIssueDetail } from '../output.ts';
 
 export function registerEditCommand(program: Command): void {
@@ -45,90 +49,92 @@ export function registerEditCommand(program: Command): void {
           process.exit(1);
         }
 
-        const config = await readConfig(dir);
         const id = Number.parseInt(idStr, 10);
         if (Number.isNaN(id)) {
           console.error('Error: Invalid issue ID.');
           process.exit(1);
         }
 
-        const found = await findIssueFile(dir, id);
-        if (!found) {
-          console.error(`Error: Issue #${id} not found.`);
-          process.exit(1);
-        }
-
-        const wasClosed = found.closed;
-        const oldFilename = found.filename;
-
-        const issue = await readIssue(dir, id);
-
-        // Apply changes
-        if (options.title !== undefined) issue.title = options.title;
-        if (options.status !== undefined)
-          issue.status = options.status as Status;
-        if (options.priority !== undefined)
-          issue.priority = options.priority as Priority;
-        if (options.assignee !== undefined) issue.assignee = options.assignee;
-        if (options.labels !== undefined) {
-          issue.labels = options.labels.split(',').map((l) => l.trim());
-        }
-
-        const now = new Date().toISOString();
-        issue.updated = now;
-
-        if (options.comment) {
-          // Resolve author for comment
-          let author = globalOpts.author;
-          if (!author) {
-            try {
-              const { default: simpleGit } = await import('simple-git');
-              const git = simpleGit(dir);
-              author = (await git.getConfig('user.name')).value || 'unknown';
-            } catch {
-              author = 'unknown';
-            }
+        await withMutationLock(globalOpts, async () => {
+          const config = await readConfig(dir);
+          const found = await findIssueFile(dir, id);
+          if (!found) {
+            console.error(`Error: Issue #${id} not found.`);
+            process.exit(1);
           }
-          issue.comments.push({
-            author,
-            timestamp: now,
-            body: options.comment,
+
+          const wasClosed = found.closed;
+          const oldFilename = found.filename;
+
+          const issue = await readIssue(dir, id);
+
+          // Apply changes
+          if (options.title !== undefined) issue.title = options.title;
+          if (options.status !== undefined)
+            issue.status = options.status as Status;
+          if (options.priority !== undefined)
+            issue.priority = options.priority as Priority;
+          if (options.assignee !== undefined) issue.assignee = options.assignee;
+          if (options.labels !== undefined) {
+            issue.labels = options.labels.split(',').map((l) => l.trim());
+          }
+
+          const now = new Date().toISOString();
+          issue.updated = now;
+
+          if (options.comment) {
+            // Resolve author for comment
+            let author = globalOpts.author;
+            if (!author) {
+              try {
+                const { default: simpleGit } = await import('simple-git');
+                const git = simpleGit(dir);
+                author = (await git.getConfig('user.name')).value || 'unknown';
+              } catch {
+                author = 'unknown';
+              }
+            }
+            issue.comments.push({
+              author,
+              timestamp: now,
+              body: options.comment,
+            });
+          }
+
+          const nowClosed = isClosedStatus(issue.status);
+          const newFilename = await writeIssue(dir, issue, {
+            closed: nowClosed,
           });
-        }
 
-        const nowClosed = isClosedStatus(issue.status);
-        const newFilename = await writeIssue(dir, issue, {
-          closed: nowClosed,
+          // Clean up old file if filename changed or issue moved directories
+          const filenameChanged = newFilename !== oldFilename;
+          const directoryChanged = wasClosed !== nowClosed;
+          if (filenameChanged || directoryChanged) {
+            await deleteIssueFile(dir, oldFilename, wasClosed);
+          }
+
+          const newDir = nowClosed ? join('.issues', 'closed') : '.issues';
+          const filesToCommit = [
+            join(newDir, newFilename),
+            '.issues/config.yaml',
+          ];
+
+          // Include old file path for git tracking
+          if (filenameChanged || directoryChanged) {
+            const oldDir = wasClosed ? join('.issues', 'closed') : '.issues';
+            filesToCommit.push(join(oldDir, oldFilename));
+          }
+
+          const format = globalOpts.output;
+          console.log(formatIssueDetail(issue, format));
+
+          await commitAndMaybePush(
+            globalOpts,
+            config,
+            filesToCommit,
+            `${config.git.commitPrefix} edit #${id} ${issue.title}`,
+          );
         });
-
-        // Clean up old file if filename changed or issue moved directories
-        const filenameChanged = newFilename !== oldFilename;
-        const directoryChanged = wasClosed !== nowClosed;
-        if (filenameChanged || directoryChanged) {
-          await deleteIssueFile(dir, oldFilename, wasClosed);
-        }
-
-        const newDir = nowClosed ? join('.issues', 'closed') : '.issues';
-        const filesToCommit = [
-          join(newDir, newFilename),
-          '.issues/config.yaml',
-        ];
-
-        // Include old file path for git tracking
-        if (filenameChanged || directoryChanged) {
-          const oldDir = wasClosed ? join('.issues', 'closed') : '.issues';
-          filesToCommit.push(join(oldDir, oldFilename));
-        }
-
-        const format = globalOpts.output;
-        console.log(formatIssueDetail(issue, format));
-
-        await commitAndMaybePush(
-          globalOpts,
-          config,
-          filesToCommit,
-          `${config.git.commitPrefix} edit #${id} ${issue.title}`,
-        );
       },
     );
 }

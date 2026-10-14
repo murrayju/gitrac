@@ -1,5 +1,7 @@
 import type { Command } from 'commander';
 import type { Config, OutputFormat } from '../core/types.ts';
+import { LockTimeoutError } from '../fs/lock.ts';
+import { withRepoLock } from '../git/lock.ts';
 import { commitIssueChange, pushIfConfigured } from '../git/operations.ts';
 
 /**
@@ -71,4 +73,27 @@ export async function commitAndMaybePush(
   const hash = await commitIssueChange(opts.dir, files, message);
   await pushIfConfigured(opts.dir, config, { push: opts.push });
   return hash;
+}
+
+/**
+ * Run a mutating command's whole read-modify-write-commit sequence (including
+ * ID allocation and `--no-commit` file writes) while holding the repo-wide
+ * gitrac lock, so concurrent gitrac processes and the web server can't
+ * interleave. Keep interactive input (prompts, stdin) outside of `fn`.
+ *
+ * If the lock can't be acquired in time, prints an error and exits 1.
+ */
+export async function withMutationLock<T>(
+  opts: GlobalOptions,
+  fn: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await withRepoLock(opts.dir, fn);
+  } catch (err) {
+    if (err instanceof LockTimeoutError) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+    throw err;
+  }
 }

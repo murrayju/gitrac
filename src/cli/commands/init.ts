@@ -1,7 +1,11 @@
 import type { Command } from 'commander';
 import { initIssuesDir, readConfig } from '../../fs/issue-store.ts';
 import { getGitRoot } from '../../git/status.ts';
-import { commitAndMaybePush, getGlobalOptions } from '../global-options.ts';
+import {
+  commitAndMaybePush,
+  getGlobalOptions,
+  withMutationLock,
+} from '../global-options.ts';
 
 export function registerInitCommand(program: Command): void {
   program
@@ -20,32 +24,34 @@ export function registerInitCommand(program: Command): void {
         process.exit(1);
       }
 
-      try {
-        await initIssuesDir(dir, { force: options.force });
-      } catch (err) {
-        console.error(
-          `Error: ${err instanceof Error ? err.message : String(err)}`,
-        );
-        process.exit(1);
-      }
-
-      console.log('Initialized .issues directory.');
-
-      // Auto-commit if configured (freshly created, so read config).
-      // Respects --no-commit and --push / --no-push.
-      try {
-        const config = await readConfig(dir);
-        const hash = await commitAndMaybePush(
-          globalOpts,
-          config,
-          ['.issues/config.yaml'],
-          `${config.git.commitPrefix} initialize issue tracker`,
-        );
-        if (hash) {
-          console.log('Committed initial configuration.');
+      await withMutationLock(globalOpts, async () => {
+        try {
+          await initIssuesDir(dir, { force: options.force });
+        } catch (err) {
+          console.error(
+            `Error: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          process.exit(1);
         }
-      } catch {
-        // Config read might fail, that's ok for init
-      }
+
+        console.log('Initialized .issues directory.');
+
+        // Auto-commit if configured (freshly created, so read config).
+        // Respects --no-commit and --push / --no-push.
+        try {
+          const config = await readConfig(dir);
+          const hash = await commitAndMaybePush(
+            globalOpts,
+            config,
+            ['.issues/config.yaml'],
+            `${config.git.commitPrefix} initialize issue tracker`,
+          );
+          if (hash) {
+            console.log('Committed initial configuration.');
+          }
+        } catch {
+          // Config read might fail, that's ok for init
+        }
+      });
     });
 }

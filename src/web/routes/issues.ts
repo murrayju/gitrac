@@ -21,6 +21,7 @@ import {
   writeIssue,
 } from '../../fs/issue-store.ts';
 import { commitIssueChange } from '../../git/operations.ts';
+import { mutationLock } from '../lock.ts';
 import type { ServerContext } from '../server.ts';
 
 /**
@@ -62,6 +63,8 @@ function referencedAssetPaths(issue: Issue): string[] {
 
 export function issueRoutes(ctx: ServerContext): Hono {
   const app = new Hono();
+  // Serialize every mutation (in-process queue + cross-process lockfile)
+  const locked = mutationLock(ctx);
 
   // GET /issues — list issues with optional filters
   app.get('/issues', async (c) => {
@@ -139,7 +142,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
   });
 
   // POST /issues — create a new issue
-  app.post('/issues', async (c) => {
+  app.post('/issues', locked, async (c) => {
     const { dir, config, amendTracker } = ctx;
 
     const body = await c.req.json();
@@ -192,7 +195,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
   });
 
   // PATCH /issues/:id — update issue metadata
-  app.patch('/issues/:id', async (c) => {
+  app.patch('/issues/:id', locked, async (c) => {
     const { dir, config, amendTracker } = ctx;
     const id = Number.parseInt(c.req.param('id'), 10);
 
@@ -268,7 +271,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
   });
 
   // POST /issues/:id/comments — add a comment
-  app.post('/issues/:id/comments', async (c) => {
+  app.post('/issues/:id/comments', locked, async (c) => {
     const { dir, config, amendTracker } = ctx;
     const id = Number.parseInt(c.req.param('id'), 10);
 
@@ -328,7 +331,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
   });
 
   // PUT /issues/:id/comments/:commentIndex — edit a comment
-  app.put('/issues/:id/comments/:commentIndex', async (c) => {
+  app.put('/issues/:id/comments/:commentIndex', locked, async (c) => {
     const { dir, config, amendTracker } = ctx;
     const id = Number.parseInt(c.req.param('id'), 10);
     const commentIndex = Number.parseInt(c.req.param('commentIndex'), 10);
@@ -394,7 +397,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
   });
 
   // DELETE /issues/:id/comments/:commentIndex — delete a comment
-  app.delete('/issues/:id/comments/:commentIndex', async (c) => {
+  app.delete('/issues/:id/comments/:commentIndex', locked, async (c) => {
     const { dir, config, amendTracker } = ctx;
     const id = Number.parseInt(c.req.param('id'), 10);
     const commentIndex = Number.parseInt(c.req.param('commentIndex'), 10);
@@ -440,7 +443,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
   });
 
   // PATCH /issues/:id/close — close an issue
-  app.patch('/issues/:id/close', async (c) => {
+  app.patch('/issues/:id/close', locked, async (c) => {
     const { dir, config, amendTracker } = ctx;
     const id = Number.parseInt(c.req.param('id'), 10);
 
@@ -482,7 +485,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
   });
 
   // PATCH /issues/:id/reopen — reopen a closed issue
-  app.patch('/issues/:id/reopen', async (c) => {
+  app.patch('/issues/:id/reopen', locked, async (c) => {
     const { dir, config, amendTracker } = ctx;
     const id = Number.parseInt(c.req.param('id'), 10);
 

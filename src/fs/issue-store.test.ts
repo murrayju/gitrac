@@ -274,6 +274,35 @@ describe('allocateNextId', () => {
     expect(id2).toBe(2);
     expect(id3).toBe(3);
   });
+
+  test('skips IDs already used by open issue files when nextId is stale', async () => {
+    await initIssuesDir(dir);
+    await writeIssue(dir, makeIssue({ id: 1, title: 'One' }));
+    await writeIssue(dir, makeIssue({ id: 5, title: 'Five' }));
+    // config.nextId is still 1 (e.g. stale after a merge)
+    expect((await readConfig(dir)).nextId).toBe(1);
+
+    const id = await allocateNextId(dir);
+    expect(id).toBe(6);
+    expect((await readConfig(dir)).nextId).toBe(7);
+  });
+
+  test('skips IDs already used by closed issue files', async () => {
+    await initIssuesDir(dir);
+    await writeIssue(dir, makeIssue({ id: 3, title: 'Done' }), {
+      closed: true,
+    });
+    expect(await allocateNextId(dir)).toBe(4);
+  });
+
+  test('keeps nextId when it is ahead of existing files', async () => {
+    await initIssuesDir(dir);
+    await writeIssue(dir, makeIssue({ id: 2, title: 'Two' }));
+    const config = await readConfig(dir);
+    config.nextId = 10;
+    await writeConfig(dir, config);
+    expect(await allocateNextId(dir)).toBe(10);
+  });
 });
 
 describe('writeIssue with closed option', () => {

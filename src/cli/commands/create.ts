@@ -6,7 +6,11 @@ import {
   writeIssue,
 } from '../../fs/issue-store.ts';
 import { getGitRoot } from '../../git/status.ts';
-import { commitAndMaybePush, getGlobalOptions } from '../global-options.ts';
+import {
+  commitAndMaybePush,
+  getGlobalOptions,
+  withMutationLock,
+} from '../global-options.ts';
 import { formatIssueDetail } from '../output.ts';
 
 export function registerCreateCommand(program: Command): void {
@@ -38,8 +42,6 @@ export function registerCreateCommand(program: Command): void {
           process.exit(1);
         }
 
-        const config = await readConfig(dir);
-
         let title = options.title;
         if (!title) {
           const prompted = prompt('Issue title: ');
@@ -49,9 +51,6 @@ export function registerCreateCommand(program: Command): void {
           }
           title = prompted;
         }
-
-        const now = new Date().toISOString();
-        const id = await allocateNextId(dir);
 
         // Get author name
         let author = globalOpts.author;
@@ -65,33 +64,41 @@ export function registerCreateCommand(program: Command): void {
           }
         }
 
-        const issue: Issue = {
-          id,
-          title,
-          status: (options.status as Status) || config.defaultStatus,
-          priority: (options.priority as Priority) || config.defaultPriority,
-          assignee: options.assignee || '',
-          labels: options.labels
-            ? options.labels.split(',').map((l) => l.trim())
-            : [],
-          created: now,
-          createdBy: author,
-          updated: now,
-          description: '',
-          comments: [],
-        };
+        // Allocate the ID, write the file and commit under the repo lock so
+        // parallel creates can't collide.
+        await withMutationLock(globalOpts, async () => {
+          const config = await readConfig(dir);
+          const now = new Date().toISOString();
+          const id = await allocateNextId(dir);
 
-        const filename = await writeIssue(dir, issue);
+          const issue: Issue = {
+            id,
+            title,
+            status: (options.status as Status) || config.defaultStatus,
+            priority: (options.priority as Priority) || config.defaultPriority,
+            assignee: options.assignee || '',
+            labels: options.labels
+              ? options.labels.split(',').map((l) => l.trim())
+              : [],
+            created: now,
+            createdBy: author,
+            updated: now,
+            description: '',
+            comments: [],
+          };
 
-        const format = globalOpts.output;
-        console.log(formatIssueDetail(issue, format));
+          const filename = await writeIssue(dir, issue);
 
-        await commitAndMaybePush(
-          globalOpts,
-          config,
-          [`.issues/${filename}`, '.issues/config.yaml'],
-          `${config.git.commitPrefix} create #${id} ${title}`,
-        );
+          const format = globalOpts.output;
+          console.log(formatIssueDetail(issue, format));
+
+          await commitAndMaybePush(
+            globalOpts,
+            config,
+            [`.issues/${filename}`, '.issues/config.yaml'],
+            `${config.git.commitPrefix} create #${id} ${title}`,
+          );
+        });
       },
     );
 }

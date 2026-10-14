@@ -4,17 +4,20 @@ import { ensureLabelColors } from '../../core/config.ts';
 import type { Assignee } from '../../core/types.ts';
 import { readConfig, writeConfig } from '../../fs/issue-store.ts';
 import { commitIssueChange } from '../../git/operations.ts';
+import { mutationLock } from '../lock.ts';
 import type { ServerContext } from '../server.ts';
 
 export function configRoutes(ctx: ServerContext): Hono {
   const app = new Hono();
+  // Serialize every mutation (in-process queue + cross-process lockfile)
+  const locked = mutationLock(ctx);
 
   app.get('/config', (c) => {
     return c.json(ctx.config);
   });
 
   // PATCH /config/labels — update label colors
-  app.patch('/config/labels', async (c) => {
+  app.patch('/config/labels', locked, async (c) => {
     const { dir, config } = ctx;
     const body = await c.req.json();
     const { labels } = body;
@@ -55,7 +58,7 @@ export function configRoutes(ctx: ServerContext): Hono {
   });
 
   // PATCH /config/assignees — update assignees list
-  app.patch('/config/assignees', async (c) => {
+  app.patch('/config/assignees', locked, async (c) => {
     const { dir, config } = ctx;
     const body = await c.req.json();
     const { assignees } = body;

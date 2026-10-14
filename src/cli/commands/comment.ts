@@ -7,7 +7,11 @@ import {
   writeIssue,
 } from '../../fs/issue-store.ts';
 import { getGitRoot } from '../../git/status.ts';
-import { commitAndMaybePush, getGlobalOptions } from '../global-options.ts';
+import {
+  commitAndMaybePush,
+  getGlobalOptions,
+  withMutationLock,
+} from '../global-options.ts';
 import { formatIssueDetail } from '../output.ts';
 
 export function registerCommentCommand(program: Command): void {
@@ -26,7 +30,6 @@ export function registerCommentCommand(program: Command): void {
         process.exit(1);
       }
 
-      const config = await readConfig(dir);
       const id = Number.parseInt(idStr, 10);
       if (Number.isNaN(id)) {
         console.error('Error: Invalid issue ID.');
@@ -55,35 +58,38 @@ export function registerCommentCommand(program: Command): void {
         }
       }
 
-      const found = await findIssueFile(dir, id);
-      if (!found) {
-        console.error(`Error: Issue #${id} not found.`);
-        process.exit(1);
-      }
-      const isClosed = found.closed;
+      await withMutationLock(globalOpts, async () => {
+        const config = await readConfig(dir);
+        const found = await findIssueFile(dir, id);
+        if (!found) {
+          console.error(`Error: Issue #${id} not found.`);
+          process.exit(1);
+        }
+        const isClosed = found.closed;
 
-      const issue = await readIssue(dir, id);
-      const now = new Date().toISOString();
+        const issue = await readIssue(dir, id);
+        const now = new Date().toISOString();
 
-      issue.comments.push({
-        author,
-        timestamp: now,
-        body: commentBody,
+        issue.comments.push({
+          author,
+          timestamp: now,
+          body: commentBody,
+        });
+        issue.updated = now;
+
+        const filename = await writeIssue(dir, issue, { closed: isClosed });
+
+        const format = globalOpts.output;
+        console.log(formatIssueDetail(issue, format));
+
+        const relDir = isClosed ? join('.issues', 'closed') : '.issues';
+        await commitAndMaybePush(
+          globalOpts,
+          config,
+          [join(relDir, filename)],
+          `${config.git.commitPrefix} comment on #${id}`,
+        );
       });
-      issue.updated = now;
-
-      const filename = await writeIssue(dir, issue, { closed: isClosed });
-
-      const format = globalOpts.output;
-      console.log(formatIssueDetail(issue, format));
-
-      const relDir = isClosed ? join('.issues', 'closed') : '.issues';
-      await commitAndMaybePush(
-        globalOpts,
-        config,
-        [join(relDir, filename)],
-        `${config.git.commitPrefix} comment on #${id}`,
-      );
     });
 }
 

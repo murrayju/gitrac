@@ -2,6 +2,7 @@ import { realpath } from 'node:fs/promises';
 import { relative, resolve, sep } from 'node:path';
 import simpleGit from 'simple-git';
 import { differsOnlyInUpdated } from '../core/issue.ts';
+import { withRepoLock } from './lock.ts';
 import { commitIssueChange, commitPaths } from './operations.ts';
 import { hasRemote } from './status.ts';
 
@@ -147,6 +148,19 @@ export class AmendTracker {
    * pattern all web routes should use.
    */
   async commitOrAmend(
+    dir: string,
+    issueId: number,
+    files: string[],
+    message: string,
+  ): Promise<void> {
+    // Re-entrant: callers normally already hold the repo lock for the whole
+    // mutation; this guards the HEAD check + amend/reset sequence regardless.
+    await withRepoLock(dir, () =>
+      this.commitOrAmendLocked(dir, issueId, files, message),
+    );
+  }
+
+  private async commitOrAmendLocked(
     dir: string,
     issueId: number,
     files: string[],

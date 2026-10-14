@@ -115,7 +115,7 @@ Found that the timeout defaults to 30s instead of 300s.
 
 ### Issue ID Scheme
 
-Auto-incrementing integers. `nextId` in `config.yaml` is the counter. The CLI reads the counter, creates the file, increments the counter, and commits atomically. Race conditions are resolved by git (failed push -> rebase -> reassign ID if needed).
+Auto-incrementing integers. `nextId` in `config.yaml` is the counter. Allocation takes `max(nextId, highest existing issue file ID + 1)` across `.issues/` and `.issues/closed/`, so a stale counter (e.g. after a merge) never yields a duplicate ID within a checkout. Allocation, writing the file, bumping the counter and committing all happen under the repo lock (see [Concurrency](#concurrency)), so parallel local creates can't collide. Races across clones/branches are resolved by git (failed push -> rebase -> reassign ID if needed).
 
 ### File Lookup
 
@@ -231,6 +231,19 @@ issue: claim #3 (murrayju)
 4. If an amend leaves the commit with no net change vs. its parent (every file it touches is one of the issue files gitrac just committed, and only the frontmatter `updated:` timestamp differs), the commit is dropped. The drop uses `git reset --soft HEAD~1` and then restores only those issue files (index + working tree) to the parent's version — it never uses `reset --hard`, so unrelated staged/unstaged work is preserved.
 
 **Implementation:** After committing, store the commit hash and issue ID in server memory. Before amending, verify `git log -1 --format=%H` matches the stored hash and the branch is ahead of remote. This has a narrow TOCTOU window that is acceptable for a single-user tool; if amend fails, fall back to a new commit.
+
+### Concurrency
+
+Every mutation — CLI command or web API request — runs its whole read-modify-write-commit sequence (reading the issue/config, ID allocation, writing files, `git add`/`commit`/amend, and push) while holding a repo-wide lock. This applies even with `--no-commit`, since the file writes themselves can race.
+
+- **Cross-process:** a lockfile at `$(git rev-parse --git-common-dir)/gitrac.lock` (shared by all worktrees of the repo). It is created atomically (temp file + hard link) and records the holder's PID, hostname, and a token. Waiters retry with jittered exponential backoff and give up after 120s (CLI: error + exit 1; web: HTTP 503).
+- **In-process:** within one process (notably the web server) callers queue FIFO per lock before competing for the lockfile, so overlapping autosave/comment requests are applied one at a time.
+- **Stale locks:** a lock is broken if its holder is on the same host and its PID is dead, or if its mtime is older than 60s. Holders refresh the mtime every 15s, so a long push is never mistaken for an abandoned lock. Breaking happens under a secondary `gitrac.lock.break` lock and re-verifies the lock contents, so a freshly acquired lock is never removed. A process that calls `process.exit()` while holding the lock removes it on exit.
+- **Re-entrant:** nested acquisitions in the same async context are no-ops; low-level git helpers (`commitPaths`, `commitOrAmend`, push/pull) take the lock themselves as a safety net.
+- Outside a git repo (tests, plain directories) the lock lives in the OS temp dir, keyed by directory.
+- Asset uploads and drafts don't take the lock: uploads write new uniquely-named files and drafts are untracked.
+
+Implementation: `withLock` (`src/fs/lock.ts`, generic) and `withRepoLock` (`src/git/lock.ts`, resolves the lock path). The CLI wraps commands with `withMutationLock`; web routes use the `mutationLock` middleware (`src/web/lock.ts`).
 
 ### Push/Pull
 

@@ -7,7 +7,11 @@ import {
   writeIssue,
 } from '../../fs/issue-store.ts';
 import { getGitRoot } from '../../git/status.ts';
-import { commitAndMaybePush, getGlobalOptions } from '../global-options.ts';
+import {
+  commitAndMaybePush,
+  getGlobalOptions,
+  withMutationLock,
+} from '../global-options.ts';
 import { formatIssueDetail } from '../output.ts';
 
 export function registerCloseCommand(program: Command): void {
@@ -31,7 +35,6 @@ export function registerCloseCommand(program: Command): void {
           process.exit(1);
         }
 
-        const config = await readConfig(dir);
         const id = Number.parseInt(idStr, 10);
         if (Number.isNaN(id)) {
           console.error('Error: Invalid issue ID.');
@@ -50,43 +53,46 @@ export function registerCloseCommand(program: Command): void {
           }
         }
 
-        try {
-          const issue = await readIssue(dir, id);
-          const status = options.cancelled ? 'cancelled' : 'done';
-          issue.status = status;
-          const now = new Date().toISOString();
-          issue.updated = now;
+        await withMutationLock(globalOpts, async () => {
+          const config = await readConfig(dir);
+          try {
+            const issue = await readIssue(dir, id);
+            const status = options.cancelled ? 'cancelled' : 'done';
+            issue.status = status;
+            const now = new Date().toISOString();
+            issue.updated = now;
 
-          if (options.comment) {
-            issue.comments.push({
-              author,
-              timestamp: now,
-              body: options.comment,
-            });
+            if (options.comment) {
+              issue.comments.push({
+                author,
+                timestamp: now,
+                body: options.comment,
+              });
+            }
+
+            // Write the updated issue (still in open dir)
+            await writeIssue(dir, issue);
+
+            // Move to closed directory
+            await moveToClose(dir, id);
+
+            const format = globalOpts.output;
+            console.log(formatIssueDetail(issue, format));
+
+            const filename = issueFilename(issue.id, issue.title);
+            await commitAndMaybePush(
+              globalOpts,
+              config,
+              [`.issues/${filename}`, `.issues/closed/${filename}`],
+              `${config.git.commitPrefix} close #${id} ${issue.title}`,
+            );
+          } catch (err) {
+            console.error(
+              `Error: ${err instanceof Error ? err.message : String(err)}`,
+            );
+            process.exit(1);
           }
-
-          // Write the updated issue (still in open dir)
-          await writeIssue(dir, issue);
-
-          // Move to closed directory
-          await moveToClose(dir, id);
-
-          const format = globalOpts.output;
-          console.log(formatIssueDetail(issue, format));
-
-          const filename = issueFilename(issue.id, issue.title);
-          await commitAndMaybePush(
-            globalOpts,
-            config,
-            [`.issues/${filename}`, `.issues/closed/${filename}`],
-            `${config.git.commitPrefix} close #${id} ${issue.title}`,
-          );
-        } catch (err) {
-          console.error(
-            `Error: ${err instanceof Error ? err.message : String(err)}`,
-          );
-          process.exit(1);
-        }
+        });
       },
     );
 }

@@ -9,6 +9,8 @@ description: Use when a project has a .issues/ directory or AGENTS.md mentions g
 
 gitrac manages project issues as markdown files in the git repo itself. Issues live in `.issues/`, closed issues in `.issues/closed/`. Every mutation auto-commits to git. Auto-commits include only the issue files gitrac touched; anything else you have staged stays staged and is not swept into the `issue:` commit.
 
+Mutations are safe to run in parallel (multiple agents, worktrees, or the web UI at the same time): gitrac serializes them with a lock in the git dir, so IDs never collide and commits don't fail on git locks. If a gitrac process is killed, its stale lock is cleaned up automatically.
+
 **Core principle:** Claim before working. Close in the same commit as the code change.
 
 ## When to Use

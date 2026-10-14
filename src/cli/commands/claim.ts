@@ -10,7 +10,11 @@ import {
   writeIssue,
 } from '../../fs/issue-store.ts';
 import { getGitRoot } from '../../git/status.ts';
-import { commitAndMaybePush, getGlobalOptions } from '../global-options.ts';
+import {
+  commitAndMaybePush,
+  getGlobalOptions,
+  withMutationLock,
+} from '../global-options.ts';
 import { formatIssueDetail } from '../output.ts';
 
 export function registerClaimCommand(program: Command): void {
@@ -29,7 +33,6 @@ export function registerClaimCommand(program: Command): void {
         process.exit(1);
       }
 
-      const config = await readConfig(dir);
       const id = Number.parseInt(idStr, 10);
       if (Number.isNaN(id)) {
         console.error('Error: Invalid issue ID.');
@@ -50,70 +53,73 @@ export function registerClaimCommand(program: Command): void {
         }
       }
 
-      try {
-        const found = await findIssueFile(dir, id);
-        if (!found) {
-          console.error(`Error: Issue #${id} not found.`);
+      await withMutationLock(globalOpts, async () => {
+        const config = await readConfig(dir);
+        try {
+          const found = await findIssueFile(dir, id);
+          if (!found) {
+            console.error(`Error: Issue #${id} not found.`);
+            process.exit(1);
+          }
+          const wasClosed = found.closed;
+          const oldFilename = found.filename;
+
+          const issue = await readIssue(dir, id);
+          // Use email as the canonical identifier if available, else fall back to name
+          issue.assignee = authorEmail || authorName;
+          issue.status = 'in_progress';
+
+          // Add user to config.assignees if not already present (by email)
+          let configChanged = false;
+          if (
+            authorEmail &&
+            !findAssigneeByEmail(config.assignees, authorEmail)
+          ) {
+            config.assignees.push({ name: authorName, email: authorEmail });
+            await writeConfig(dir, config);
+            configChanged = true;
+          }
+          const now = new Date().toISOString();
+          issue.updated = now;
+
+          if (options.comment) {
+            issue.comments.push({
+              author: authorName,
+              timestamp: now,
+              body: options.comment,
+            });
+          }
+
+          // Claiming always sets in_progress (not a closed status), so write to open dir
+          const filename = await writeIssue(dir, issue);
+
+          // If issue was in closed dir, clean up the old file
+          if (wasClosed) {
+            await deleteIssueFile(dir, oldFilename, true);
+          }
+
+          const format = globalOpts.output;
+          console.log(formatIssueDetail(issue, format));
+
+          const filesToCommit = [join('.issues', filename)];
+          if (wasClosed) {
+            filesToCommit.push(join('.issues', 'closed', oldFilename));
+          }
+          if (configChanged) {
+            filesToCommit.push(join('.issues', 'config.yaml'));
+          }
+          await commitAndMaybePush(
+            globalOpts,
+            config,
+            filesToCommit,
+            `${config.git.commitPrefix} claim #${id} ${issue.title}`,
+          );
+        } catch (err) {
+          console.error(
+            `Error: ${err instanceof Error ? err.message : String(err)}`,
+          );
           process.exit(1);
         }
-        const wasClosed = found.closed;
-        const oldFilename = found.filename;
-
-        const issue = await readIssue(dir, id);
-        // Use email as the canonical identifier if available, else fall back to name
-        issue.assignee = authorEmail || authorName;
-        issue.status = 'in_progress';
-
-        // Add user to config.assignees if not already present (by email)
-        let configChanged = false;
-        if (
-          authorEmail &&
-          !findAssigneeByEmail(config.assignees, authorEmail)
-        ) {
-          config.assignees.push({ name: authorName, email: authorEmail });
-          await writeConfig(dir, config);
-          configChanged = true;
-        }
-        const now = new Date().toISOString();
-        issue.updated = now;
-
-        if (options.comment) {
-          issue.comments.push({
-            author: authorName,
-            timestamp: now,
-            body: options.comment,
-          });
-        }
-
-        // Claiming always sets in_progress (not a closed status), so write to open dir
-        const filename = await writeIssue(dir, issue);
-
-        // If issue was in closed dir, clean up the old file
-        if (wasClosed) {
-          await deleteIssueFile(dir, oldFilename, true);
-        }
-
-        const format = globalOpts.output;
-        console.log(formatIssueDetail(issue, format));
-
-        const filesToCommit = [join('.issues', filename)];
-        if (wasClosed) {
-          filesToCommit.push(join('.issues', 'closed', oldFilename));
-        }
-        if (configChanged) {
-          filesToCommit.push(join('.issues', 'config.yaml'));
-        }
-        await commitAndMaybePush(
-          globalOpts,
-          config,
-          filesToCommit,
-          `${config.git.commitPrefix} claim #${id} ${issue.title}`,
-        );
-      } catch (err) {
-        console.error(
-          `Error: ${err instanceof Error ? err.message : String(err)}`,
-        );
-        process.exit(1);
-      }
+      });
     });
 }

@@ -2,6 +2,7 @@ import { lstat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import simpleGit, { type SimpleGit } from 'simple-git';
 import type { Config } from '../core/types.ts';
+import { withRepoLock } from './lock.ts';
 import { hasRemote } from './status.ts';
 
 /** Turn a path into a literal pathspec (no glob / magic interpretation). */
@@ -82,6 +83,19 @@ export async function commitPaths(
   message: string,
   options?: { amend?: boolean },
 ): Promise<string | null> {
+  // Re-entrant: a no-op when the caller already holds the repo lock (as every
+  // mutation should); otherwise at least serializes the git index/HEAD update.
+  return withRepoLock(dir, () =>
+    commitPathsLocked(dir, files, message, options),
+  );
+}
+
+async function commitPathsLocked(
+  dir: string,
+  files: string[],
+  message: string,
+  options?: { amend?: boolean },
+): Promise<string | null> {
   const git = simpleGit(dir);
   const pathspecs = await stagePaths(git, dir, files);
   const amend = options?.amend ?? false;
@@ -141,8 +155,7 @@ export async function pushIfConfigured(
   if (!remote) {
     return;
   }
-  const git = simpleGit(dir);
-  await git.push();
+  await withRepoLock(dir, () => simpleGit(dir).push());
 }
 
 /**
@@ -153,6 +166,5 @@ export async function pullRebase(dir: string): Promise<void> {
   if (!remote) {
     return;
   }
-  const git = simpleGit(dir);
-  await git.pull(['--rebase']);
+  await withRepoLock(dir, () => simpleGit(dir).pull(['--rebase']));
 }
