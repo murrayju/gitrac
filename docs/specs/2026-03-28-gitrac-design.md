@@ -55,6 +55,8 @@ git:
 
 `statuses`, `labels`, and `priorities` are the source of truth — the CLI/UI validate against these. Users can customize by editing config. Config is validated on load with fail-fast behavior and clear error messages for invalid/missing fields.
 
+**Write validation:** Every create/update path (CLI `create`/`edit`, `POST`/`PATCH /api/issues`) validates its input with `validateIssueFields` (`src/core/validate.ts`) before writing anything: `status` and `priority` must be in the configured lists, `title` must be a non-empty string, `labels` an array of non-empty strings, `assignee`/`description` strings. Titles and labels are trimmed and labels de-duplicated. Invalid input is rejected as a whole — the CLI prints each error and exits 1, the API returns 400 `{ error, errors[] }` — and no file (not even `nextId`) changes. Unknown labels are not an error: both the CLI and the web register them in `config.labels` with an auto-assigned color, committed alongside the issue.
+
 ### Issue File Format
 
 **Filename:** `{id}-{slugified-title}.md`

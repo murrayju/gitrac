@@ -9,6 +9,7 @@ import {
 import { join } from 'node:path';
 import {
   createDefaultConfig,
+  ensureLabelColors,
   parseConfig,
   serializeConfig,
 } from '../core/config.ts';
@@ -42,6 +43,23 @@ export async function readConfig(dir: string): Promise<Config> {
 export async function writeConfig(dir: string, config: Config): Promise<void> {
   const yaml = serializeConfig(config);
   await writeFile(configPath(dir), yaml);
+}
+
+/**
+ * Register any labels not yet in the config, assigning each a color, and
+ * write the config if it changed. Re-reads the config from disk so it never
+ * clobbers concurrent updates (callers hold the repo lock).
+ * Returns the updated config if it was written, or null if nothing changed.
+ */
+export async function registerLabels(
+  dir: string,
+  labels: string[],
+): Promise<Config | null> {
+  const config = await readConfig(dir);
+  if (labels.every((l) => config.labels[l])) return null;
+  config.labels = ensureLabelColors(labels, config.labels);
+  await writeConfig(dir, config);
+  return config;
 }
 
 /**

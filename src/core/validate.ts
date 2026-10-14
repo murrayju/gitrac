@@ -1,4 +1,4 @@
-import type { Config, Issue } from './types.ts';
+import type { Config, Issue, Priority, Status } from './types.ts';
 
 export interface ValidationResult {
   valid: boolean;
@@ -73,4 +73,125 @@ function isValidISODate(dateStr: string): boolean {
   if (!dateStr || typeof dateStr !== 'string') return false;
   const date = new Date(dateStr);
   return !Number.isNaN(date.getTime());
+}
+
+/** Editable issue fields accepted from the CLI or the web API. */
+export interface IssueFieldValues {
+  title?: string;
+  status?: Status;
+  priority?: Priority;
+  assignee?: string;
+  labels?: string[];
+  description?: string;
+}
+
+export type IssueFieldsResult =
+  | { valid: true; values: IssueFieldValues; errors: [] }
+  | { valid: false; values?: undefined; errors: string[] };
+
+export interface ValidateIssueFieldsOptions {
+  /** Require a title to be present (create). Defaults to false (update). */
+  requireTitle?: boolean;
+}
+
+/**
+ * Validate (and normalize) user-supplied issue fields before they are written.
+ *
+ * `input` is untrusted (a JSON request body or CLI options), so every field is
+ * type-checked. Only the editable fields are inspected; absent (`undefined`)
+ * fields are left out of the result so callers can apply them as a partial
+ * update. Normalization: title is trimmed, labels are trimmed and de-duplicated.
+ *
+ * Unknown labels are allowed — callers register them in the config (with a
+ * color) via `registerLabels` so CLI and web behave the same.
+ */
+export function validateIssueFields(
+  input: unknown,
+  config: Config,
+  options: ValidateIssueFieldsOptions = {},
+): IssueFieldsResult {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    return { valid: false, errors: ['Request body must be a JSON object'] };
+  }
+  const raw = input as Record<string, unknown>;
+  const errors: string[] = [];
+  const values: IssueFieldValues = {};
+
+  if (raw.title !== undefined) {
+    if (typeof raw.title !== 'string' || !raw.title.trim()) {
+      errors.push('Invalid title: must be a non-empty string');
+    } else {
+      values.title = raw.title.trim();
+    }
+  } else if (options.requireTitle) {
+    errors.push('title is required');
+  }
+
+  if (raw.status !== undefined) {
+    if (
+      typeof raw.status !== 'string' ||
+      !config.statuses.includes(raw.status as Status)
+    ) {
+      errors.push(
+        `Invalid status ${JSON.stringify(raw.status)}: must be one of ${config.statuses.join(', ')}`,
+      );
+    } else {
+      values.status = raw.status as Status;
+    }
+  }
+
+  if (raw.priority !== undefined) {
+    if (
+      typeof raw.priority !== 'string' ||
+      !config.priorities.includes(raw.priority as Priority)
+    ) {
+      errors.push(
+        `Invalid priority ${JSON.stringify(raw.priority)}: must be one of ${config.priorities.join(', ')}`,
+      );
+    } else {
+      values.priority = raw.priority as Priority;
+    }
+  }
+
+  if (raw.assignee !== undefined) {
+    if (typeof raw.assignee !== 'string') {
+      errors.push('Invalid assignee: must be a string');
+    } else {
+      values.assignee = raw.assignee.trim();
+    }
+  }
+
+  if (raw.labels !== undefined) {
+    if (!Array.isArray(raw.labels)) {
+      errors.push('Invalid labels: must be an array of strings');
+    } else if (raw.labels.some((l) => typeof l !== 'string' || !l.trim())) {
+      errors.push('Invalid labels: each label must be a non-empty string');
+    } else {
+      values.labels = [
+        ...new Set((raw.labels as string[]).map((l) => l.trim())),
+      ];
+    }
+  }
+
+  if (raw.description !== undefined) {
+    if (typeof raw.description !== 'string') {
+      errors.push('Invalid description: must be a string');
+    } else {
+      values.description = raw.description;
+    }
+  }
+
+  if (errors.length > 0) return { valid: false, errors };
+  return { valid: true, values, errors: [] };
+}
+
+/**
+ * Split a comma-separated CLI label list, trimming and dropping empty entries
+ * (so `-l "bug, ui,"` yields `['bug', 'ui']` and `-l ""` clears labels).
+ */
+export function parseLabelList(value: string): string[] {
+  return value
+    .split(',')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
 }

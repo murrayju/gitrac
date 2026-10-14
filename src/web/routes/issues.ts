@@ -1,12 +1,12 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { Hono } from 'hono';
+import { type Context, Hono } from 'hono';
 import { extractAssetRefs } from '../../core/assets.ts';
-import { ensureLabelColors } from '../../core/config.ts';
 import { parseIssue } from '../../core/issue.ts';
 import { issueFilename } from '../../core/slug.ts';
 import type { Issue } from '../../core/types.ts';
 import { isClosedStatus, type Status } from '../../core/types.ts';
+import { validateIssue, validateIssueFields } from '../../core/validate.ts';
 import {
   allocateNextId,
   deleteIssueFile,
@@ -17,7 +17,7 @@ import {
   moveToReopen,
   readConfig,
   readIssue,
-  writeConfig,
+  registerLabels,
   writeIssue,
 } from '../../fs/issue-store.ts';
 import { commitIssueChange } from '../../git/operations.ts';
@@ -32,24 +32,31 @@ async function syncLabelColors(
   ctx: ServerContext,
   labels: string[],
 ): Promise<string[]> {
-  const newLabels = labels.filter((l) => !ctx.config.labels[l]);
-  if (newLabels.length === 0) return [];
-
-  const freshConfig = await readConfig(ctx.dir);
-  const updatedColors = ensureLabelColors(labels, freshConfig.labels);
-
-  // Check if any colors actually changed
-  const changed = labels.some(
-    (l) => freshConfig.labels[l] !== updatedColors[l],
-  );
-  if (!changed) return [];
-
-  freshConfig.labels = updatedColors;
-
-  await writeConfig(ctx.dir, freshConfig);
-  ctx.config = freshConfig;
-
+  const updated = await registerLabels(ctx.dir, labels);
+  if (!updated) return [];
+  ctx.config = updated;
   return [join('.issues', 'config.yaml')];
+}
+
+/** 400 response listing every validation error. */
+function validationError(c: Context, errors: string[]): Response {
+  return c.json({ error: errors.join('; '), errors }, 400);
+}
+
+/** Treat a non-object JSON body as empty so field checks reject it. */
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+/** Parse a JSON request body, returning undefined if it isn't valid JSON. */
+async function readJsonBody(c: Context): Promise<unknown> {
+  try {
+    return await c.req.json();
+  } catch {
+    return undefined;
+  }
 }
 
 /** Collect .issues/assets/ paths for all assets referenced by the issue */
@@ -145,29 +152,39 @@ export function issueRoutes(ctx: ServerContext): Hono {
   app.post('/issues', locked, async (c) => {
     const { dir, config, amendTracker } = ctx;
 
-    const body = await c.req.json();
-    const { title, priority, labels, assignee, status, description } = body;
-
-    if (!title || typeof title !== 'string' || !title.trim()) {
-      return c.json({ error: 'title is required' }, 400);
+    // Validate everything before touching disk (allocating the ID bumps
+    // nextId in config.yaml).
+    const fields = validateIssueFields(await readJsonBody(c), config, {
+      requireTitle: true,
+    });
+    if (!fields.valid) {
+      return validationError(c, fields.errors);
     }
-
-    const id = await allocateNextId(dir);
+    const values = fields.values;
     const now = new Date().toISOString();
 
     const issue: Issue = {
-      id,
-      title: title.trim(),
-      status: status ?? config.defaultStatus,
-      priority: priority ?? config.defaultPriority,
-      assignee: assignee ?? '',
-      labels: labels ?? [],
+      id: 0,
+      title: values.title ?? '',
+      status: values.status ?? config.defaultStatus,
+      priority: values.priority ?? config.defaultPriority,
+      assignee: values.assignee ?? '',
+      labels: values.labels ?? [],
       created: now,
       createdBy: 'web',
       updated: now,
-      description: description ?? '',
+      description: values.description ?? '',
       comments: [],
     };
+    // Final gate on the assembled issue (catches e.g. config defaults that
+    // aren't in the configured statuses/priorities). Use a placeholder id.
+    const check = validateIssue({ ...issue, id: 1 }, config);
+    if (!check.valid) {
+      return validationError(c, check.errors);
+    }
+
+    const id = await allocateNextId(dir);
+    issue.id = id;
 
     const filename = await writeIssue(dir, issue);
     const extraFiles = await syncLabelColors(ctx, issue.labels);
@@ -218,8 +235,12 @@ export function issueRoutes(ctx: ServerContext): Hono {
       return c.json({ error: `Issue #${id} not found` }, 404);
     }
 
-    const body = await c.req.json();
-    const { title, priority, labels, assignee, status, description } = body;
+    const fields = validateIssueFields(await readJsonBody(c), config);
+    if (!fields.valid) {
+      return validationError(c, fields.errors);
+    }
+    const { title, priority, labels, assignee, status, description } =
+      fields.values;
 
     if (title !== undefined) issue.title = title;
     if (priority !== undefined) issue.priority = priority;
@@ -293,8 +314,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
       return c.json({ error: `Issue #${id} not found` }, 404);
     }
 
-    const body = await c.req.json();
-    const { body: commentBody, author } = body;
+    const { body: commentBody, author } = asRecord(await readJsonBody(c));
 
     if (
       !commentBody ||
@@ -303,9 +323,18 @@ export function issueRoutes(ctx: ServerContext): Hono {
     ) {
       return c.json({ error: 'body is required' }, 400);
     }
+    if (
+      author !== undefined &&
+      (typeof author !== 'string' || !author.trim())
+    ) {
+      return c.json(
+        { error: 'Invalid author: must be a non-empty string' },
+        400,
+      );
+    }
 
     issue.comments.push({
-      author: author ?? 'web',
+      author: typeof author === 'string' ? author.trim() : 'web',
       timestamp: new Date().toISOString(),
       body: commentBody.trim(),
     });
@@ -360,8 +389,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
       return c.json({ error: 'Comment index out of bounds' }, 404);
     }
 
-    const body = await c.req.json();
-    const { body: commentBody } = body;
+    const { body: commentBody } = asRecord(await readJsonBody(c));
 
     if (
       !commentBody ||

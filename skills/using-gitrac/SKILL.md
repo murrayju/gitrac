@@ -182,4 +182,6 @@ gitrac create -t "Brief description" -p high -l bug
 
 Flags: `-t` title (required), `-p` priority, `-l` labels (comma-separated), `-a` assignee, `-s` status.
 
+Status and priority must be one of the values in `.issues/config.yaml` — anything else is rejected (exit 1, nothing written). New labels are added to the config automatically with a color.
+
 Don't over-describe in the title — the issue file supports a full markdown description that you can edit later via the web UI or directly.

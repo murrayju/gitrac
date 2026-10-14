@@ -1,12 +1,13 @@
 import { join } from 'node:path';
 import type { Command } from 'commander';
-import type { Priority, Status } from '../../core/types.ts';
 import { isClosedStatus } from '../../core/types.ts';
+import { parseLabelList, validateIssueFields } from '../../core/validate.ts';
 import {
   deleteIssueFile,
   findIssueFile,
   readConfig,
   readIssue,
+  registerLabels,
   writeIssue,
 } from '../../fs/issue-store.ts';
 import {
@@ -15,6 +16,7 @@ import {
   withMutationLock,
 } from '../global-options.ts';
 import { formatIssueDetail } from '../output.ts';
+import { exitWithErrors } from '../validation.ts';
 
 export function registerEditCommand(program: Command): void {
   program
@@ -60,16 +62,29 @@ export function registerEditCommand(program: Command): void {
 
           const issue = await readIssue(dir, id);
 
+          // Validate all changes before writing anything
+          const fields = validateIssueFields(
+            {
+              title: options.title,
+              status: options.status,
+              priority: options.priority,
+              assignee: options.assignee,
+              labels:
+                options.labels !== undefined
+                  ? parseLabelList(options.labels)
+                  : undefined,
+            },
+            config,
+          );
+          if (!fields.valid) exitWithErrors(fields.errors);
+          const { title, status, priority, assignee, labels } = fields.values;
+
           // Apply changes
-          if (options.title !== undefined) issue.title = options.title;
-          if (options.status !== undefined)
-            issue.status = options.status as Status;
-          if (options.priority !== undefined)
-            issue.priority = options.priority as Priority;
-          if (options.assignee !== undefined) issue.assignee = options.assignee;
-          if (options.labels !== undefined) {
-            issue.labels = options.labels.split(',').map((l) => l.trim());
-          }
+          if (title !== undefined) issue.title = title;
+          if (status !== undefined) issue.status = status;
+          if (priority !== undefined) issue.priority = priority;
+          if (assignee !== undefined) issue.assignee = assignee;
+          if (labels !== undefined) issue.labels = labels;
 
           const now = new Date().toISOString();
           issue.updated = now;
@@ -97,6 +112,9 @@ export function registerEditCommand(program: Command): void {
           const newFilename = await writeIssue(dir, issue, {
             closed: nowClosed,
           });
+          // Unknown labels are registered in config.yaml with a color, the
+          // same as the web UI does.
+          await registerLabels(dir, issue.labels);
 
           // Clean up old file if filename changed or issue moved directories
           const filenameChanged = newFilename !== oldFilename;

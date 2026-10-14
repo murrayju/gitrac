@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { createDefaultConfig } from './config.ts';
 import type { Issue } from './types.ts';
-import { validateIssue } from './validate.ts';
+import {
+  parseLabelList,
+  validateIssue,
+  validateIssueFields,
+} from './validate.ts';
 
 function makeValidIssue(overrides: Partial<Issue> = {}): Issue {
   return {
@@ -106,5 +110,117 @@ describe('validateIssue', () => {
     const result = validateIssue(issue, config);
     expect(result.valid).toBe(false);
     expect(result.errors.length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe('validateIssueFields', () => {
+  const config = createDefaultConfig();
+
+  test('accepts and normalizes valid fields', () => {
+    const result = validateIssueFields(
+      {
+        title: '  Hello  ',
+        status: 'todo',
+        priority: 'high',
+        assignee: ' alice ',
+        labels: [' bug ', 'brand-new', 'bug'],
+        description: 'desc',
+      },
+      config,
+      { requireTitle: true },
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.valid).toBe(true);
+    expect(result.values).toEqual({
+      title: 'Hello',
+      status: 'todo',
+      priority: 'high',
+      assignee: 'alice',
+      labels: ['bug', 'brand-new'],
+      description: 'desc',
+    });
+  });
+
+  test('omits absent fields (partial update)', () => {
+    const result = validateIssueFields({ priority: 'low' }, config);
+    expect(result.valid).toBe(true);
+    expect(result.values).toEqual({ priority: 'low' });
+  });
+
+  test('requireTitle rejects a missing title', () => {
+    const result = validateIssueFields({}, config, { requireTitle: true });
+    expect(result.valid).toBe(false);
+    expect(result.errors).toEqual(['title is required']);
+  });
+
+  test.each([
+    [{ title: '' }, 'title'],
+    [{ title: '   ' }, 'title'],
+    [{ title: 42 }, 'title'],
+    [{ status: 'bogus' }, 'status'],
+    [{ status: 3 }, 'status'],
+    [{ status: null }, 'status'],
+    [{ priority: 'critical' }, 'priority'],
+    [{ priority: ['high'] }, 'priority'],
+    [{ assignee: 5 }, 'assignee'],
+    [{ labels: 'bug' }, 'labels'],
+    [{ labels: [1] }, 'labels'],
+    [{ labels: [''] }, 'labels'],
+    [{ labels: { bug: true } }, 'labels'],
+    [{ description: { text: 'x' } }, 'description'],
+  ])('rejects %j', (input, field) => {
+    const result = validateIssueFields(input, config);
+    expect(result.valid).toBe(false);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain(field);
+  });
+
+  test('rejects statuses/priorities not in the configured lists', () => {
+    const narrow = {
+      ...config,
+      statuses: ['todo', 'done'] as Issue['status'][],
+      priorities: ['high', 'low'] as Issue['priority'][],
+    };
+    const result = validateIssueFields(
+      { status: 'backlog', priority: 'medium' },
+      narrow,
+    );
+    expect(result.valid).toBe(false);
+    expect(result.errors).toHaveLength(2);
+    expect(result.errors[0]).toContain('todo, done');
+  });
+
+  test('collects all errors at once', () => {
+    const result = validateIssueFields(
+      { title: '', status: 'x', priority: 'y', labels: 'z' },
+      config,
+    );
+    expect(result.errors).toHaveLength(4);
+  });
+
+  test.each([
+    [null],
+    [undefined],
+    ['str'],
+    [7],
+    [['a']],
+  ])('rejects non-object input %j', (input) => {
+    const result = validateIssueFields(input, config);
+    expect(result.valid).toBe(false);
+  });
+});
+
+describe('parseLabelList', () => {
+  test('splits, trims and drops empty entries', () => {
+    expect(parseLabelList('bug, ui ,,feature,')).toEqual([
+      'bug',
+      'ui',
+      'feature',
+    ]);
+  });
+
+  test('empty string clears labels', () => {
+    expect(parseLabelList('')).toEqual([]);
+    expect(parseLabelList(' , ')).toEqual([]);
   });
 });
