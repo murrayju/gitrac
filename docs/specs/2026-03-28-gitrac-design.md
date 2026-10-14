@@ -213,6 +213,8 @@ issue: claim #3 (murrayju)
 
 **CLI:** Each mutating command creates one commit.
 
+**Path-limited commits:** Every gitrac commit (and amend) contains only the paths gitrac itself wrote — the issue file(s), `config.yaml`, label/asset files — never the rest of the index. gitrac stages exactly those paths (`git add -A -- <paths>`, so deletions and renames from close/reopen/title changes are recorded) and commits with `git commit [--amend] --only -- <paths>`. Anything else you or another tool had staged stays staged and uncommitted. Listed paths that don't exist and are unknown to git are skipped; if nothing remains, no commit is made.
+
 **Web UI:** Amend strategy for rapid edits:
 1. First edit to an issue -> new commit
 2. Subsequent edits to the same issue -> amend that commit, **if and only if:**

@@ -102,6 +102,61 @@ describe('AmendTracker', () => {
     expect(log.latest?.message).toBe('update issue');
   });
 
+  test('amend does not include unrelated staged changes (regression #35)', async () => {
+    const tracker = new AmendTracker();
+    const git = simpleGit(dir);
+
+    await Bun.write(join(dir, 'issue.md'), '# Issue v1');
+    await tracker.commitOrAmend(dir, 1, ['issue.md'], 'add issue');
+
+    // User stages unrelated work between web edits
+    await Bun.write(join(dir, 'code.txt'), 'secret');
+    await git.add('code.txt');
+    await Bun.write(join(dir, 'README.md'), 'staged edit');
+    await git.add('README.md');
+
+    await Bun.write(join(dir, 'issue.md'), '# Issue v2');
+    await tracker.amend(dir, ['issue.md'], 'update issue');
+
+    const log = await git.log();
+    expect(log.total).toBe(2);
+    const files = await git.raw(['show', '--name-only', '--format=', 'HEAD']);
+    expect(files.trim()).toBe('issue.md');
+    expect(await git.show(['HEAD:issue.md'])).toBe('# Issue v2');
+    expect(await git.show(['HEAD:README.md'])).toBe('hello');
+    const staged = await git.diff(['--cached', '--name-only']);
+    expect(staged.split('\n').filter(Boolean).sort()).toEqual([
+      'README.md',
+      'code.txt',
+    ]);
+  });
+
+  test('amend handles a rename where the old path was created by the amended commit', async () => {
+    const tracker = new AmendTracker();
+    const git = simpleGit(dir);
+
+    await Bun.write(join(dir, '1-old.md'), '# Old');
+    await tracker.commitOrAmend(dir, 1, ['1-old.md'], 'add issue');
+
+    await Bun.write(join(dir, 'code.txt'), 'secret');
+    await git.add('code.txt');
+
+    // Title change: new filename written, old one deleted from disk
+    await Bun.write(join(dir, '1-new.md'), '# New');
+    await rm(join(dir, '1-old.md'));
+    await tracker.commitOrAmend(dir, 1, ['1-new.md', '1-old.md'], 'rename');
+
+    const log = await git.log();
+    expect(log.total).toBe(2);
+    const files = await git.raw(['show', '--name-only', '--format=', 'HEAD']);
+    expect(files.trim()).toBe('1-new.md');
+    const staged = await git.diff(['--cached', '--name-only']);
+    expect(staged.trim()).toBe('code.txt');
+    const status = await git.status();
+    expect(status.deleted).toEqual([]);
+    expect(status.not_added).toEqual([]);
+  });
+
   test('canAmend returns false when no state recorded', async () => {
     const tracker = new AmendTracker();
     expect(await tracker.canAmend(dir, 1)).toBe(false);
@@ -433,10 +488,11 @@ describe('AmendTracker', () => {
       await editThenRevert(tracker, git, base);
 
       // Unrelated file whose only change is an `updated:` line ends up in
-      // the amended commit (e.g. it was already staged)
+      // the amended commit (e.g. someone amended it in outside gitrac;
+      // tracker.amend itself only commits the paths it is given)
       await Bun.write(join(dir, 'code.yaml'), 'updated: 2\n');
-      await git.add('code.yaml');
-      await tracker.amend(dir, ['issue.md'], 'update issue');
+      await git.add(['code.yaml', 'issue.md']);
+      await git.commit('update issue', undefined, { '--amend': null });
 
       expect(await tracker.dropIfNoOp(dir, ['issue.md'])).toBe(false);
       const log = await git.log();

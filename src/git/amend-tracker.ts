@@ -2,7 +2,7 @@ import { realpath } from 'node:fs/promises';
 import { relative, resolve, sep } from 'node:path';
 import simpleGit from 'simple-git';
 import { differsOnlyInUpdated } from '../core/issue.ts';
-import { commitIssueChange } from './operations.ts';
+import { commitIssueChange, commitPaths } from './operations.ts';
 import { hasRemote } from './status.ts';
 
 /**
@@ -58,13 +58,12 @@ export class AmendTracker {
 
   /**
    * Amend the HEAD commit with new files and message.
+   * Only the given paths are folded into the commit (`--amend --only`); any
+   * other staged changes stay staged and are not included.
    * Returns the new commit hash.
    */
   async amend(dir: string, files: string[], message: string): Promise<string> {
-    const git = simpleGit(dir);
-    await git.add(files);
-    const result = await git.commit(message, undefined, { '--amend': null });
-    return result.commit;
+    return (await commitPaths(dir, files, message, { amend: true })) ?? '';
   }
 
   /**

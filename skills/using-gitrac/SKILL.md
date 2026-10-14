@@ -7,7 +7,7 @@ description: Use when a project has a .issues/ directory or AGENTS.md mentions g
 
 ## Overview
 
-gitrac manages project issues as markdown files in the git repo itself. Issues live in `.issues/`, closed issues in `.issues/closed/`. Every mutation auto-commits to git.
+gitrac manages project issues as markdown files in the git repo itself. Issues live in `.issues/`, closed issues in `.issues/closed/`. Every mutation auto-commits to git. Auto-commits include only the issue files gitrac touched; anything else you have staged stays staged and is not swept into the `issue:` commit.
 
 **Core principle:** Claim before working. Close in the same commit as the code change.
 

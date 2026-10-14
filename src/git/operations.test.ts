@@ -71,6 +71,159 @@ describe('commitIssueChange', () => {
     expect(show).toContain('a.md');
     expect(show).toContain('b.md');
   });
+
+  describe('path-limited commits (regression #35)', () => {
+    async function headFiles(): Promise<string[]> {
+      const out = await simpleGit(dir).raw([
+        'show',
+        '--name-only',
+        '--no-renames',
+        '--format=',
+        'HEAD',
+      ]);
+      return out.split('\n').filter(Boolean).sort();
+    }
+
+    async function stagedFiles(): Promise<string[]> {
+      const out = await simpleGit(dir).diff(['--cached', '--name-only']);
+      return out.split('\n').filter(Boolean).sort();
+    }
+
+    test('does not include unrelated staged changes', async () => {
+      const git = simpleGit(dir);
+      await Bun.write(join(dir, 'code.txt'), 'secret');
+      await git.add('code.txt');
+      await Bun.write(join(dir, 'README.md'), 'staged edit');
+      await git.add('README.md');
+
+      await Bun.write(join(dir, 'issue.md'), '# Issue');
+      const hash = await commitIssueChange(dir, ['issue.md'], 'add issue');
+      expect(hash).not.toBeNull();
+
+      expect(await headFiles()).toEqual(['issue.md']);
+      // Pre-existing staged changes remain staged and uncommitted
+      expect(await stagedFiles()).toEqual(['README.md', 'code.txt']);
+      expect(await Bun.file(join(dir, 'code.txt')).text()).toBe('secret');
+      expect(await git.show(['HEAD:README.md'])).toBe('hello');
+    });
+
+    test('handles a rename (old path deleted on disk)', async () => {
+      const git = simpleGit(dir);
+      await Bun.write(join(dir, '.issues/1-old.md'), '# Issue');
+      await commitIssueChange(dir, ['.issues/1-old.md'], 'create');
+
+      await Bun.write(join(dir, 'code.txt'), 'secret');
+      await git.add('code.txt');
+
+      // Simulate close: move into closed/ (old file removed from disk only)
+      await Bun.write(join(dir, '.issues/closed/1-old.md'), '# Issue');
+      await rm(join(dir, '.issues/1-old.md'));
+      const hash = await commitIssueChange(
+        dir,
+        ['.issues/1-old.md', '.issues/closed/1-old.md'],
+        'close',
+      );
+      expect(hash).not.toBeNull();
+
+      expect(await headFiles()).toEqual([
+        '.issues/1-old.md',
+        '.issues/closed/1-old.md',
+      ]);
+      const tree = await git.raw(['ls-tree', '-r', '--name-only', 'HEAD']);
+      expect(tree).not.toContain('.issues/1-old.md\n');
+      expect(tree).toContain('.issues/closed/1-old.md');
+      expect(await stagedFiles()).toEqual(['code.txt']);
+      const status = await git.status();
+      expect(status.not_added).toEqual([]);
+      expect(status.deleted).toEqual([]);
+    });
+
+    test('handles a deletion already staged via git rm', async () => {
+      const git = simpleGit(dir);
+      await Bun.write(join(dir, 'a.md'), 'a');
+      await commitIssueChange(dir, ['a.md'], 'create');
+      await git.rm(['a.md']);
+      await Bun.write(join(dir, 'code.txt'), 'secret');
+      await git.add('code.txt');
+
+      await Bun.write(join(dir, 'b.md'), 'a');
+      await commitIssueChange(dir, ['a.md', 'b.md'], 'rename');
+
+      expect(await headFiles()).toEqual(['a.md', 'b.md']);
+      expect(await stagedFiles()).toEqual(['code.txt']);
+    });
+
+    test('ignores paths unknown to git that do not exist', async () => {
+      const git = simpleGit(dir);
+      await Bun.write(join(dir, 'code.txt'), 'secret');
+      await git.add('code.txt');
+
+      await Bun.write(join(dir, 'issue.md'), '# Issue');
+      const hash = await commitIssueChange(
+        dir,
+        ['issue.md', 'never-existed.md'],
+        'add issue',
+      );
+      expect(hash).not.toBeNull();
+      expect(await headFiles()).toEqual(['issue.md']);
+      expect(await stagedFiles()).toEqual(['code.txt']);
+    });
+
+    test('does not commit the index when no listed path has changes', async () => {
+      const git = simpleGit(dir);
+      await Bun.write(join(dir, 'code.txt'), 'secret');
+      await git.add('code.txt');
+
+      expect(await commitIssueChange(dir, ['README.md'], 'nothing')).toBeNull();
+      expect(await commitIssueChange(dir, ['missing.md'], 'none')).toBeNull();
+      expect(await commitIssueChange(dir, [], 'empty')).toBeNull();
+
+      const log = await git.log();
+      expect(log.latest?.message).toBe('initial');
+      expect(await stagedFiles()).toEqual(['code.txt']);
+    });
+
+    test('handles paths with glob characters literally', async () => {
+      const git = simpleGit(dir);
+      await Bun.write(join(dir, 'a*.md'), 'glob');
+      await Bun.write(join(dir, 'ab.md'), 'other');
+      await commitIssueChange(dir, ['a*.md'], 'literal');
+      expect(await headFiles()).toEqual(['a*.md']);
+      const status = await git.status();
+      expect(status.not_added).toEqual(['ab.md']);
+    });
+
+    test('works for the root commit of an empty repo', async () => {
+      const fresh = await mkdtemp(join(tmpdir(), 'gitrac-ops-root-'));
+      try {
+        const git = simpleGit(fresh);
+        await git.init();
+        await git.addConfig('user.email', 'test@test.com');
+        await git.addConfig('user.name', 'Test');
+        await Bun.write(join(fresh, 'code.txt'), 'secret');
+        await git.add('code.txt');
+        await Bun.write(join(fresh, '.issues/config.yaml'), 'x: 1\n');
+
+        const hash = await commitIssueChange(
+          fresh,
+          ['.issues/config.yaml'],
+          'init',
+        );
+        expect(hash).not.toBeNull();
+        const files = await git.raw([
+          'show',
+          '--name-only',
+          '--format=',
+          'HEAD',
+        ]);
+        expect(files.trim()).toBe('.issues/config.yaml');
+        const staged = await git.diff(['--cached', '--name-only']);
+        expect(staged.trim()).toBe('code.txt');
+      } finally {
+        await rm(fresh, { recursive: true, force: true });
+      }
+    });
+  });
 });
 
 describe('pushIfConfigured', () => {
