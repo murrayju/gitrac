@@ -1,14 +1,14 @@
 ---
 id: 60
 title: Config YAML is parsed with js-yaml 3 unsafe load()
-status: todo
+status: in_progress
 priority: high
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-14T23:05:03.596Z'
 createdBy: Justin Murray
-updated: '2026-10-14T23:05:03.596Z'
+updated: '2026-10-14T23:11:55.002Z'
 ---
 
 `src/core/config.ts` and `src/cli/output.ts` import `js-yaml`, which is not a direct dependency — it resolves to gray-matter's transitive js-yaml **3.14**. In js-yaml 3.x, `yaml.load()` uses `DEFAULT_FULL_SCHEMA`, which supports `!!js/function`, `!!js/regexp` and `!!js/undefined`. A crafted `.issues/config.yaml` (e.g. from a malicious PR or clone) can thus inject JavaScript functions into the parsed config.
