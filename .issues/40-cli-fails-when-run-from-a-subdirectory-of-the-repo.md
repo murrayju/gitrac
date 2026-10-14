@@ -1,14 +1,14 @@
 ---
 id: 40
 title: CLI fails when run from a subdirectory of the repo
-status: todo
+status: in_progress
 priority: high
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-14T21:43:46.806Z'
 createdBy: Justin Murray
-updated: '2026-10-14T21:43:46.806Z'
+updated: '2026-10-14T22:42:48.831Z'
 ---
 
 Commands call `getGitRoot(dir)` but discard the result, then build paths from `process.cwd()`. Running `gitrac ls` in any subdirectory crashes with a raw ENOENT stack trace.
