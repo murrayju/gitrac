@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
-import type { OutputFormat } from '../../core/types.ts';
 import { readConfig, readIssue } from '../../fs/issue-store.ts';
 import { getBranchWarning, getGitRoot } from '../../git/status.ts';
+import { getGlobalOptions } from '../global-options.ts';
 import { formatIssueDetail } from '../output.ts';
 
 export function registerShowCommand(program: Command): void {
@@ -10,8 +10,8 @@ export function registerShowCommand(program: Command): void {
     .alias('view')
     .description('Show issue details')
     .action(async (idStr: string) => {
-      const globalOpts = program.opts();
-      const dir = globalOpts.dir || process.cwd();
+      const globalOpts = getGlobalOptions(program);
+      const { dir } = globalOpts;
 
       try {
         await getGitRoot(dir);
@@ -36,7 +36,7 @@ export function registerShowCommand(program: Command): void {
 
       try {
         const issue = await readIssue(dir, id);
-        const format = (globalOpts.output || 'human') as OutputFormat;
+        const format = globalOpts.output;
         console.log(formatIssueDetail(issue, format));
       } catch (err) {
         console.error(

@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import type { Command } from 'commander';
-import type { OutputFormat, Priority, Status } from '../../core/types.ts';
+import type { Priority, Status } from '../../core/types.ts';
 import { isClosedStatus } from '../../core/types.ts';
 import {
   deleteIssueFile,
@@ -9,8 +9,8 @@ import {
   readIssue,
   writeIssue,
 } from '../../fs/issue-store.ts';
-import { commitIssueChange, pushIfConfigured } from '../../git/operations.ts';
 import { getGitRoot } from '../../git/status.ts';
+import { commitAndMaybePush, getGlobalOptions } from '../global-options.ts';
 import { formatIssueDetail } from '../output.ts';
 
 export function registerEditCommand(program: Command): void {
@@ -35,8 +35,8 @@ export function registerEditCommand(program: Command): void {
           comment?: string;
         },
       ) => {
-        const globalOpts = program.opts();
-        const dir = globalOpts.dir || process.cwd();
+        const globalOpts = getGlobalOptions(program);
+        const { dir } = globalOpts;
 
         try {
           await getGitRoot(dir);
@@ -79,7 +79,7 @@ export function registerEditCommand(program: Command): void {
 
         if (options.comment) {
           // Resolve author for comment
-          let author = globalOpts.author || '';
+          let author = globalOpts.author;
           if (!author) {
             try {
               const { default: simpleGit } = await import('simple-git');
@@ -120,20 +120,15 @@ export function registerEditCommand(program: Command): void {
           filesToCommit.push(join(oldDir, oldFilename));
         }
 
-        const format = (globalOpts.output || 'human') as OutputFormat;
+        const format = globalOpts.output;
         console.log(formatIssueDetail(issue, format));
 
-        if (!globalOpts.noCommit && config.git.autoCommit) {
-          await commitIssueChange(
-            dir,
-            filesToCommit,
-            `${config.git.commitPrefix} edit #${id} ${issue.title}`,
-          );
-          await pushIfConfigured(dir, config, {
-            push: globalOpts.push,
-            noPush: globalOpts.noPush,
-          });
-        }
+        await commitAndMaybePush(
+          globalOpts,
+          config,
+          filesToCommit,
+          `${config.git.commitPrefix} edit #${id} ${issue.title}`,
+        );
       },
     );
 }

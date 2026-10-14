@@ -10,6 +10,7 @@ import { registerInitCommand } from './commands/init.ts';
 import { registerListCommand } from './commands/list.ts';
 import { registerReopenCommand } from './commands/reopen.ts';
 import { registerShowCommand } from './commands/show.ts';
+import { getGlobalOptions } from './global-options.ts';
 
 export function createProgram(): Command {
   const program = new Command();
@@ -30,9 +31,7 @@ export function createProgram(): Command {
     .option('--dir <path>', 'Path to the project root (default: cwd)')
     .option('-p, --port <port>', 'Port for the web server', '3000')
     .action(async () => {
-      const opts = program.opts();
-      const dir = opts.dir || process.cwd();
-      const port = Number.parseInt(opts.port, 10);
+      const { dir, port } = getGlobalOptions(program);
 
       try {
         const config = await readConfig(dir);

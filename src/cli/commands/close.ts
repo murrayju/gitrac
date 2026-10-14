@@ -1,14 +1,13 @@
 import type { Command } from 'commander';
 import { issueFilename } from '../../core/slug.ts';
-import type { OutputFormat } from '../../core/types.ts';
 import {
   moveToClose,
   readConfig,
   readIssue,
   writeIssue,
 } from '../../fs/issue-store.ts';
-import { commitIssueChange, pushIfConfigured } from '../../git/operations.ts';
 import { getGitRoot } from '../../git/status.ts';
+import { commitAndMaybePush, getGlobalOptions } from '../global-options.ts';
 import { formatIssueDetail } from '../output.ts';
 
 export function registerCloseCommand(program: Command): void {
@@ -22,8 +21,8 @@ export function registerCloseCommand(program: Command): void {
         idStr: string,
         options: { cancelled?: boolean; comment?: string },
       ) => {
-        const globalOpts = program.opts();
-        const dir = globalOpts.dir || process.cwd();
+        const globalOpts = getGlobalOptions(program);
+        const { dir } = globalOpts;
 
         try {
           await getGitRoot(dir);
@@ -40,7 +39,7 @@ export function registerCloseCommand(program: Command): void {
         }
 
         // Resolve author for comments
-        let author = globalOpts.author || '';
+        let author = globalOpts.author;
         if (!author) {
           try {
             const { default: simpleGit } = await import('simple-git');
@@ -72,21 +71,16 @@ export function registerCloseCommand(program: Command): void {
           // Move to closed directory
           await moveToClose(dir, id);
 
-          const format = (globalOpts.output || 'human') as OutputFormat;
+          const format = globalOpts.output;
           console.log(formatIssueDetail(issue, format));
 
-          if (!globalOpts.noCommit && config.git.autoCommit) {
-            const filename = issueFilename(issue.id, issue.title);
-            await commitIssueChange(
-              dir,
-              [`.issues/${filename}`, `.issues/closed/${filename}`],
-              `${config.git.commitPrefix} close #${id} ${issue.title}`,
-            );
-            await pushIfConfigured(dir, config, {
-              push: globalOpts.push,
-              noPush: globalOpts.noPush,
-            });
-          }
+          const filename = issueFilename(issue.id, issue.title);
+          await commitAndMaybePush(
+            globalOpts,
+            config,
+            [`.issues/${filename}`, `.issues/closed/${filename}`],
+            `${config.git.commitPrefix} close #${id} ${issue.title}`,
+          );
         } catch (err) {
           console.error(
             `Error: ${err instanceof Error ? err.message : String(err)}`,

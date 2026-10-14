@@ -1,7 +1,6 @@
 import { join } from 'node:path';
 import type { Command } from 'commander';
 import { findAssigneeByEmail } from '../../core/config.ts';
-import type { OutputFormat } from '../../core/types.ts';
 import {
   deleteIssueFile,
   findIssueFile,
@@ -10,8 +9,8 @@ import {
   writeConfig,
   writeIssue,
 } from '../../fs/issue-store.ts';
-import { commitIssueChange, pushIfConfigured } from '../../git/operations.ts';
 import { getGitRoot } from '../../git/status.ts';
+import { commitAndMaybePush, getGlobalOptions } from '../global-options.ts';
 import { formatIssueDetail } from '../output.ts';
 
 export function registerClaimCommand(program: Command): void {
@@ -20,8 +19,8 @@ export function registerClaimCommand(program: Command): void {
     .description('Claim an issue (assign to yourself and set in_progress)')
     .option('-c, --comment <text>', 'Add a comment when claiming')
     .action(async (idStr: string, options: { comment?: string }) => {
-      const globalOpts = program.opts();
-      const dir = globalOpts.dir || process.cwd();
+      const globalOpts = getGlobalOptions(program);
+      const { dir } = globalOpts;
 
       try {
         await getGitRoot(dir);
@@ -38,7 +37,7 @@ export function registerClaimCommand(program: Command): void {
       }
 
       // Get current user name and email
-      let authorName = globalOpts.author || '';
+      let authorName = globalOpts.author;
       let authorEmail = '';
       if (!authorName) {
         try {
@@ -94,27 +93,22 @@ export function registerClaimCommand(program: Command): void {
           await deleteIssueFile(dir, oldFilename, true);
         }
 
-        const format = (globalOpts.output || 'human') as OutputFormat;
+        const format = globalOpts.output;
         console.log(formatIssueDetail(issue, format));
 
-        if (!globalOpts.noCommit && config.git.autoCommit) {
-          const filesToCommit = [join('.issues', filename)];
-          if (wasClosed) {
-            filesToCommit.push(join('.issues', 'closed', oldFilename));
-          }
-          if (configChanged) {
-            filesToCommit.push(join('.issues', 'config.yaml'));
-          }
-          await commitIssueChange(
-            dir,
-            filesToCommit,
-            `${config.git.commitPrefix} claim #${id} ${issue.title}`,
-          );
-          await pushIfConfigured(dir, config, {
-            push: globalOpts.push,
-            noPush: globalOpts.noPush,
-          });
+        const filesToCommit = [join('.issues', filename)];
+        if (wasClosed) {
+          filesToCommit.push(join('.issues', 'closed', oldFilename));
         }
+        if (configChanged) {
+          filesToCommit.push(join('.issues', 'config.yaml'));
+        }
+        await commitAndMaybePush(
+          globalOpts,
+          config,
+          filesToCommit,
+          `${config.git.commitPrefix} claim #${id} ${issue.title}`,
+        );
       } catch (err) {
         console.error(
           `Error: ${err instanceof Error ? err.message : String(err)}`,

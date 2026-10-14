@@ -1,14 +1,13 @@
 import { join } from 'node:path';
 import type { Command } from 'commander';
-import type { OutputFormat } from '../../core/types.ts';
 import {
   findIssueFile,
   readConfig,
   readIssue,
   writeIssue,
 } from '../../fs/issue-store.ts';
-import { commitIssueChange, pushIfConfigured } from '../../git/operations.ts';
 import { getGitRoot } from '../../git/status.ts';
+import { commitAndMaybePush, getGlobalOptions } from '../global-options.ts';
 import { formatIssueDetail } from '../output.ts';
 
 export function registerCommentCommand(program: Command): void {
@@ -17,8 +16,8 @@ export function registerCommentCommand(program: Command): void {
     .alias('c')
     .description('Add a comment to an issue')
     .action(async (idStr: string, body?: string) => {
-      const globalOpts = program.opts();
-      const dir = globalOpts.dir || process.cwd();
+      const globalOpts = getGlobalOptions(program);
+      const { dir } = globalOpts;
 
       try {
         await getGitRoot(dir);
@@ -45,7 +44,7 @@ export function registerCommentCommand(program: Command): void {
       }
 
       // Get author name
-      let author = globalOpts.author || '';
+      let author = globalOpts.author;
       if (!author) {
         try {
           const { default: simpleGit } = await import('simple-git');
@@ -75,21 +74,16 @@ export function registerCommentCommand(program: Command): void {
 
       const filename = await writeIssue(dir, issue, { closed: isClosed });
 
-      const format = (globalOpts.output || 'human') as OutputFormat;
+      const format = globalOpts.output;
       console.log(formatIssueDetail(issue, format));
 
-      if (!globalOpts.noCommit && config.git.autoCommit) {
-        const relDir = isClosed ? join('.issues', 'closed') : '.issues';
-        await commitIssueChange(
-          dir,
-          [join(relDir, filename)],
-          `${config.git.commitPrefix} comment on #${id}`,
-        );
-        await pushIfConfigured(dir, config, {
-          push: globalOpts.push,
-          noPush: globalOpts.noPush,
-        });
-      }
+      const relDir = isClosed ? join('.issues', 'closed') : '.issues';
+      await commitAndMaybePush(
+        globalOpts,
+        config,
+        [join(relDir, filename)],
+        `${config.git.commitPrefix} comment on #${id}`,
+      );
     });
 }
 

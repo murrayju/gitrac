@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Command } from 'commander';
 import { parseIssue } from '../../core/issue.ts';
-import type { Issue, OutputFormat, Status } from '../../core/types.ts';
+import type { Issue, Status } from '../../core/types.ts';
 import { isClosedStatus } from '../../core/types.ts';
 import {
   listClosedIssueFiles,
@@ -10,6 +10,7 @@ import {
   readConfig,
 } from '../../fs/issue-store.ts';
 import { getBranchWarning, getGitRoot } from '../../git/status.ts';
+import { getGlobalOptions } from '../global-options.ts';
 import { formatIssueList } from '../output.ts';
 
 async function loadIssues(
@@ -79,8 +80,8 @@ export function registerListCommand(program: Command): void {
         priority?: string;
         sort?: string;
       }) => {
-        const globalOpts = program.opts();
-        const dir = globalOpts.dir || process.cwd();
+        const globalOpts = getGlobalOptions(program);
+        const { dir } = globalOpts;
 
         try {
           await getGitRoot(dir);
@@ -148,7 +149,7 @@ export function registerListCommand(program: Command): void {
         // Sort
         issues = sortIssues(issues, options.sort || 'id');
 
-        const format = (globalOpts.output || 'human') as OutputFormat;
+        const format = globalOpts.output;
         console.log(formatIssueList(issues, format));
       },
     );

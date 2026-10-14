@@ -171,6 +171,8 @@ src/
 | `--author <name>` | Override comment author (default: `git config user.name`) |
 | `--dir <path>` | Override issues directory (validated to be within the current git repo) |
 
+Global flags may appear before or after the subcommand (`gitrac --no-commit close 1` and `gitrac close 1 --no-commit` are equivalent). `--no-commit` applies to every mutating command (`init`, `create`, `edit`, `comment`, `close`, `reopen`, `claim`) and also suppresses push. If both `--push` and `--no-push` are given, the last one wins.
+
 ### Create Flags
 
 ```
