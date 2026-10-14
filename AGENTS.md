@@ -108,6 +108,7 @@ This builds the React UI with Vite, then compiles the CLI into a standalone bina
 - **Web routes are same-origin only** — `requestGuard` (`src/web/security.ts`) runs on every request; don't add CORS. Uploads are capped (`MAX_UPLOAD_BYTES`) and SVG is not allowed.
 - **Validate issue fields before writing** — any path that creates/updates an issue from user input runs it through `validateIssueFields` (`src/core/validate.ts`) first and rejects invalid input (CLI exit 1, HTTP 400) before touching disk. Register new labels with `registerLabels` (`src/fs/issue-store.ts`).
 - **Mutations must hold the repo lock** — wrap the whole read-modify-write-commit of any new CLI command in `withMutationLock` (`src/cli/global-options.ts`) and add the `mutationLock` middleware (`src/web/lock.ts`) to any new mutating web route. Keep interactive input (prompts, stdin) outside the lock. See "Concurrency" in `docs/specs/`.
+- **Single-issue web mutations honor `If-Match`** — load the issue with `loadIssue`, return `preconditionFailed(c, loaded)` if set (409 + current issue), and reply via `respondWithIssue` so the response carries the new `ETag` (`src/web/routes/issues.ts`, `src/web/etag.ts`). UI code that writes stale-able content (the description editor, comment edit/delete) sends the version it was based on.
 
 ## Issue File Format
 

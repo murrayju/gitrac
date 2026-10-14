@@ -10,17 +10,17 @@ import { validateIssue, validateIssueFields } from '../../core/validate.ts';
 import {
   allocateNextId,
   deleteIssueFile,
-  findIssueFile,
   listClosedIssueFiles,
   listIssueFiles,
   moveToClose,
   moveToReopen,
   readConfig,
-  readIssue,
+  readIssueContent,
   registerLabels,
   writeIssue,
 } from '../../fs/issue-store.ts';
 import { commitIssueChange } from '../../git/operations.ts';
+import { ifMatchSatisfied, issueETag } from '../etag.ts';
 import { mutationLock } from '../lock.ts';
 import type { ServerContext } from '../server.ts';
 
@@ -57,6 +57,65 @@ async function readJsonBody(c: Context): Promise<unknown> {
   } catch {
     return undefined;
   }
+}
+
+/** An issue as currently on disk, with its version (ETag) and location. */
+interface LoadedIssue {
+  issue: Issue;
+  etag: string;
+  filename: string;
+  closed: boolean;
+}
+
+/** Read + parse an issue and compute its ETag; null if missing/unreadable. */
+async function loadIssue(dir: string, id: number): Promise<LoadedIssue | null> {
+  try {
+    const raw = await readIssueContent(dir, id);
+    if (!raw) return null;
+    return {
+      issue: parseIssue(raw.content),
+      etag: issueETag(raw.content),
+      filename: raw.filename,
+      closed: raw.closed,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Optimistic concurrency: if the request carries an `If-Match` that doesn't
+ * match the issue's current ETag, return a 409 with the current issue (and
+ * its ETag) so the client can reconcile. Returns null when the write may
+ * proceed. Must be called while holding the mutation lock.
+ */
+function preconditionFailed(c: Context, loaded: LoadedIssue): Response | null {
+  if (ifMatchSatisfied(c.req.header('If-Match'), loaded.etag)) return null;
+  c.header('ETag', loaded.etag);
+  return c.json(
+    {
+      error: `Issue #${loaded.issue.id} was modified since it was loaded`,
+      current: loaded.issue,
+    },
+    409,
+  );
+}
+
+/**
+ * Respond with the issue as now on disk (exactly what a later GET returns)
+ * plus its ETag, so clients can chain `If-Match` writes. Falls back to the
+ * in-memory issue if it can't be re-read.
+ */
+async function respondWithIssue(
+  c: Context,
+  dir: string,
+  issue: Issue,
+  status: 200 | 201 = 200,
+): Promise<Response> {
+  const loaded = await loadIssue(dir, issue.id);
+  if (!loaded) return c.json(issue, status);
+  c.header('ETag', loaded.etag);
+  return c.json(loaded.issue, status);
 }
 
 /** Collect .issues/assets/ paths for all assets referenced by the issue */
@@ -140,12 +199,12 @@ export function issueRoutes(ctx: ServerContext): Hono {
       return c.json({ error: 'Invalid issue ID' }, 400);
     }
 
-    try {
-      const issue = await readIssue(dir, id);
-      return c.json(issue);
-    } catch {
+    const loaded = await loadIssue(dir, id);
+    if (!loaded) {
       return c.json({ error: `Issue #${id} not found` }, 404);
     }
+    c.header('ETag', loaded.etag);
+    return c.json(loaded.issue);
   });
 
   // POST /issues — create a new issue
@@ -208,7 +267,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
       }
     }
 
-    return c.json(issue, 201);
+    return respondWithIssue(c, dir, issue, 201);
   });
 
   // PATCH /issues/:id — update issue metadata
@@ -221,19 +280,13 @@ export function issueRoutes(ctx: ServerContext): Hono {
     }
 
     // Track original location
-    const found = await findIssueFile(dir, id);
-    if (!found) {
+    const loaded = await loadIssue(dir, id);
+    if (!loaded) {
       return c.json({ error: `Issue #${id} not found` }, 404);
     }
-    const wasClosed = found.closed;
-    const oldFilename = found.filename;
-
-    let issue: Issue;
-    try {
-      issue = await readIssue(dir, id);
-    } catch {
-      return c.json({ error: `Issue #${id} not found` }, 404);
-    }
+    const conflict = preconditionFailed(c, loaded);
+    if (conflict) return conflict;
+    const { issue, closed: wasClosed, filename: oldFilename } = loaded;
 
     const fields = validateIssueFields(await readJsonBody(c), config);
     if (!fields.valid) {
@@ -288,7 +341,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
       await amendTracker.commitOrAmend(dir, id, allFiles, message);
     }
 
-    return c.json(issue);
+    return respondWithIssue(c, dir, issue);
   });
 
   // POST /issues/:id/comments — add a comment
@@ -300,19 +353,13 @@ export function issueRoutes(ctx: ServerContext): Hono {
       return c.json({ error: 'Invalid issue ID' }, 400);
     }
 
-    // Track original location
-    const found = await findIssueFile(dir, id);
-    if (!found) {
+    const loaded = await loadIssue(dir, id);
+    if (!loaded) {
       return c.json({ error: `Issue #${id} not found` }, 404);
     }
-    const isClosed = found.closed;
-
-    let issue: Issue;
-    try {
-      issue = await readIssue(dir, id);
-    } catch {
-      return c.json({ error: `Issue #${id} not found` }, 404);
-    }
+    const conflict = preconditionFailed(c, loaded);
+    if (conflict) return conflict;
+    const { issue, closed: isClosed } = loaded;
 
     const { body: commentBody, author } = asRecord(await readJsonBody(c));
 
@@ -356,7 +403,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
       );
     }
 
-    return c.json(issue);
+    return respondWithIssue(c, dir, issue);
   });
 
   // PUT /issues/:id/comments/:commentIndex — edit a comment
@@ -372,18 +419,13 @@ export function issueRoutes(ctx: ServerContext): Hono {
       return c.json({ error: 'Invalid comment index' }, 400);
     }
 
-    const found = await findIssueFile(dir, id);
-    if (!found) {
+    const loaded = await loadIssue(dir, id);
+    if (!loaded) {
       return c.json({ error: `Issue #${id} not found` }, 404);
     }
-    const isClosed = found.closed;
-
-    let issue: Issue;
-    try {
-      issue = await readIssue(dir, id);
-    } catch {
-      return c.json({ error: `Issue #${id} not found` }, 404);
-    }
+    const conflict = preconditionFailed(c, loaded);
+    if (conflict) return conflict;
+    const { issue, closed: isClosed } = loaded;
 
     if (commentIndex >= issue.comments.length) {
       return c.json({ error: 'Comment index out of bounds' }, 404);
@@ -421,7 +463,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
       );
     }
 
-    return c.json(issue);
+    return respondWithIssue(c, dir, issue);
   });
 
   // DELETE /issues/:id/comments/:commentIndex — delete a comment
@@ -437,18 +479,13 @@ export function issueRoutes(ctx: ServerContext): Hono {
       return c.json({ error: 'Invalid comment index' }, 400);
     }
 
-    const found = await findIssueFile(dir, id);
-    if (!found) {
+    const loaded = await loadIssue(dir, id);
+    if (!loaded) {
       return c.json({ error: `Issue #${id} not found` }, 404);
     }
-    const isClosed = found.closed;
-
-    let issue: Issue;
-    try {
-      issue = await readIssue(dir, id);
-    } catch {
-      return c.json({ error: `Issue #${id} not found` }, 404);
-    }
+    const conflict = preconditionFailed(c, loaded);
+    if (conflict) return conflict;
+    const { issue, closed: isClosed } = loaded;
 
     if (commentIndex >= issue.comments.length) {
       return c.json({ error: 'Comment index out of bounds' }, 404);
@@ -467,7 +504,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
       await amendTracker.commitOrAmend(dir, id, [relPath], message);
     }
 
-    return c.json(issue);
+    return respondWithIssue(c, dir, issue);
   });
 
   // PATCH /issues/:id/close — close an issue
@@ -479,12 +516,13 @@ export function issueRoutes(ctx: ServerContext): Hono {
       return c.json({ error: 'Invalid issue ID' }, 400);
     }
 
-    let issue: Issue;
-    try {
-      issue = await readIssue(dir, id);
-    } catch {
+    const loaded = await loadIssue(dir, id);
+    if (!loaded) {
       return c.json({ error: `Issue #${id} not found` }, 404);
     }
+    const conflict = preconditionFailed(c, loaded);
+    if (conflict) return conflict;
+    const { issue } = loaded;
 
     issue.status = 'done';
     issue.updated = new Date().toISOString();
@@ -509,7 +547,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
       );
     }
 
-    return c.json(issue);
+    return respondWithIssue(c, dir, issue);
   });
 
   // PATCH /issues/:id/reopen — reopen a closed issue
@@ -521,20 +559,20 @@ export function issueRoutes(ctx: ServerContext): Hono {
       return c.json({ error: 'Invalid issue ID' }, 400);
     }
 
-    let issue: Issue;
-    try {
-      issue = await readIssue(dir, id);
-    } catch {
+    const loaded = await loadIssue(dir, id);
+    if (!loaded) {
       return c.json({ error: `Issue #${id} not found` }, 404);
     }
+    const conflict = preconditionFailed(c, loaded);
+    if (conflict) return conflict;
+    const { issue } = loaded;
 
     const currentConfig = await readConfig(dir);
     issue.status = currentConfig.defaultStatus;
     issue.updated = new Date().toISOString();
 
     // Move from closed back to open if needed
-    const found = await findIssueFile(dir, id);
-    if (found?.closed) {
+    if (loaded.closed) {
       await moveToReopen(dir, id);
     }
 
@@ -556,7 +594,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
       );
     }
 
-    return c.json(issue);
+    return respondWithIssue(c, dir, issue);
   });
 
   return app;

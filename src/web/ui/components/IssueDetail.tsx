@@ -1,17 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import type { Issue } from '../../../core/types.ts';
 import { updateIssue } from '../api.ts';
 import { useIssue } from '../hooks.ts';
 import { relativeTime } from '../lib/time.ts';
 import { CommentEditor } from './CommentEditor.tsx';
 import { CommentList } from './CommentList.tsx';
-import { IssueEditor } from './IssueEditor.tsx';
+import { DescriptionEditor } from './DescriptionEditor.tsx';
 import { MetadataPanel } from './MetadataPanel.tsx';
 
 export function IssueDetail() {
   const { id } = useParams<{ id: string }>();
   const issueId = Number(id);
-  const { issue, loading, error } = useIssue(issueId);
+  const { issue, version, loading, error, refetch, applyIssue } =
+    useIssue(issueId);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -50,9 +52,10 @@ export function IssueDetail() {
     }
   }
 
-  async function handleDescriptionChange(markdown: string) {
-    if (!issue) return;
-    await updateIssue(issue.id, { description: markdown });
+  function handleDescriptionSaved(saved: Issue, savedVersion: string | null) {
+    applyIssue(saved, savedVersion);
+    // Pick up anything that changed while the save was in flight
+    refetch();
   }
 
   return (
@@ -97,9 +100,11 @@ export function IssueDetail() {
 
           {/* Description editor */}
           <div className="mb-8">
-            <IssueEditor
-              content={issue.description}
-              onChange={handleDescriptionChange}
+            <DescriptionEditor
+              issueId={issue.id}
+              description={issue.description}
+              version={version}
+              onSaved={handleDescriptionSaved}
             />
           </div>
 
@@ -111,7 +116,11 @@ export function IssueDetail() {
             <h2 className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-4">
               Comments ({issue.comments.length})
             </h2>
-            <CommentList comments={issue.comments} issueId={issue.id} />
+            <CommentList
+              comments={issue.comments}
+              issueId={issue.id}
+              version={version}
+            />
           </div>
 
           {/* Comment editor */}

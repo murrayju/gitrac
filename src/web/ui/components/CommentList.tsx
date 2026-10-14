@@ -6,7 +6,7 @@ import StarterKit from '@tiptap/starter-kit';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Markdown } from 'tiptap-markdown';
 import type { Comment } from '../../../core/types.ts';
-import { deleteComment, updateComment } from '../api.ts';
+import { ConflictError, deleteComment, updateComment } from '../api.ts';
 import { ImageUpload } from '../lib/image-upload-plugin.ts';
 import { getEditorMarkdown } from '../lib/markdown.ts';
 import { relativeTime } from '../lib/time.ts';
@@ -186,25 +186,43 @@ function InlineCommentEditor({
   );
 }
 
+const CONFLICT_MESSAGE =
+  'This issue was changed elsewhere since it was loaded. The latest version is now shown; please try again.';
+
 function CommentItem({
   comment,
   index,
   issueId,
+  version,
 }: {
   comment: Comment;
   index: number;
   issueId: number;
+  version: string | null;
 }) {
   const [editing, setEditing] = useState(false);
 
+  // Comments are addressed by index, so guard edits/deletes with the issue
+  // version we rendered: if comments shifted underneath us, get a 409
+  // instead of touching the wrong comment.
   async function handleSave(body: string) {
-    await updateComment(issueId, index, body);
-    setEditing(false);
+    try {
+      await updateComment(issueId, index, body, version);
+      setEditing(false);
+    } catch (e) {
+      if (!(e instanceof ConflictError)) throw e;
+      window.alert(CONFLICT_MESSAGE);
+    }
   }
 
   async function handleDelete() {
     if (!window.confirm('Delete this comment?')) return;
-    await deleteComment(issueId, index);
+    try {
+      await deleteComment(issueId, index, version);
+    } catch (e) {
+      if (!(e instanceof ConflictError)) throw e;
+      window.alert(CONFLICT_MESSAGE);
+    }
   }
 
   return (
@@ -249,9 +267,12 @@ function CommentItem({
 export function CommentList({
   comments,
   issueId,
+  version,
 }: {
   comments: Comment[];
   issueId: number;
+  /** Version (ETag) of the issue the comments were loaded from. */
+  version: string | null;
 }) {
   if (comments.length === 0) {
     return <div className="text-gray-500 text-sm py-4">No comments yet.</div>;
@@ -265,6 +286,7 @@ export function CommentList({
           comment={comment}
           index={index}
           issueId={issueId}
+          version={version}
         />
       ))}
     </div>

@@ -7,7 +7,7 @@ import { createIssue, deleteDraft, saveDraft, uploadAsset } from '../api.ts';
 import { useConfig } from '../hooks.ts';
 import { AssigneePicker } from './AssigneePicker.tsx';
 import { Dropdown } from './Dropdown.tsx';
-import { IssueEditor } from './IssueEditor.tsx';
+import { IssueEditor, type IssueEditorHandle } from './IssueEditor.tsx';
 import { LabelBadge } from './LabelBadge.tsx';
 import { LabelPicker } from './LabelPicker.tsx';
 import { PriorityBadge } from './PriorityBadge.tsx';
@@ -60,9 +60,7 @@ export function CreateIssueModal({
   const backdropRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const editorRef = useRef<{
-    insertImage: (url: string, alt: string) => void;
-  } | null>(null);
+  const editorRef = useRef<IssueEditorHandle>(null);
 
   // Draft filename — reuse from initialDraft or generate new
   const draftFilenameRef = useRef<string>(

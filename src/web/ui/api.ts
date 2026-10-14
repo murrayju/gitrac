@@ -51,7 +51,47 @@ export interface UpdateIssueInput {
   description?: string;
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+/** Non-2xx API response. */
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly body: string,
+  ) {
+    super(`API error ${status}: ${body}`);
+    this.name = 'ApiError';
+  }
+}
+
+/**
+ * 409 from a mutation sent with `If-Match`: the issue changed since the
+ * version we based the edit on. Carries the current issue and its version.
+ */
+export class ConflictError extends ApiError {
+  constructor(
+    body: string,
+    readonly current: Issue,
+    readonly version: string | null,
+  ) {
+    super(409, body);
+    this.name = 'ConflictError';
+  }
+}
+
+/** A response body plus the resource version (ETag) it was served with. */
+export interface Versioned<T> {
+  data: T;
+  version: string | null;
+}
+
+/** Headers for an optimistic-concurrency write based on `version`. */
+function ifMatch(version: string | null | undefined): Record<string, string> {
+  return version ? { 'If-Match': version } : {};
+}
+
+async function requestVersioned<T>(
+  path: string,
+  options?: RequestInit,
+): Promise<Versioned<T>> {
   const res = await fetch(path, {
     ...options,
     headers: {
@@ -61,9 +101,27 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`API error ${res.status}: ${body}`);
+    if (res.status === 409) {
+      let current: Issue | undefined;
+      try {
+        current = (JSON.parse(body) as { current?: Issue }).current;
+      } catch {
+        // not a conflict payload
+      }
+      if (current) {
+        throw new ConflictError(body, current, res.headers.get('ETag'));
+      }
+    }
+    throw new ApiError(res.status, body);
   }
-  return res.json() as Promise<T>;
+  return {
+    data: (await res.json()) as T,
+    version: res.headers.get('ETag'),
+  };
+}
+
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  return (await requestVersioned<T>(path, options)).data;
 }
 
 export async function fetchIssues(filters?: IssueFilters): Promise<Issue[]> {
@@ -79,6 +137,13 @@ export async function fetchIssues(filters?: IssueFilters): Promise<Issue[]> {
 
 export async function fetchIssue(id: number): Promise<Issue> {
   return request<Issue>(`/api/issues/${id}`);
+}
+
+/** Fetch an issue along with its current version (ETag). */
+export async function fetchIssueVersioned(
+  id: number,
+): Promise<Versioned<Issue>> {
+  return requestVersioned<Issue>(`/api/issues/${id}`);
 }
 
 export async function createIssue(input: CreateIssueInput): Promise<Issue> {
@@ -98,6 +163,22 @@ export async function updateIssue(
   });
 }
 
+/**
+ * Update an issue only if it is still at `baseVersion`; throws
+ * `ConflictError` if it changed. Returns the issue and its new version.
+ */
+export async function updateIssueVersioned(
+  id: number,
+  input: UpdateIssueInput,
+  baseVersion: string | null,
+): Promise<Versioned<Issue>> {
+  return requestVersioned<Issue>(`/api/issues/${id}`, {
+    method: 'PATCH',
+    headers: ifMatch(baseVersion),
+    body: JSON.stringify(input),
+  });
+}
+
 export async function addComment(
   id: number,
   body: string,
@@ -113,9 +194,11 @@ export async function updateComment(
   issueId: number,
   commentIndex: number,
   body: string,
+  baseVersion?: string | null,
 ): Promise<Issue> {
   return request<Issue>(`/api/issues/${issueId}/comments/${commentIndex}`, {
     method: 'PUT',
+    headers: ifMatch(baseVersion),
     body: JSON.stringify({ body }),
   });
 }
@@ -123,9 +206,11 @@ export async function updateComment(
 export async function deleteComment(
   issueId: number,
   commentIndex: number,
+  baseVersion?: string | null,
 ): Promise<Issue> {
   return request<Issue>(`/api/issues/${issueId}/comments/${commentIndex}`, {
     method: 'DELETE',
+    headers: ifMatch(baseVersion),
   });
 }
 

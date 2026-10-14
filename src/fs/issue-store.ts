@@ -117,16 +117,29 @@ export async function findIssueFile(
 }
 
 /**
+ * Read the raw markdown of an issue file by its numeric ID, along with
+ * where it lives. Returns null if no file exists for the ID.
+ */
+export async function readIssueContent(
+  dir: string,
+  id: number,
+): Promise<{ content: string; filename: string; closed: boolean } | null> {
+  const found = await findIssueFile(dir, id);
+  if (!found) return null;
+  const base = found.closed ? closedDir(dir) : issuesDir(dir);
+  const content = await readFile(join(base, found.filename), 'utf-8');
+  return { content, ...found };
+}
+
+/**
  * Read and parse an issue by its numeric ID.
  */
 export async function readIssue(dir: string, id: number): Promise<Issue> {
-  const found = await findIssueFile(dir, id);
-  if (!found) {
+  const raw = await readIssueContent(dir, id);
+  if (!raw) {
     throw new Error(`Issue #${id} not found`);
   }
-  const base = found.closed ? closedDir(dir) : issuesDir(dir);
-  const content = await readFile(join(base, found.filename), 'utf-8');
-  return parseIssue(content);
+  return parseIssue(raw.content);
 }
 
 /**

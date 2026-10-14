@@ -283,6 +283,10 @@ Every mutation — CLI command or web API request — runs its whole read-modify
 - Outside a git repo (tests, plain directories) the lock lives in the OS temp dir, keyed by directory.
 - Asset uploads and drafts don't take the lock: uploads write new uniquely-named files and drafts are untracked.
 
+**Web edits vs. external changes (optimistic concurrency).** The lock serializes writes but doesn't stop a client from writing back content it loaded before someone else's change. So single-issue API responses (`GET /api/issues/:id` and every mutation that returns an issue) carry an `ETag`: a quoted SHA-1 of the issue file's raw bytes, so any change — web, CLI, agent, `git pull`, hand edit — yields a new version. Mutations on an existing issue (`PATCH /api/issues/:id`, comment add/edit/delete, close, reopen) accept `If-Match: <etag>` (or `*`); it is checked under the lock and a mismatch returns **409** `{ error, current }` with the current issue and its `ETag`, writing nothing. Without `If-Match` the request is last-writer-wins, as before (curl, scripts, metadata dropdowns that only send the changed field). Mutation responses return the issue as re-read from disk, so their body and `ETag` match a subsequent GET.
+
+The description editor sends the version its content is based on with every autosave, one save at a time. When a newer version arrives (SSE refetch or a 409's `current`): if the description is unchanged (only comments/metadata changed) it just adopts the new version (and retries a 409'd save); if the description changed and the editor has no unsaved edits, the new text is loaded into the editor; if it has unsaved edits, autosave pauses and a notice offers "Discard mine, load theirs" or "Keep mine, overwrite theirs". Comment edit/delete send the version too, since comments are addressed by index. The title input is an explicit edit of one field and stays last-writer-wins.
+
 Implementation: `withLock` (`src/fs/lock.ts`, generic) and `withRepoLock` (`src/git/lock.ts`, resolves the lock path). The CLI wraps commands with `withMutationLock`; web routes use the `mutationLock` middleware (`src/web/lock.ts`).
 
 ### Push/Pull
@@ -333,6 +337,8 @@ The server has no authentication, so exposure is limited instead (`src/web/secur
 | POST | `/api/issues` | Create issue |
 | PATCH | `/api/issues/:id` | Update issue metadata |
 | POST | `/api/issues/:id/comments` | Add comment |
+| PUT | `/api/issues/:id/comments/:index` | Edit comment |
+| DELETE | `/api/issues/:id/comments/:index` | Delete comment |
 | PATCH | `/api/issues/:id/close` | Close issue |
 | PATCH | `/api/issues/:id/reopen` | Reopen issue |
 | GET | `/api/config` | Get project config |
@@ -346,7 +352,7 @@ The server has no authentication, so exposure is limited instead (`src/web/secur
 
 **List View:** Sortable/filterable table with columns: ID, Title, Status, Priority, Assignee, Labels, Updated. Colored status/priority badges. Click row to open detail view. Inline status/assignee quick-edit.
 
-**Detail View:** Tiptap WYSIWYG editor for description (auto-save on change). Inline metadata editing (dropdowns for status, priority, assignee, labels). Comments rendered below with author/timestamp. Tiptap "add comment" editor at bottom. All changes trigger commit (with amend-until-pushed logic).
+**Detail View:** Tiptap WYSIWYG editor for description (auto-save on change; external changes are loaded into the editor or flagged as a conflict — see "Concurrency"). Inline metadata editing (dropdowns for status, priority, assignee, labels). Comments rendered below with author/timestamp. Tiptap "add comment" editor at bottom. All changes trigger commit (with amend-until-pushed logic).
 
 **Visual Style:** Dark theme by default (with light theme option). Status colors: backlog=gray, todo=blue, in_progress=yellow, done=green, cancelled=red. Clean sans-serif typography, minimal chrome.
 

@@ -5,8 +5,8 @@ import {
   fetchConfig,
   fetchDrafts,
   fetchGitStatus,
-  fetchIssue,
   fetchIssues,
+  fetchIssueVersioned,
 } from './api.ts';
 
 export function useSSE(onEvent: () => void): void {
@@ -74,24 +74,46 @@ export function useIssues(filters?: IssueFilters): {
 
 export function useIssue(id: number): {
   issue: Issue | null;
+  /** ETag of `issue` as served; send it as `If-Match` to avoid clobbering. */
+  version: string | null;
   loading: boolean;
   error: string | null;
   refetch: () => void;
+  /** Adopt an issue returned by a mutation, discarding older in-flight fetches. */
+  applyIssue: (issue: Issue, version: string | null) => void;
 } {
-  const [issue, setIssue] = useState<Issue | null>(null);
+  const [state, setState] = useState<{
+    issue: Issue | null;
+    version: string | null;
+  }>({ issue: null, version: null });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Responses can arrive out of order (SSE bursts, our own saves); only
+  // apply a fetch if nothing newer has been applied since it started.
+  const seqRef = useRef(0);
+  const appliedRef = useRef(0);
 
   const refetch = useCallback(() => {
+    const seq = ++seqRef.current;
     setLoading(true);
-    fetchIssue(id)
-      .then((data) => {
-        setIssue(data);
+    fetchIssueVersioned(id)
+      .then(({ data, version }) => {
+        if (seq < appliedRef.current) return;
+        appliedRef.current = seq;
+        setState({ issue: data, version });
         setError(null);
       })
-      .catch((e: Error) => setError(e.message))
+      .catch((e: Error) => {
+        if (seq >= appliedRef.current) setError(e.message);
+      })
       .finally(() => setLoading(false));
   }, [id]);
+
+  const applyIssue = useCallback((issue: Issue, version: string | null) => {
+    appliedRef.current = ++seqRef.current;
+    setState({ issue, version });
+    setError(null);
+  }, []);
 
   useEffect(() => {
     refetch();
@@ -99,7 +121,7 @@ export function useIssue(id: number): {
 
   useSSE(refetch);
 
-  return { issue, loading, error, refetch };
+  return { ...state, loading, error, refetch, applyIssue };
 }
 
 export function useConfig(): {
