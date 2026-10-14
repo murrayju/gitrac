@@ -156,3 +156,39 @@ describe('unescapeCommentHeadings', () => {
     expect(unescapeCommentHeadings(input)).toBe('```\n\\## Still escaped\n```');
   });
 });
+
+describe('comment body escaping edge cases', () => {
+  const roundTrip = (body: string) =>
+    parseComments(serializeComments([{ author: 'A', timestamp: 'T', body }]));
+
+  test('header-like line inside a code fence does not split the comment', () => {
+    const body = '```\n### Bob \u2014 2024-01-01T00:00:00Z\n```';
+    const comments = roundTrip(body);
+    expect(comments).toHaveLength(1);
+    expect(comments[0]?.body).toBe(body);
+  });
+
+  test('~~~ and indented fences are treated as code', () => {
+    const body = '~~~\n## not escaped\n~~~\n\n  ```\n## nor this\n  ```';
+    expect(escapeCommentHeadings(body)).toBe(body);
+    expect(roundTrip(body)[0]?.body).toBe(body);
+  });
+
+  test('backtick line inside a ~~~ fence does not close it', () => {
+    const body = '~~~\n```\n## code\n~~~\n## heading';
+    expect(escapeCommentHeadings(body)).toBe(
+      '~~~\n```\n## code\n~~~\n\\## heading',
+    );
+  });
+
+  test('literal backslash-escaped headings round-trip', () => {
+    for (const body of ['\\## a', '\\\\## b', '\\### A \u2014 T', 'x\n\\# c']) {
+      expect(roundTrip(body)[0]?.body).toBe(body);
+    }
+  });
+
+  test('horizontal rules in comment bodies round-trip', () => {
+    const body = 'a\n\n---\n\nb\n\n***\n\n___\n\nc';
+    expect(roundTrip(body)[0]?.body).toBe(body);
+  });
+});

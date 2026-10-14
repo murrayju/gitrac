@@ -104,10 +104,13 @@ Found that the timeout defaults to 30s instead of 300s.
 ### Parsing Rules
 
 - YAML frontmatter between first `---` pair -> metadata
-- Content after frontmatter, up to first `---` horizontal rule -> description (supports full markdown including headings)
-- Content after that `---` -> comments section
+- Content after frontmatter, up to the separator -> description (supports full markdown including headings and horizontal rules)
+- The separator is the first `---` line outside a fenced code block whose next non-blank line is a comment header. Any other `---` (or `***`, `___`) is an ordinary horizontal rule and stays in the description. Content after the separator -> comments section, which therefore always starts with a comment header.
 - Each comment starts with `### {author} — {ISO8601 timestamp}` (em dash, U+2014)
-- Any line starting with one or more `#` characters inside a comment body is escaped with a leading backslash (`\## Heading`). The parser unescapes these on read; the serializer escapes them on write.
+- Any line starting with one or more `#` characters inside a comment body (outside code fences) is escaped with a leading backslash (`\## Heading`). Inside code fences, only lines that look like a comment header are escaped. The parser unescapes these on read; the serializer escapes them on write.
+- In the description, a comment-header-like line that directly follows a `---` line (outside code fences) is escaped with a leading backslash so it cannot be mistaken for the separator. All other description content is written verbatim.
+- Escaping is reversible: a line that already starts with backslashes gets one more, and the parser removes exactly one.
+- Fenced code blocks may use ```` ``` ```` or `~~~` (3+ characters, optionally indented); a fence closes only with the same character at least as long as the opener. If a description ends inside an unclosed fence and the issue has comments, the serializer closes the fence so it cannot swallow the comments.
 - Cross-references use `#N` syntax (e.g., `#45`)
 
 ### Issue ID Scheme

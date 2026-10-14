@@ -1,55 +1,88 @@
+import { scanFences } from './fences.ts';
 import type { Comment } from './types.ts';
 
-const COMMENT_HEADER_RE = /^### (.+?) \u2014 (.+)$/;
+/** Matches a comment header line: `### {author} — {timestamp}` (em dash). */
+export const COMMENT_HEADER_RE = /^### (.+?) \u2014 (.+)$/;
 
 /**
- * Escape heading markers (`#`) at the start of lines in comment body text,
- * but leave content inside code fences untouched.
+ * True if `line` is a comment header, optionally preceded by any number of
+ * escaping backslashes.
+ */
+export function isCommentHeaderLike(line: string): boolean {
+  return COMMENT_HEADER_RE.test(line.replace(/^\\+/, ''));
+}
+
+/** Prefix a backslash to header-like lines (injective; see unescape). */
+export function escapeCommentHeaderLine(line: string): string {
+  return isCommentHeaderLike(line) ? `\\${line}` : line;
+}
+
+/** Inverse of {@link escapeCommentHeaderLine}. */
+export function unescapeCommentHeaderLine(line: string): string {
+  return line.startsWith('\\') && isCommentHeaderLike(line)
+    ? line.slice(1)
+    : line;
+}
+
+/**
+ * Escape a comment body so that no line can be mistaken for a comment header.
+ *
+ * - Outside code fences, heading markers (`#`) at the start of lines are
+ *   escaped with a backslash (`## x` -> `\## x`). Lines that already start
+ *   with backslashes followed by a heading marker get one more backslash, so
+ *   the escaping is reversible for any input.
+ * - Inside code fences, only lines that look like a comment header are
+ *   escaped (same backslash scheme), since those would otherwise split the
+ *   comment when parsed.
  */
 export function escapeCommentHeadings(body: string): string {
-  return processOutsideCodeFences(body, (line) =>
-    line.replace(/^(#{1,6}\s)/, '\\$1'),
+  return transformLines(
+    body,
+    (line) => line.replace(/^(\\*#{1,6}\s)/, '\\$1'),
+    escapeCommentHeaderLine,
   );
 }
 
-/**
- * Unescape heading markers (`\#`) at the start of lines in comment body text,
- * but leave content inside code fences untouched.
- */
+/** Inverse of {@link escapeCommentHeadings}. */
 export function unescapeCommentHeadings(body: string): string {
-  return processOutsideCodeFences(body, (line) =>
-    line.replace(/^\\(#{1,6}\s)/, '$1'),
+  return transformLines(
+    body,
+    (line) => line.replace(/^\\(\\*#{1,6}\s)/, '$1'),
+    unescapeCommentHeaderLine,
   );
 }
 
 /**
- * Apply a line transformation only to lines outside of code fences.
+ * Apply `text` to lines outside code fences and `code` to fenced code
+ * content. Fence delimiter lines are left untouched, so the fence structure
+ * is identical before and after escaping.
  */
-function processOutsideCodeFences(
+function transformLines(
   text: string,
-  transformLine: (line: string) => string,
+  transformText: (line: string) => string,
+  transformCode: (line: string) => string,
 ): string {
   const lines = text.split('\n');
-  let inCodeFence = false;
-  const result: string[] = [];
-
-  for (const line of lines) {
-    if (line.startsWith('```')) {
-      inCodeFence = !inCodeFence;
-      result.push(line);
-    } else if (inCodeFence) {
-      result.push(line);
-    } else {
-      result.push(transformLine(line));
-    }
-  }
-
-  return result.join('\n');
+  const { kinds } = scanFences(lines);
+  return lines
+    .map((line, i) => {
+      switch (kinds[i]) {
+        case 'text':
+          return transformText(line);
+        case 'code':
+          return transformCode(line);
+        default:
+          return line;
+      }
+    })
+    .join('\n');
 }
 
 /**
  * Parse a comments section into structured Comment objects.
  * Comments are separated by `### {author} — {timestamp}` headers (em dash U+2014).
+ * Callers must pass a section that starts with a header line; `parseIssue`
+ * guarantees this, so no content before the first header is ever dropped.
  */
 export function parseComments(commentsSection: string): Comment[] {
   if (!commentsSection.trim()) {

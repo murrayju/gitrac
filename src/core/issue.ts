@@ -1,5 +1,12 @@
 import matter from 'gray-matter';
-import { parseComments, serializeComments } from './comments.ts';
+import {
+  COMMENT_HEADER_RE,
+  escapeCommentHeaderLine,
+  parseComments,
+  serializeComments,
+  unescapeCommentHeaderLine,
+} from './comments.ts';
+import { scanFences } from './fences.ts';
 import type { Issue, IssueFrontmatter } from './types.ts';
 
 /**
@@ -9,16 +16,19 @@ import type { Issue, IssueFrontmatter } from './types.ts';
  * 1. YAML frontmatter between `---` markers
  * 2. Description (supports full markdown including headings)
  * 3. `---` separator (only present if there are comments)
- * 4. Comments section
+ * 4. Comments section, starting with a `### author — timestamp` header
+ *
+ * A `---` line is only treated as the separator when it is outside a code
+ * fence and the next non-blank line is a comment header, so horizontal rules
+ * in the description are preserved. See {@link escapeDescription} for how
+ * descriptions that would otherwise be ambiguous are written.
  */
 export function parseIssue(markdown: string): Issue {
   const { data, content } = matter(markdown);
   const fm = data as IssueFrontmatter;
 
-  // Split content into description and comments.
-  // The separator is a `---` on its own line, but we need to be careful:
-  // gray-matter already strips the frontmatter, so `content` starts after the closing ---.
-  // We look for a --- line that separates description from comments.
+  // gray-matter already strips the frontmatter, so `content` starts after
+  // the closing ---.
   const { description, commentsSection } = splitContent(content);
 
   const comments = commentsSection ? parseComments(commentsSection) : [];
@@ -54,11 +64,17 @@ export function serializeIssue(issue: Issue): string {
     updated: issue.updated,
   };
 
-  let body = issue.description;
+  let body = escapeDescription(issue.description);
 
   if (issue.comments.length > 0) {
+    // An unclosed fence would swallow the separator and every comment, so
+    // close it before appending the comments section.
+    const { open } = scanFences(body.split('\n'));
+    if (open) {
+      body = `${body}\n${open.char.repeat(open.length)}`;
+    }
     const commentStr = serializeComments(issue.comments);
-    body = `${body}\n\n---\n\n${commentStr}`;
+    body = `${body}\n\n${SEPARATOR}\n\n${commentStr}`;
   }
 
   // gray-matter stringify adds the frontmatter delimiters
@@ -66,43 +82,115 @@ export function serializeIssue(issue: Issue): string {
   return result;
 }
 
+const SEPARATOR = '---';
+
+function isSeparatorLine(line: string): boolean {
+  return line.trim() === SEPARATOR;
+}
+
+function isBlank(line: string): boolean {
+  return line.trim() === '';
+}
+
 /**
- * Split the content (after frontmatter) into description and comments section.
- * The separator is a `---` on its own line.
+ * Index of the line before `index` that is not blank, or -1.
+ */
+function prevNonBlank(lines: string[], index: number): number {
+  let i = index - 1;
+  while (i >= 0 && isBlank(lines[i] ?? '')) {
+    i--;
+  }
+  return i;
+}
+
+/**
+ * Apply `transform` to every description line that, outside code fences,
+ * directly follows a `---` line (ignoring blank lines). Only those positions
+ * can be confused with the description/comments separator.
+ */
+function transformAfterRules(
+  description: string,
+  transform: (line: string) => string,
+): string {
+  const lines = description.split('\n');
+  const { kinds } = scanFences(lines);
+  return lines
+    .map((line, i) => {
+      if (kinds[i] !== 'text') {
+        return line;
+      }
+      const prev = prevNonBlank(lines, i);
+      return prev >= 0 && isSeparatorLine(lines[prev] ?? '')
+        ? transform(line)
+        : line;
+    })
+    .join('\n');
+}
+
+/**
+ * Escape a description so it can never contain the separator sequence
+ * (`---`, blank lines, comment header). A header-like line right after a
+ * horizontal rule gets a backslash prefix (`\### a — b`); everything else,
+ * including ordinary horizontal rules and headings, is written verbatim.
+ */
+function escapeDescription(description: string): string {
+  return transformAfterRules(description, escapeCommentHeaderLine);
+}
+
+/** Inverse of {@link escapeDescription}. */
+function unescapeDescription(description: string): string {
+  return transformAfterRules(description, unescapeCommentHeaderLine);
+}
+
+/**
+ * Find the description/comments separator: the first `---` line outside a
+ * code fence whose next non-blank line is a comment header. Returns -1 if
+ * there is none (the whole content is description).
+ */
+function findSeparator(lines: string[]): number {
+  const { kinds } = scanFences(lines);
+  for (let i = 0; i < lines.length; i++) {
+    if (kinds[i] !== 'text' || !isSeparatorLine(lines[i] ?? '')) {
+      continue;
+    }
+    let next = i + 1;
+    while (next < lines.length && isBlank(lines[next] ?? '')) {
+      next++;
+    }
+    if (COMMENT_HEADER_RE.test(lines[next] ?? '')) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Split the content (after frontmatter) into description and comments
+ * section. The comments section, when present, always starts with a comment
+ * header, so no content between the separator and the first comment is lost.
  */
 function splitContent(content: string): {
   description: string;
   commentsSection: string;
 } {
-  // Find --- separator that's on its own line (not inside code fences)
   const lines = content.split('\n');
-  let inCodeFence = false;
-  let separatorIndex = -1;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = (lines[i] ?? '').trim();
-    if (line.startsWith('```')) {
-      inCodeFence = !inCodeFence;
-    } else if (!inCodeFence && line === '---') {
-      separatorIndex = i;
-      break;
-    }
-  }
+  const separatorIndex = findSeparator(lines);
 
   if (separatorIndex === -1) {
-    // No separator — everything is description, no comments
     return {
-      description: content.trim(),
+      description: unescapeDescription(content.trim()),
       commentsSection: '',
     };
   }
 
-  const descriptionLines = lines.slice(0, separatorIndex);
-  const commentLines = lines.slice(separatorIndex + 1);
-
   return {
-    description: descriptionLines.join('\n').trim(),
-    commentsSection: commentLines.join('\n').trim(),
+    description: unescapeDescription(
+      lines.slice(0, separatorIndex).join('\n').trim(),
+    ),
+    commentsSection: lines
+      .slice(separatorIndex + 1)
+      .join('\n')
+      .trim(),
   };
 }
 

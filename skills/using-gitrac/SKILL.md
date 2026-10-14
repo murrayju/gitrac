@@ -133,9 +133,9 @@ Issues are plain markdown. You can read them without the CLI:
 .issues/closed/<id>-<slug>.md  # closed issues
 ```
 
-Format: YAML frontmatter (id, title, status, priority, assignee, labels, dates) followed by a markdown description, then optionally a `---` separator and comments. Each comment starts with `### author — timestamp`.
+Format: YAML frontmatter (id, title, status, priority, assignee, labels, dates) followed by a markdown description, then optionally a `---` separator and comments. Each comment starts with `### author — timestamp`. Only a `---` immediately followed (after blank lines) by a comment header is the separator; other horizontal rules in the description are preserved.
 
-When reading comment bodies, headings are escaped (`\## Heading` means `## Heading`).
+When reading comment bodies, headings are escaped (`\## Heading` means `## Heading`). A comment-header-like line right after a `---` in a description is likewise escaped (`\### a — b`).
 
 ## Structured Output for Agents
 
