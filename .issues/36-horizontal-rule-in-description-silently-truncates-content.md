@@ -1,14 +1,14 @@
 ---
 id: 36
 title: Horizontal rule in description silently truncates content
-status: todo
+status: in_progress
 priority: urgent
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-14T21:43:46.806Z'
 createdBy: Justin Murray
-updated: '2026-10-14T21:43:46.806Z'
+updated: '2026-10-14T22:12:30.877Z'
 ---
 
 `splitContent` in `src/core/issue.ts` treats the first `---` line after frontmatter as the description/comments separator. `parseComments` then discards any lines before the first `### author — timestamp` header.
