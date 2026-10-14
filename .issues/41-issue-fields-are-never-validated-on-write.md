@@ -1,14 +1,14 @@
 ---
 id: 41
 title: Issue fields are never validated on write
-status: todo
+status: in_progress
 priority: high
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-14T21:43:46.806Z'
 createdBy: Justin Murray
-updated: '2026-10-14T21:43:46.806Z'
+updated: '2026-10-14T22:56:46.386Z'
 ---
 
 `validateIssue()` exists but is never called. Both the CLI and web API accept arbitrary values:
