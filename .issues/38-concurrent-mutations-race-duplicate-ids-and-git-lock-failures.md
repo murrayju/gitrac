@@ -1,14 +1,14 @@
 ---
 id: 38
 title: 'Concurrent mutations race: duplicate IDs and git lock failures'
-status: todo
+status: in_progress
 priority: high
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-14T21:43:46.806Z'
 createdBy: Justin Murray
-updated: '2026-10-14T21:43:46.806Z'
+updated: '2026-10-14T22:28:10.123Z'
 ---
 
 Nothing serializes gitrac writes.
