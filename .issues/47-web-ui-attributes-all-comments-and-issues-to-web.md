@@ -1,14 +1,14 @@
 ---
 id: 47
 title: Web UI attributes all comments and issues to "web"
-status: todo
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-14T21:43:46.806Z'
 createdBy: Justin Murray
-updated: '2026-10-14T21:43:46.806Z'
+updated: '2026-10-14T23:36:02.974Z'
 ---
 
 The web server hard-codes `createdBy: 'web'` and defaults comment `author` to `'web'`; the UI never sends an author. Issue history loses who did what.
