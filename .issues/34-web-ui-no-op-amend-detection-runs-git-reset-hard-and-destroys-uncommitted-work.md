@@ -3,14 +3,14 @@ id: 34
 title: >-
   Web UI no-op amend detection runs git reset --hard and destroys uncommitted
   work
-status: todo
+status: in_progress
 priority: urgent
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-14T21:43:46.806Z'
 createdBy: Justin Murray
-updated: '2026-10-14T21:43:46.806Z'
+updated: '2026-10-14T21:50:40.207Z'
 ---
 
 `AmendTracker.dropIfNoOp` (`src/git/amend-tracker.ts`) runs `git reset --hard HEAD~1` when an amended commit's net diff is only the `updated:` timestamp. `--hard` resets the **entire working tree and index**, discarding any uncommitted work in the repo, not just the issue file.
