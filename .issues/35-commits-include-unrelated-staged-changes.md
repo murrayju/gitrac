@@ -1,14 +1,14 @@
 ---
 id: 35
 title: Commits include unrelated staged changes
-status: todo
+status: in_progress
 priority: urgent
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-14T21:43:46.806Z'
 createdBy: Justin Murray
-updated: '2026-10-14T21:43:46.806Z'
+updated: '2026-10-14T22:01:06.963Z'
 ---
 
 `commitIssueChange` (`src/git/operations.ts`) and `AmendTracker.amend` do `git add <files>` followed by a plain `git commit`, which commits the **entire index**. Anything the user (or another agent) had staged gets swept into the `issue:` commit.
