@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { fileURLToPath } from 'node:url';
 import {
   createDefaultConfig,
   ensureLabelColors,
@@ -184,7 +185,116 @@ defaultPriority: medium
   });
 });
 
+describe('parseConfig YAML safety', () => {
+  /** VALID_YAML with `line` appended at the top level. */
+  const withLine = (line: string) => `${VALID_YAML}${line}\n`;
+
+  /** Recursively collect the `typeof` of every value in a parsed config. */
+  function valueTypes(value: unknown, out = new Set<string>()): Set<string> {
+    out.add(
+      value === null
+        ? 'null'
+        : value instanceof RegExp
+          ? 'regexp'
+          : value instanceof Date
+            ? 'date'
+            : typeof value,
+    );
+    if (typeof value === 'object' && value !== null) {
+      for (const v of Object.values(value)) valueTypes(v, out);
+    }
+    return out;
+  }
+
+  test.each([
+    ['!!js/function', `evil: !!js/function 'function () { return 1; }'`],
+    ['!!js/function in a known field', `defaultBranch: !!js/function 'f'`],
+    ['!!js/regexp', 'evil: !!js/regexp /abc/gi'],
+    ['!!js/undefined', "evil: !!js/undefined ''"],
+    ['!!binary', 'evil: !!binary aGVsbG8='],
+    ['!!set', 'evil: !!set { a: null }'],
+    ['!!timestamp', 'evil: !!timestamp 2026-03-28'],
+  ])('rejects %s and never yields a JS object', (_name, line) => {
+    let config: unknown;
+    try {
+      config = parseConfig(withLine(line));
+    } catch {
+      return;
+    }
+    // If it ever parses, it must be plain data only.
+    const types = valueTypes(config);
+    expect(types.has('function')).toBe(false);
+    expect(types.has('regexp')).toBe(false);
+    expect(types.has('date')).toBe(false);
+    expect(types.has('undefined')).toBe(false);
+    throw new Error(`expected ${line} to be rejected`);
+  });
+
+  test('keeps timestamp-like values as strings', () => {
+    const yaml = VALID_YAML.replace(
+      'defaultBranch: main',
+      'defaultBranch: 2026-03-28',
+    ).replace('commitPrefix: "issue:"', 'commitPrefix: 2026-03-28T12:00:00Z');
+    const config = parseConfig(yaml);
+    expect(config.git.defaultBranch).toBe('2026-03-28');
+    expect(config.git.commitPrefix).toBe('2026-03-28T12:00:00Z');
+  });
+
+  test('does not pollute Object.prototype via __proto__ keys', () => {
+    const config = parseConfig(withLine('__proto__:\n  polluted: true'));
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(Object.getPrototypeOf(config)).toBe(Object.prototype);
+  });
+});
+
 describe('serializeConfig', () => {
+  test('output format is stable (single-quoted special strings)', () => {
+    const config = parseConfig(VALID_YAML);
+    config.git.defaultBranch = '2026-03-28';
+    expect(serializeConfig(config)).toBe(
+      [
+        'version: 1',
+        'nextId: 5',
+        'statuses:',
+        '  - backlog',
+        '  - todo',
+        '  - in_progress',
+        '  - done',
+        '  - cancelled',
+        'labels:',
+        "  bug: '#e05d5d'",
+        "  feature: '#58a6e0'",
+        'assignees:',
+        '  - name: Alice',
+        '    email: alice@example.com',
+        '  - name: Bob',
+        '    email: bob@example.com',
+        'priorities:',
+        '  - urgent',
+        '  - high',
+        '  - medium',
+        '  - low',
+        '  - none',
+        'defaultStatus: backlog',
+        'defaultPriority: medium',
+        'git:',
+        '  autoCommit: true',
+        '  autoPush: false',
+        "  commitPrefix: 'issue:'",
+        "  defaultBranch: '2026-03-28'",
+        '',
+      ].join('\n'),
+    );
+  });
+
+  test("this repo's config.yaml round-trips byte-for-byte", async () => {
+    const path = fileURLToPath(
+      new URL('../../.issues/config.yaml', import.meta.url),
+    );
+    const raw = await Bun.file(path).text();
+    expect(serializeConfig(parseConfig(raw))).toBe(raw);
+  });
+
   test('serializes Config to YAML', () => {
     const config = createDefaultConfig();
     const yaml = serializeConfig(config);

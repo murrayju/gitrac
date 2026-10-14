@@ -201,9 +201,17 @@ export function validateConfig(value: unknown): value is Config {
 
 /**
  * Parse a YAML string into a Config, validating and applying defaults.
+ *
+ * The YAML is loaded with js-yaml's CORE_SCHEMA: no `!!js/*` types (a crafted
+ * config from a malicious clone/PR can't inject functions or regexps) and no
+ * timestamp/binary/set/omap types, so every value is a plain string, number,
+ * boolean, null, array or object. Unknown tags such as `!!js/function` throw.
  */
 export function parseConfig(yamlStr: string): Config {
-  const raw = yaml.load(yamlStr) as Record<string, unknown>;
+  const raw = yaml.load(yamlStr, { schema: yaml.CORE_SCHEMA }) as Record<
+    string,
+    unknown
+  >;
 
   if (typeof raw !== 'object' || raw === null) {
     throw new Error('Config must be a YAML object');
@@ -286,11 +294,12 @@ export function resolveAssigneeName(
 
 /**
  * Serialize a Config to a YAML string.
+ *
+ * Uses js-yaml's default dump schema (not CORE_SCHEMA) so strings that a
+ * YAML 1.1 / timestamp-aware reader would misinterpret (e.g. `2026-01-01`,
+ * `yes`) are still quoted, and the default single-quote style to keep
+ * existing config files byte-identical.
  */
 export function serializeConfig(config: Config): string {
-  return yaml.dump(config, {
-    lineWidth: -1,
-    quotingType: '"',
-    forceQuotes: false,
-  });
+  return yaml.dump(config, { lineWidth: -1 });
 }
