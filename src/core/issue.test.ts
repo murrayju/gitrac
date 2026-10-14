@@ -123,6 +123,108 @@ describe('parseIssue', () => {
   });
 });
 
+describe('parseIssue frontmatter normalization', () => {
+  const UNQUOTED_DATES = `---
+id: 4
+title: Unquoted dates
+status: todo
+priority: low
+assignee: alice
+labels:
+  - bug
+created: 2026-03-28T12:00:00Z
+createdBy: bob
+updated: 2026-03-28T14:30:00Z
+---
+
+Body.`;
+
+  test('keeps unquoted ISO timestamps as strings', () => {
+    const issue = parseIssue(UNQUOTED_DATES);
+    expect(typeof issue.created).toBe('string');
+    expect(typeof issue.updated).toBe('string');
+    expect(issue.created).toBe('2026-03-28T12:00:00Z');
+    expect(issue.updated).toBe('2026-03-28T14:30:00Z');
+    expect(issue.updated.slice(0, 10)).toBe('2026-03-28');
+  });
+
+  test('keeps unquoted date-only values and date-like titles as written', () => {
+    const issue = parseIssue(
+      UNQUOTED_DATES.replace('title: Unquoted dates', 'title: 2026-03-28')
+        .replace('created: 2026-03-28T12:00:00Z', 'created: 2026-03-28')
+        .replace('updated: 2026-03-28T14:30:00Z', 'updated: 2026-03-29'),
+    );
+    expect(issue.title).toBe('2026-03-28');
+    expect(issue.created).toBe('2026-03-28');
+    expect(issue.updated).toBe('2026-03-29');
+  });
+
+  test('unquoted dates survive a serialize/parse round-trip', () => {
+    const issue = parseIssue(UNQUOTED_DATES);
+    const reparsed = parseIssue(serializeIssue(issue));
+    expect(reparsed.created).toBe('2026-03-28T12:00:00Z');
+    expect(reparsed.updated).toBe('2026-03-28T14:30:00Z');
+  });
+
+  test('JSON output keeps string timestamps', () => {
+    const json = JSON.parse(JSON.stringify(parseIssue(UNQUOTED_DATES)));
+    expect(json.created).toBe('2026-03-28T12:00:00Z');
+    expect(json.updated).toBe('2026-03-28T14:30:00Z');
+  });
+
+  test('coerces scalar fields to the expected types', () => {
+    const issue = parseIssue(`---
+id: "7"
+title: 123
+status: todo
+priority: low
+assignee: 42
+labels: bug
+created: "2026-03-28T12:00:00Z"
+createdBy: true
+updated: "2026-03-28T12:00:00Z"
+---
+`);
+    expect(issue.id).toBe(7);
+    expect(issue.title).toBe('123');
+    expect(issue.assignee).toBe('42');
+    expect(issue.labels).toEqual(['bug']);
+    expect(issue.createdBy).toBe('true');
+  });
+
+  test('normalizes labels to an array of strings', () => {
+    const issue = parseIssue(
+      UNQUOTED_DATES.replace(
+        'labels:\n  - bug',
+        'labels:\n  - 1\n  - bug\n  -',
+      ),
+    );
+    expect(issue.labels).toEqual(['1', 'bug']);
+  });
+
+  test('defaults missing or null fields', () => {
+    const issue = parseIssue('---\nid: 9\nassignee:\nlabels:\n---\n\nBody');
+    expect(issue.id).toBe(9);
+    expect(issue.title).toBe('');
+    expect(issue.assignee).toBe('');
+    expect(issue.labels).toEqual([]);
+    expect(issue.created).toBe('');
+    expect(issue.updated).toBe('');
+  });
+
+  test('non-numeric id becomes NaN', () => {
+    expect(parseIssue('---\nid: abc\n---\n').id).toBeNaN();
+  });
+
+  test('does not share parsed objects between calls with identical input', () => {
+    const first = parseIssue(UNQUOTED_DATES);
+    first.labels.push('mutated');
+    const second = parseIssue(UNQUOTED_DATES);
+    expect(second.labels).toEqual(['bug']);
+    expect(second.labels).not.toBe(first.labels);
+  });
+});
+
 describe('serializeIssue', () => {
   test('serializes an Issue back to markdown with frontmatter', () => {
     const issue = parseIssue(ISSUE_NO_COMMENTS);

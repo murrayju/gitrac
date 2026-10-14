@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { parseIssue } from '../core/issue.ts';
 import type { Issue } from '../core/types.ts';
 import { formatIssueDetail, formatIssueList } from './output.ts';
 
@@ -127,5 +128,30 @@ describe('formatIssueDetail', () => {
     expect(result).toContain('id: 1');
     expect(result).toContain('title: Fix Login Timeout');
     expect(result).toContain('priority: high');
+  });
+});
+
+describe('issues parsed with unquoted YAML dates', () => {
+  const parsed = parseIssue(`---
+id: 5
+title: Unquoted
+status: todo
+priority: low
+assignee: ""
+labels: []
+created: 2026-03-28T12:00:00Z
+createdBy: bob
+updated: 2026-03-28T14:30:00Z
+---
+`);
+
+  test('human list renders the updated date', () => {
+    expect(formatIssueList([parsed], 'human')).toContain('2026-03-28');
+  });
+
+  test('json output keeps timestamps as written', () => {
+    const [json] = JSON.parse(formatIssueList([parsed], 'json'));
+    expect(json.created).toBe('2026-03-28T12:00:00Z');
+    expect(json.updated).toBe('2026-03-28T14:30:00Z');
   });
 });

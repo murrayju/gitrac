@@ -1,4 +1,5 @@
 import matter from 'gray-matter';
+import yaml from 'js-yaml';
 import {
   COMMENT_HEADER_RE,
   escapeCommentHeaderLine,
@@ -7,7 +8,61 @@ import {
   unescapeCommentHeaderLine,
 } from './comments.ts';
 import { scanFences } from './fences.ts';
-import type { Issue, IssueFrontmatter } from './types.ts';
+import type { Issue, IssueFrontmatter, Priority, Status } from './types.ts';
+
+/**
+ * gray-matter options used when parsing issue files.
+ *
+ * - The YAML engine uses js-yaml's CORE_SCHEMA, which has no timestamp
+ *   type. With gray-matter's default schema an unquoted
+ *   `created: 2026-03-28T12:00:00Z` becomes a `Date` object instead of a
+ *   string; CORE_SCHEMA keeps it verbatim (and also keeps e.g. a title like
+ *   `2026-03-28` as written). It is also a safe schema (no `!!js/*` types).
+ * - Passing any options object disables gray-matter's module-level cache,
+ *   which is keyed by the input string and would otherwise hand the *same*
+ *   `data` object (and `labels` array) to every caller parsing identical
+ *   content, and grows without bound in a long-running server.
+ */
+const MATTER_OPTIONS = {
+  engines: {
+    yaml: (input: string): object =>
+      (yaml.load(input, { schema: yaml.CORE_SCHEMA }) ?? {}) as object,
+  },
+};
+
+/**
+ * Coerce an arbitrary YAML value to a string ('' for null/undefined).
+ * `Date` values (should a timestamp ever be resolved) become ISO 8601 strings.
+ */
+function toStringField(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? '' : value.toISOString();
+  }
+  return typeof value === 'string' ? value : String(value);
+}
+
+/** Coerce the id to a number (accepting numeric strings like `"7"`). */
+function toIdField(value: unknown): number {
+  if (typeof value === 'number') {
+    return value;
+  }
+  if (typeof value === 'string' && /^\s*\d+\s*$/.test(value)) {
+    return Number(value);
+  }
+  return Number.NaN;
+}
+
+/**
+ * Coerce labels to a fresh array of strings. A single scalar (`labels: bug`)
+ * becomes a one-element array; null/undefined/empty values are dropped.
+ */
+function toLabelsField(value: unknown): string[] {
+  const items = Array.isArray(value) ? value : [value];
+  return items.map(toStringField).filter((label) => label !== '');
+}
 
 /**
  * Parse a markdown issue file into an Issue object.
@@ -24,8 +79,8 @@ import type { Issue, IssueFrontmatter } from './types.ts';
  * descriptions that would otherwise be ambiguous are written.
  */
 export function parseIssue(markdown: string): Issue {
-  const { data, content } = matter(markdown);
-  const fm = data as IssueFrontmatter;
+  const { data, content } = matter(markdown, MATTER_OPTIONS);
+  const fm = (data ?? {}) as Record<string, unknown>;
 
   // gray-matter already strips the frontmatter, so `content` starts after
   // the closing ---.
@@ -34,15 +89,16 @@ export function parseIssue(markdown: string): Issue {
   const comments = commentsSection ? parseComments(commentsSection) : [];
 
   return {
-    id: fm.id,
-    title: fm.title,
-    status: fm.status,
-    priority: fm.priority,
-    assignee: fm.assignee ?? '',
-    labels: fm.labels ?? [],
-    created: fm.created,
-    createdBy: fm.createdBy,
-    updated: fm.updated,
+    id: toIdField(fm.id),
+    title: toStringField(fm.title),
+    // Status/priority values are checked by validation, not here.
+    status: toStringField(fm.status) as Status,
+    priority: toStringField(fm.priority) as Priority,
+    assignee: toStringField(fm.assignee),
+    labels: toLabelsField(fm.labels),
+    created: toStringField(fm.created),
+    createdBy: toStringField(fm.createdBy),
+    updated: toStringField(fm.updated),
     description,
     comments,
   };

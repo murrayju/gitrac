@@ -1,5 +1,8 @@
 declare module 'js-yaml' {
-  function load(input: string): unknown;
+  /** Opaque js-yaml schema object. */
+  type Schema = { readonly __yamlSchema?: never };
+  const CORE_SCHEMA: Schema;
+  function load(input: string, options?: { schema?: Schema }): unknown;
   function dump(
     input: unknown,
     options?: {
@@ -8,6 +11,10 @@ declare module 'js-yaml' {
       forceQuotes?: boolean;
     },
   ): string;
-  const _default: { load: typeof load; dump: typeof dump };
+  const _default: {
+    load: typeof load;
+    dump: typeof dump;
+    CORE_SCHEMA: typeof CORE_SCHEMA;
+  };
   export default _default;
 }

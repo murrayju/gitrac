@@ -104,6 +104,7 @@ Found that the timeout defaults to 30s instead of 300s.
 ### Parsing Rules
 
 - YAML frontmatter between first `---` pair -> metadata
+- Frontmatter is parsed with the YAML core schema (no timestamp type), so `created`/`updated` are always strings whether or not they are quoted (`created: 2026-03-28T12:00:00Z` and `created: "2026-03-28T12:00:00Z"` are equivalent). Fields are coerced defensively: `id` to a number (numeric strings accepted), `title`/`assignee`/`createdBy`/`status`/`priority` to strings (missing -> `''`), `labels` to an array of strings (a single scalar becomes a one-element list)
 - Content after frontmatter, up to the separator -> description (supports full markdown including headings and horizontal rules)
 - The separator is the first `---` line outside a fenced code block whose next non-blank line is a comment header. Any other `---` (or `***`, `___`) is an ordinary horizontal rule and stays in the description. Content after the separator -> comments section, which therefore always starts with a comment header.
 - Each comment starts with `### {author} — {ISO8601 timestamp}` (em dash, U+2014)
