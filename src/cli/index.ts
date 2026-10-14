@@ -30,7 +30,7 @@ export function createProgram(): Command {
     .option('--no-push', 'Do not push after commit')
     .option('--no-commit', 'Do not auto-commit changes')
     .option('--author <name>', 'Author name for comments')
-    .option('--dir <path>', 'Path to the project root (default: cwd)')
+    .option('--dir <path>', 'Path inside the project repo (default: cwd)')
     // Long-only on purpose: subcommands own short flags like `-p` (e.g.
     // `create -p high`). Program-level options are matched anywhere in argv,
     // so a global `-p` would swallow them. `serve` accepts `-p, --port`.

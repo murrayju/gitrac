@@ -173,8 +173,10 @@ src/
 | `--push` / `--no-push` | Override configured push behavior |
 | `--no-commit` | Skip git commit entirely |
 | `--author <name>` | Override comment author (default: `git config user.name`) |
-| `--dir <path>` | Override issues directory (validated to be within the current git repo) |
+| `--dir <path>` | Directory to locate the project from (default: cwd). Any path inside the repo works. |
 | `--port <port>` | Web server port for bare `gitrac` (long form only; `serve` also accepts `-p`) |
+
+**Project root resolution:** every command (including `serve` / bare `gitrac`) resolves the project root once, via `git rev-parse --show-toplevel` starting from `--dir` (or the cwd), so gitrac works from any subdirectory of the repo. `.issues/` always lives at that root. Outside a git repo, commands exit 1 with `Error: Not inside a git repository`; if `.issues/config.yaml` is missing, every command except `init` exits 1 with a message to run `gitrac init`.
 
 Global flags may appear before or after the subcommand (`gitrac --no-commit close 1` and `gitrac close 1 --no-commit` are equivalent). `--no-commit` applies to every mutating command (`init`, `create`, `edit`, `comment`, `close`, `reopen`, `claim`) and also suppresses push. If both `--push` and `--no-push` are given, the last one wins.
 

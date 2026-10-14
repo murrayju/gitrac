@@ -100,6 +100,7 @@ This builds the React UI with Vite, then compiles the CLI into a standalone bina
 - **No global bun** — always use `./bun` to ensure the pinned version
 - **Bun APIs preferred** over Node.js equivalents (`Bun.file()`, `Bun.write()`, etc.)
 - **`node:` prefix** for Node.js built-in imports
+- **Resolve the project root via `resolveProjectOptions`** (`src/cli/global-options.ts`) at the start of every CLI command (not `getGlobalOptions`, whose `dir` is just `--dir`/cwd). It runs `git rev-parse --show-toplevel` so gitrac works from any subdirectory, and prints a friendly error if not in a git repo or `.issues/` isn't initialized (pass `{ requireInit: false }` for `init`).
 - **Mutations must hold the repo lock** — wrap the whole read-modify-write-commit of any new CLI command in `withMutationLock` (`src/cli/global-options.ts`) and add the `mutationLock` middleware (`src/web/lock.ts`) to any new mutating web route. Keep interactive input (prompts, stdin) outside the lock. See "Concurrency" in `docs/specs/`.
 
 ## Issue File Format

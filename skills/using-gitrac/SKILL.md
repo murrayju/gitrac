@@ -11,6 +11,8 @@ gitrac manages project issues as markdown files in the git repo itself. Issues l
 
 Mutations are safe to run in parallel (multiple agents, worktrees, or the web UI at the same time): gitrac serializes them with a lock in the git dir, so IDs never collide and commits don't fail on git locks. If a gitrac process is killed, its stale lock is cleaned up automatically.
 
+gitrac finds the project via `git rev-parse --show-toplevel`, so commands work from any subdirectory of the repo (or with `--dir <path>` pointing anywhere inside it). `.issues/` always lives at the repo root.
+
 **Core principle:** Claim before working. Close in the same commit as the code change.
 
 ## When to Use

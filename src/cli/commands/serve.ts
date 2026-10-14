@@ -1,7 +1,10 @@
 import type { Command } from 'commander';
 import { readConfig } from '../../fs/issue-store.ts';
 import { startServer } from '../../web/server.ts';
-import { getGlobalOptions } from '../global-options.ts';
+import {
+  getGlobalOptions,
+  resolveProjectRootOrExit,
+} from '../global-options.ts';
 
 export interface ServeOptions {
   dir: string;
@@ -34,11 +37,12 @@ function parsePort(value: string): number {
 
 /** Start the web server, exiting with a helpful message on failure. */
 export async function runServe(options: ServeOptions): Promise<void> {
-  const { dir, port } = options;
+  const { port } = options;
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
     console.error(`Error: Invalid port "${port}".`);
     process.exit(1);
   }
+  const dir = await resolveProjectRootOrExit(options.dir);
   try {
     const config = await readConfig(dir);
     await startServer({ dir, port, config });

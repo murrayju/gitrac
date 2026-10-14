@@ -6,10 +6,9 @@ import {
   readIssue,
   writeIssue,
 } from '../../fs/issue-store.ts';
-import { getGitRoot } from '../../git/status.ts';
 import {
   commitAndMaybePush,
-  getGlobalOptions,
+  resolveProjectOptions,
   withMutationLock,
 } from '../global-options.ts';
 import { formatIssueDetail } from '../output.ts';
@@ -25,15 +24,8 @@ export function registerCloseCommand(program: Command): void {
         idStr: string,
         options: { cancelled?: boolean; comment?: string },
       ) => {
-        const globalOpts = getGlobalOptions(program);
+        const globalOpts = await resolveProjectOptions(program);
         const { dir } = globalOpts;
-
-        try {
-          await getGitRoot(dir);
-        } catch {
-          console.error('Error: Not inside a git repository.');
-          process.exit(1);
-        }
 
         const id = Number.parseInt(idStr, 10);
         if (Number.isNaN(id)) {

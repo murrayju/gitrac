@@ -9,8 +9,8 @@ import {
   listIssueFiles,
   readConfig,
 } from '../../fs/issue-store.ts';
-import { getBranchWarning, getGitRoot } from '../../git/status.ts';
-import { getGlobalOptions } from '../global-options.ts';
+import { getBranchWarning } from '../../git/status.ts';
+import { resolveProjectOptions } from '../global-options.ts';
 import { formatIssueList } from '../output.ts';
 
 async function loadIssues(
@@ -80,15 +80,8 @@ export function registerListCommand(program: Command): void {
         priority?: string;
         sort?: string;
       }) => {
-        const globalOpts = getGlobalOptions(program);
+        const globalOpts = await resolveProjectOptions(program);
         const { dir } = globalOpts;
-
-        try {
-          await getGitRoot(dir);
-        } catch {
-          console.error('Error: Not inside a git repository.');
-          process.exit(1);
-        }
 
         const config = await readConfig(dir);
 

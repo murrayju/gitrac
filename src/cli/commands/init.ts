@@ -1,9 +1,8 @@
 import type { Command } from 'commander';
 import { initIssuesDir, readConfig } from '../../fs/issue-store.ts';
-import { getGitRoot } from '../../git/status.ts';
 import {
   commitAndMaybePush,
-  getGlobalOptions,
+  resolveProjectOptions,
   withMutationLock,
 } from '../global-options.ts';
 
@@ -13,16 +12,10 @@ export function registerInitCommand(program: Command): void {
     .description('Initialize a new .issues directory in the current git repo')
     .option('--force', 'Overwrite existing .issues directory')
     .action(async (options: { force?: boolean }) => {
-      const globalOpts = getGlobalOptions(program);
+      const globalOpts = await resolveProjectOptions(program, {
+        requireInit: false,
+      });
       const { dir } = globalOpts;
-
-      // Verify we're in a git repo
-      try {
-        await getGitRoot(dir);
-      } catch {
-        console.error('Error: Not inside a git repository.');
-        process.exit(1);
-      }
 
       await withMutationLock(globalOpts, async () => {
         try {

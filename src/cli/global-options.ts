@@ -1,8 +1,11 @@
+import { existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import type { Command } from 'commander';
 import type { Config, OutputFormat } from '../core/types.ts';
 import { LockTimeoutError } from '../fs/lock.ts';
 import { withRepoLock } from '../git/lock.ts';
 import { commitIssueChange, pushIfConfigured } from '../git/operations.ts';
+import { getGitRoot } from '../git/status.ts';
 
 /**
  * Normalized view of the program-level (global) CLI options.
@@ -13,7 +16,11 @@ import { commitIssueChange, pushIfConfigured } from '../git/operations.ts';
  * {@link getGlobalOptions} rather than `program.opts()` directly.
  */
 export interface GlobalOptions {
-  /** Project root (from `--dir`, default: cwd). */
+  /**
+   * Directory to start from (from `--dir`, default: cwd). This is NOT
+   * necessarily the project root; use {@link resolveProjectOptions} to get
+   * options whose `dir` is the resolved git root.
+   */
   dir: string;
   /** Output format (from `-o, --output`). */
   output: OutputFormat;
@@ -49,6 +56,94 @@ export function getGlobalOptions(program: Command): GlobalOptions {
     push: typeof raw.push === 'boolean' ? raw.push : undefined,
     port: Number.parseInt(raw.port ?? '3000', 10),
   };
+}
+
+/** Thrown by {@link resolveProjectRoot} with a user-facing message. */
+export class ProjectRootError extends Error {
+  constructor(
+    message: string,
+    readonly reason: 'not-a-git-repo' | 'not-initialized',
+  ) {
+    super(message);
+    this.name = 'ProjectRootError';
+  }
+}
+
+/**
+ * Resolve the gitrac project root: the top level of the git work tree that
+ * contains `dir` (`git rev-parse --show-toplevel`). This lets every command
+ * (and the web server) run from any subdirectory of the repo, or with
+ * `--dir` pointing anywhere inside it.
+ *
+ * With `requireInit` (the default), also verifies that `.issues/config.yaml`
+ * exists at the root. Throws {@link ProjectRootError} on failure.
+ */
+export async function resolveProjectRoot(
+  dir: string,
+  options: { requireInit?: boolean } = {},
+): Promise<string> {
+  const start = resolve(dir);
+  if (!existsSync(start)) {
+    throw new ProjectRootError(
+      `Directory does not exist: ${start}`,
+      'not-a-git-repo',
+    );
+  }
+  let root: string;
+  try {
+    root = resolve(await getGitRoot(start));
+  } catch {
+    throw new ProjectRootError(
+      `Not inside a git repository: ${start}`,
+      'not-a-git-repo',
+    );
+  }
+  if (!root) {
+    // e.g. inside a .git directory or a bare repository
+    throw new ProjectRootError(
+      `Not inside a git work tree: ${start}`,
+      'not-a-git-repo',
+    );
+  }
+  if (
+    options.requireInit !== false &&
+    !existsSync(join(root, '.issues', 'config.yaml'))
+  ) {
+    throw new ProjectRootError(
+      `gitrac is not initialized in ${root} (no .issues/config.yaml). Run "gitrac init" to set it up.`,
+      'not-initialized',
+    );
+  }
+  return root;
+}
+
+/**
+ * Like {@link getGlobalOptions}, but with `dir` replaced by the resolved
+ * project root (see {@link resolveProjectRoot}). Every command should use
+ * this. On failure, prints a friendly error and exits 1.
+ */
+export async function resolveProjectOptions(
+  program: Command,
+  options: { requireInit?: boolean } = {},
+): Promise<GlobalOptions> {
+  const opts = getGlobalOptions(program);
+  return { ...opts, dir: await resolveProjectRootOrExit(opts.dir, options) };
+}
+
+/** {@link resolveProjectRoot}, printing a friendly error and exiting 1 on failure. */
+export async function resolveProjectRootOrExit(
+  dir: string,
+  options: { requireInit?: boolean } = {},
+): Promise<string> {
+  try {
+    return await resolveProjectRoot(dir, options);
+  } catch (err) {
+    if (err instanceof ProjectRootError) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+    throw err;
+  }
 }
 
 /** Whether a mutating command should auto-commit its changes. */

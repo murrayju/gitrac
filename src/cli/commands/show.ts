@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
 import { readConfig, readIssue } from '../../fs/issue-store.ts';
-import { getBranchWarning, getGitRoot } from '../../git/status.ts';
-import { getGlobalOptions } from '../global-options.ts';
+import { getBranchWarning } from '../../git/status.ts';
+import { resolveProjectOptions } from '../global-options.ts';
 import { formatIssueDetail } from '../output.ts';
 
 export function registerShowCommand(program: Command): void {
@@ -10,15 +10,8 @@ export function registerShowCommand(program: Command): void {
     .alias('view')
     .description('Show issue details')
     .action(async (idStr: string) => {
-      const globalOpts = getGlobalOptions(program);
+      const globalOpts = await resolveProjectOptions(program);
       const { dir } = globalOpts;
-
-      try {
-        await getGitRoot(dir);
-      } catch {
-        console.error('Error: Not inside a git repository.');
-        process.exit(1);
-      }
 
       const config = await readConfig(dir);
 

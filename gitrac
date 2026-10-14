@@ -1,4 +1,6 @@
 #!/bin/bash
 
-./bun run index.ts "$@"
-
+# Resolve paths relative to this script so `../gitrac` works from any
+# subdirectory (gitrac itself locates the project root via git).
+scriptDir="$(cd "$(dirname "$0")" && pwd)"
+exec "$scriptDir/bun" run "$scriptDir/index.ts" "$@"
