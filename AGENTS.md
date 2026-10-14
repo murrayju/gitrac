@@ -10,7 +10,8 @@ This project uses gitrac to track its own issues. The `.issues/` directory conta
 ./gitrac ls                    # list open issues
 ./gitrac show <id>             # view an issue
 ./gitrac create -t "title"     # create an issue
-./gitrac claim <id>            # assign to yourself + set in_progress
+./gitrac claim <id>            # assign to yourself + set in_progress (exit 3 if someone else has it)
+./gitrac unclaim <id>          # give it back (alias: release)
 ./gitrac comment <id> "text"    # add a comment
 ./gitrac close <id>            # close an issue
 ./gitrac                       # start the web UI at http://localhost:3000

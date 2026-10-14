@@ -58,7 +58,8 @@ When installed as a binary, replace `./bun index.ts` with `gitrac` in all exampl
 | `gitrac ls` | List open issues |
 | `gitrac show <id>` | View issue details |
 | `gitrac create -t "title"` | Create an issue |
-| `gitrac claim <id>` | Assign to yourself + set in_progress |
+| `gitrac claim <id>` | Assign to yourself + set in_progress (fails if someone else has it) |
+| `gitrac unclaim <id>` | Give an issue back (alias `release`) |
 | `gitrac close <id>` | Close an issue (moves to closed/) |
 | `gitrac close <id> --no-commit` | Close without committing (for atomic commits) |
 | `gitrac close <id> -c "text"` | Close with an inline comment |
@@ -83,7 +84,13 @@ Review the open issues. Pick one that matches the task at hand.
 gitrac claim <id>
 ```
 
-This sets `assignee` to your git user and `status` to `in_progress`, and commits the change. Other agents will see the issue is taken.
+This sets `assignee` to your git user and `status` to `in_progress`, and commits the change. Claims are exclusive:
+
+- If the issue is already `in_progress` and assigned to someone else, `claim` fails with **exit code 3** and changes nothing. Pick another issue (or use `--force` only if you really mean to take it over).
+- If the issue is closed, `claim` fails with **exit code 4**. Use `gitrac reopen <id>` first, or `claim --force` to reopen and claim in one step.
+- Claiming an issue you already own is a no-op (exit 0, no commit).
+
+If you stop working on an issue without finishing it, give it back with `gitrac unclaim <id>` (alias `release`): it clears the assignee and moves `in_progress` back to `todo`. Releasing someone else's claim requires `--force`.
 
 ### 3. Implement the fix/feature
 
@@ -103,7 +110,7 @@ gitrac close <id> --no-commit --comment "Summary of changes"
 
 The comment becomes part of the issue's permanent history. Write it for someone who needs to understand what happened without reading every diff line.
 
-The `--comment` / `-c` flag is also available on `claim`, `edit`, and `reopen`.
+The `--comment` / `-c` flag is also available on `claim`, `unclaim`, `edit`, and `reopen`.
 
 ### 5. Close with the code change
 

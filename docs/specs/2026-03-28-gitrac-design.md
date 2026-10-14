@@ -164,7 +164,8 @@ src/
 | `gitrac comment <id>` | `c` | Add a comment |
 | `gitrac close <id>` | | Close issue (moves to `.issues/closed/`). `--cancelled` flag sets status to `cancelled` instead of `done`. |
 | `gitrac reopen <id>` | | Reopen issue (moves back to `.issues/`) |
-| `gitrac claim <id>` | | Assign to self + set status to `in_progress` |
+| `gitrac claim <id>` | | Assign to self + set status to `in_progress`. Exclusive: see [Claiming](#claiming). |
+| `gitrac unclaim <id>` | `release` | Give an issue back: clear `assignee`, and set `in_progress` back to `todo`. See [Claiming](#claiming). |
 
 ### Global Flags
 
@@ -180,9 +181,24 @@ src/
 
 **Project root resolution:** every command (including `serve` / bare `gitrac`) resolves the project root once, via `git rev-parse --show-toplevel` starting from `--dir` (or the cwd), so gitrac works from any subdirectory of the repo. `.issues/` always lives at that root. Outside a git repo, commands exit 1 with `Error: Not inside a git repository`; if `.issues/config.yaml` is missing, every command except `init` exits 1 with a message to run `gitrac init`.
 
-Global flags may appear before or after the subcommand (`gitrac --no-commit close 1` and `gitrac close 1 --no-commit` are equivalent). `--no-commit` applies to every mutating command (`init`, `create`, `edit`, `comment`, `close`, `reopen`, `claim`) and also suppresses push. If both `--push` and `--no-push` are given, the last one wins.
+Global flags may appear before or after the subcommand (`gitrac --no-commit close 1` and `gitrac close 1 --no-commit` are equivalent). `--no-commit` applies to every mutating command (`init`, `create`, `edit`, `comment`, `close`, `reopen`, `claim`, `unclaim`) and also suppresses push. If both `--push` and `--no-push` are given, the last one wins.
 
 Because global flags are matched anywhere on the command line, they must not define short flags that subcommands also use. In particular `-p` belongs to the subcommands (`create -p high`, `edit -p high`, `serve -p 4000`); the global port option is long-only (`--port`).
+
+### Claiming
+
+The claimer's identity is their git `user.email` (falling back to `user.name`), or the `--author` name if given; an `assignee` matches the user if it equals (case-insensitively) either their email or name. The check and the write happen under the repo mutation lock, so of several concurrent claims exactly one wins.
+
+| Situation | `claim` | `claim --force` |
+|-----------|---------|-----------------|
+| Open, unassigned (or assigned but not `in_progress`) | Claims | Claims |
+| `in_progress`, assigned to someone else | Fails, exit **3**, no change | Takes over |
+| `in_progress`, assigned to you | No-op (exit 0, no commit; `-c` comment is not added) | No-op |
+| Closed (`done`/`cancelled`) | Fails, exit **4**, no change | Reopens and claims |
+
+`unclaim <id>` (alias `release`) clears `assignee` and moves `in_progress` back to `todo` (other statuses are kept). It fails with exit **3** if the issue is assigned to someone else (`--force` overrides), exits **4** for closed issues, and is a no-op if the issue is unassigned. Accepts `-c, --comment`.
+
+Exit codes: `1` general error, `3` claimed by someone else, `4` issue is closed.
 
 ### Create Flags
 

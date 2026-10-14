@@ -13,6 +13,7 @@ import {
   runServe,
 } from './commands/serve.ts';
 import { registerShowCommand } from './commands/show.ts';
+import { registerUnclaimCommand } from './commands/unclaim.ts';
 
 export function createProgram(): Command {
   const program = new Command();
@@ -54,6 +55,7 @@ export function createProgram(): Command {
   registerCloseCommand(program);
   registerReopenCommand(program);
   registerClaimCommand(program);
+  registerUnclaimCommand(program);
 
   return program;
 }
