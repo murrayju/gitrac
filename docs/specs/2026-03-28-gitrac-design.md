@@ -517,6 +517,7 @@ The server has no authentication, so exposure is limited instead (`src/web/secur
 - **Vite dev proxy.** `vite.config.ts` proxies `/api` to `http://127.0.0.1:3000` with `changeOrigin: false`, so the browser's `Host` (`localhost:5173`) and `Origin` (`http://localhost:5173`) still match and pass both checks.
 - **Uploads.** `POST /api/issues/assets` accepts PNG, JPEG, GIF, WebP, BMP, and ICO up to 10 MiB (413 above that). SVG is rejected — it can carry script and would be served from the app's origin.
 - **Serving assets.** Assets are served with `X-Content-Type-Options: nosniff` and `Content-Security-Policy: default-src 'none'; …; sandbox`, so a file opened directly (e.g. an SVG committed earlier) can't run script in the app's origin. Unknown file types are sent as `application/octet-stream` with `Content-Disposition: attachment`.
+- **No framing (clickjacking).** Every response (UI, API, assets, 403s/404s) carries `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'`, the latter merged into a route's own CSP (e.g. the asset sandbox policy) rather than sent as a second header (`antiFraming`). The Vite dev server serves its own `index.html` without them; proxied `/api` responses still carry them.
 - All request bodies are capped at 11 MiB (`maxRequestBodySize`).
 
 ### API Routes

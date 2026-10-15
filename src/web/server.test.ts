@@ -269,6 +269,47 @@ function createIssueReq(headers: Record<string, string>): Request {
   });
 }
 
+describe('anti-framing headers', () => {
+  function expectNoFraming(res: Response): string {
+    expect(res.headers.get('x-frame-options')).toBe('DENY');
+    const csp = res.headers.get('content-security-policy') ?? '';
+    expect(csp).toContain("frame-ancestors 'none'");
+    return csp;
+  }
+
+  test('on the UI, API, 404s and request-guard 403s', async () => {
+    const distUiDir = await makeDistDir({
+      'index.html': '<html>SPA</html>',
+      'assets/app.js': 'console.log(1)',
+    });
+    const app = createApp(noCommitCtx(), { ui: directoryUiAssets(distUiDir) });
+    for (const path of ['/', '/issues/5', '/assets/app.js', '/api/issues']) {
+      const res = await app.request(`http://localhost:3000${path}`);
+      expect(res.status).toBe(200);
+      expectNoFraming(res);
+    }
+    expectNoFraming(await app.request('http://localhost:3000/api/nope'));
+    const forbidden = await app.request('http://localhost:3000/', {
+      headers: { host: 'evil.example:3000' },
+    });
+    expect(forbidden.status).toBe(403);
+    expectNoFraming(forbidden);
+  });
+
+  test('merged with the asset sandbox CSP', async () => {
+    await mkdir(join(dir, '.issues', 'assets'), { recursive: true });
+    await writeFile(join(dir, '.issues', 'assets', 'a.png'), 'png');
+    const app = createApp(noCommitCtx(), { ui: null });
+    const res = await app.request('http://localhost/.issues/assets/a.png');
+    expect(res.status).toBe(200);
+    const csp = expectNoFraming(res);
+    expect(csp).toContain("default-src 'none'");
+    expect(csp).toContain('sandbox');
+    // One merged policy, not a second header (they'd be joined with ',').
+    expect(csp).not.toContain(',');
+  });
+});
+
 describe('request guard (CORS / CSRF / DNS rebinding)', () => {
   test('does not send CORS headers', async () => {
     const app = createApp(noCommitCtx());

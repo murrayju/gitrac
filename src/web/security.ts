@@ -130,3 +130,49 @@ export function requestGuard(bindHost: string): MiddlewareHandler {
     await next();
   };
 }
+
+/** CSP directive forbidding any page from framing the response. */
+const FRAME_ANCESTORS_NONE = "frame-ancestors 'none'";
+
+/**
+ * Add `frame-ancestors 'none'` to a Content-Security-Policy value, keeping its
+ * other directives. A policy that already has a `frame-ancestors` directive is
+ * returned unchanged (the route chose it deliberately).
+ */
+export function withFrameAncestorsNone(csp: string | null): string {
+  const policy = (csp ?? '').trim().replace(/;+\s*$/, '');
+  if (!policy) return FRAME_ANCESTORS_NONE;
+  const hasFrameAncestors = policy
+    .split(';')
+    .some((d) => d.trim().toLowerCase().split(/\s+/)[0] === 'frame-ancestors');
+  return hasFrameAncestors ? policy : `${policy}; ${FRAME_ANCESTORS_NONE}`;
+}
+
+function setAntiFramingHeaders(headers: Headers): void {
+  headers.set(
+    'Content-Security-Policy',
+    withFrameAncestorsNone(headers.get('Content-Security-Policy')),
+  );
+  headers.set('X-Frame-Options', 'DENY');
+}
+
+/**
+ * Hono middleware forbidding other sites from framing any response
+ * (clickjacking: the server has no auth and its UI can make commits). Adds
+ * `Content-Security-Policy: frame-ancestors 'none'` — merged into a CSP the
+ * route already set, e.g. the asset sandbox policy — and `X-Frame-Options:
+ * DENY` (for browsers without `frame-ancestors`). Register it first so even
+ * the request guard's 403s carry the headers.
+ */
+export function antiFraming(): MiddlewareHandler {
+  return async (c, next) => {
+    await next();
+    try {
+      setAntiFramingHeaders(c.res.headers);
+    } catch {
+      // Immutable headers (e.g. a proxied fetch Response): copy and retry.
+      c.res = new Response(c.res.body, c.res);
+      setAntiFramingHeaders(c.res.headers);
+    }
+  };
+}

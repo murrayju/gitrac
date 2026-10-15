@@ -15,6 +15,7 @@ import { gitRoutes } from './routes/git.ts';
 import { identityRoutes } from './routes/identity.ts';
 import { issueRoutes } from './routes/issues.ts';
 import {
+  antiFraming,
   DEFAULT_HOST,
   isLoopbackHost,
   isWildcardHost,
@@ -198,6 +199,10 @@ function apiNotFound(c: Context): Response {
 
 export function createApp(ctx: ServerContext, options: AppOptions = {}): Hono {
   const app = new Hono();
+
+  // No page may frame any response (clickjacking). First, so it also covers
+  // the request guard's 403s.
+  app.use('*', antiFraming());
 
   // No CORS: the UI is same-origin, and the Vite dev server proxies /api
   // (preserving Host, so Origin and Host still match). Reject foreign Hosts

@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'bun:test';
+import { Hono } from 'hono';
 import {
+  antiFraming,
   checkRequest,
   isAllowedHostname,
   isLoopbackHost,
   isWildcardHost,
+  withFrameAncestorsNone,
 } from './security.ts';
 
 function req(
@@ -139,5 +142,72 @@ describe('checkRequest', () => {
     expect(checkRequest(req('POST', { host: 'localhost:3000' }), bind).ok).toBe(
       true,
     );
+  });
+});
+
+describe('withFrameAncestorsNone', () => {
+  test('creates a policy when there is none', () => {
+    expect(withFrameAncestorsNone(null)).toBe("frame-ancestors 'none'");
+    expect(withFrameAncestorsNone('  ')).toBe("frame-ancestors 'none'");
+  });
+
+  test('appends to an existing policy, keeping its directives', () => {
+    expect(withFrameAncestorsNone("default-src 'none'; sandbox")).toBe(
+      "default-src 'none'; sandbox; frame-ancestors 'none'",
+    );
+    expect(withFrameAncestorsNone("default-src 'self';")).toBe(
+      "default-src 'self'; frame-ancestors 'none'",
+    );
+  });
+
+  test('keeps an explicit frame-ancestors directive', () => {
+    expect(withFrameAncestorsNone("Frame-Ancestors 'self'; sandbox")).toBe(
+      "Frame-Ancestors 'self'; sandbox",
+    );
+  });
+});
+
+describe('antiFraming', () => {
+  function app(): Hono {
+    const a = new Hono();
+    a.use('*', antiFraming());
+    a.get('/plain', (c) => c.html('<p>hi</p>'));
+    a.get(
+      '/csp',
+      () =>
+        new Response('x', {
+          headers: { 'content-security-policy': "default-src 'none'" },
+        }),
+    );
+    a.get('/immutable', () => Response.redirect('http://localhost/plain'));
+    a.get('/throws', () => {
+      throw new Error('boom');
+    });
+    a.onError((_err, c) => c.text('error', 500));
+    return a;
+  }
+
+  test('adds frame-ancestors and X-Frame-Options to every response', async () => {
+    for (const path of ['/plain', '/missing', '/throws']) {
+      const res = await app().request(`http://localhost${path}`);
+      expect(res.headers.get('content-security-policy')).toBe(
+        "frame-ancestors 'none'",
+      );
+      expect(res.headers.get('x-frame-options')).toBe('DENY');
+    }
+  });
+
+  test("merges into the route's own CSP", async () => {
+    const res = await app().request('http://localhost/csp');
+    expect(res.headers.get('content-security-policy')).toBe(
+      "default-src 'none'; frame-ancestors 'none'",
+    );
+  });
+
+  test('handles responses with immutable headers', async () => {
+    const res = await app().request('http://localhost/immutable');
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('http://localhost/plain');
+    expect(res.headers.get('x-frame-options')).toBe('DENY');
   });
 });
