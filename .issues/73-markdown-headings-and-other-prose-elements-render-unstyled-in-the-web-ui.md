@@ -1,14 +1,14 @@
 ---
 id: 73
 title: Markdown headings and other prose elements render unstyled in the web UI
-status: todo
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-15T16:06:57.530Z'
 createdBy: Justin Murray
-updated: '2026-10-15T16:06:57.530Z'
+updated: '2026-10-15T16:07:27.683Z'
 ---
 
 Found while taking README screenshots. The editor/markdown views use Tailwind `prose` classes, but headings render like body text (`h2` computes to 16px, the same as `p`). `## Steps to reproduce` in a description looks like a plain paragraph. Likely cause: the `@tailwindcss/typography` plugin isn't installed or enabled for Tailwind v4, so `prose` has only partial custom rules.
