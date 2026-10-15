@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import simpleGit from 'simple-git';
 import { createDefaultConfig } from '../../core/config.ts';
 import type { Issue } from '../../core/types.ts';
-import { initIssuesDir, readIssue } from '../../fs/issue-store.ts';
+import { initIssuesDir, readIssue, writeConfig } from '../../fs/issue-store.ts';
 import { AmendTracker } from '../../git/amend-tracker.ts';
 import { IdentityResolver } from '../../git/identity.ts';
 import { createApp, type ServerContext } from '../server.ts';
@@ -27,9 +27,11 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-function makeApp(identity?: IdentityResolver) {
+async function makeApp(identity?: IdentityResolver) {
   const config = createDefaultConfig();
   config.git.autoCommit = false;
+  // The server re-reads config.yaml per request; persist it.
+  await writeConfig(dir, config);
   const ctx: ServerContext = {
     dir,
     config,
@@ -48,7 +50,7 @@ function makeApp(identity?: IdentityResolver) {
 
 describe('web identity (git config)', () => {
   test('GET /api/identity returns the git identity', async () => {
-    const req = makeApp();
+    const req = await makeApp();
     const res = await req('/identity');
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
@@ -58,7 +60,7 @@ describe('web identity (git config)', () => {
   });
 
   test('createdBy and comment authors come from git, not "web"', async () => {
-    const req = makeApp();
+    const req = await makeApp();
     const created = (await (
       await req('/issues', { title: 'From the UI' })
     ).json()) as Issue;
@@ -71,7 +73,7 @@ describe('web identity (git config)', () => {
   });
 
   test('picks up git config changes without a restart', async () => {
-    const req = makeApp(new IdentityResolver(dir, { maxAgeMs: 0 }));
+    const req = await makeApp(new IdentityResolver(dir, { maxAgeMs: 0 }));
     await req('/identity');
     await simpleGit(dir).addConfig('user.name', 'Grace Hopper');
     const created = (await (
@@ -81,7 +83,9 @@ describe('web identity (git config)', () => {
   });
 
   test('--author overrides git config', async () => {
-    const req = makeApp(new IdentityResolver(dir, { author: 'Server Bot' }));
+    const req = await makeApp(
+      new IdentityResolver(dir, { author: 'Server Bot' }),
+    );
     expect(await (await req('/identity')).json()).toEqual({
       name: 'Server Bot',
       email: '',

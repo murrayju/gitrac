@@ -9,6 +9,7 @@ import {
   initIssuesDir,
   listClosedIssueFiles,
   listIssueFiles,
+  writeConfig,
   writeIssue,
 } from '../../fs/issue-store.ts';
 import { AmendTracker } from '../../git/amend-tracker.ts';
@@ -42,8 +43,10 @@ beforeEach(async () => {
   await initIssuesDir(dir);
 
   const config = createDefaultConfig();
-  // Disable auto-commit for tests (no git repo)
+  // Disable auto-commit for tests (no git repo). The server re-reads
+  // config.yaml per request, so it must be on disk, not just in ctx.
   config.git.autoCommit = false;
+  await writeConfig(dir, config);
 
   const ctx: ServerContext = {
     dir,

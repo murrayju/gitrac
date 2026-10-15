@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import simpleGit from 'simple-git';
 import { createDefaultConfig } from '../core/config.ts';
-import { initIssuesDir } from '../fs/issue-store.ts';
+import { initIssuesDir, writeConfig } from '../fs/issue-store.ts';
 import { AmendTracker } from '../git/amend-tracker.ts';
 import type { ServerContext } from './server.ts';
 import { createApp, displayUrl, startServer } from './server.ts';
@@ -15,6 +15,11 @@ let dir: string;
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'gitrac-server-test-'));
   await initIssuesDir(dir);
+  // No git repo here: disable auto-commit on disk (the server re-reads
+  // config.yaml per request, so ctx.config alone isn't enough).
+  const config = createDefaultConfig();
+  config.git.autoCommit = false;
+  await writeConfig(dir, config);
 });
 
 afterEach(async () => {

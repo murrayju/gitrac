@@ -9,6 +9,7 @@ import {
   initIssuesDir,
   readConfig,
   readIssue,
+  writeConfig,
   writeIssue,
 } from '../../fs/issue-store.ts';
 import { AmendTracker } from '../../git/amend-tracker.ts';
@@ -48,6 +49,8 @@ beforeEach(async () => {
   await initIssuesDir(dir);
   const config = createDefaultConfig();
   config.git.autoCommit = false;
+  // The server re-reads config.yaml per request; persist it.
+  await writeConfig(dir, config);
   ctx = {
     dir,
     config,
@@ -194,10 +197,10 @@ describe('PATCH /api/issues/:id validation', () => {
   });
 
   test('status must be one of the configured statuses', async () => {
-    ctx.config = {
+    await writeConfig(dir, {
       ...ctx.config,
       statuses: ['todo', 'in_progress', 'done'],
-    };
+    });
     const res = await send('PATCH', '/issues/1', { status: 'backlog' });
     expect(res.status).toBe(400);
   });

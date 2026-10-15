@@ -6,6 +6,7 @@ import type { Config } from '../core/types.ts';
 import { AmendTracker } from '../git/amend-tracker.ts';
 import { IdentityResolver } from '../git/identity.ts';
 import { getBranchWarning } from '../git/status.ts';
+import { freshConfig } from './live-config.ts';
 import { assetRoutes, MAX_UPLOAD_BYTES, serveAsset } from './routes/assets.ts';
 import { configRoutes } from './routes/config.ts';
 import { draftRoutes } from './routes/drafts.ts';
@@ -23,6 +24,11 @@ import { IssueWatcher } from './watcher.ts';
 
 export interface ServerContext {
   dir: string;
+  /**
+   * Project config. Not a startup snapshot: re-read from disk before every
+   * read-only API request (`freshConfig`) and, for mutations, after the repo
+   * lock is acquired (`mutationLock`), so CLI edits are picked up live.
+   */
   config: Config;
   amendTracker: AmendTracker;
   watcher: IssueWatcher;
@@ -151,6 +157,9 @@ export function createApp(ctx: ServerContext, options: AppOptions = {}): Hono {
   // (preserving Host, so Origin and Host still match). Reject foreign Hosts
   // (DNS rebinding) and cross-origin mutations (CSRF).
   app.use('*', requestGuard(options.host ?? DEFAULT_HOST));
+
+  // config.yaml may be changed by the CLI at any time; never serve a stale copy.
+  app.use('/api/*', freshConfig(ctx));
 
   // API routes
   app.route('/api', issueRoutes(ctx));
