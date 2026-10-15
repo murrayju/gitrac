@@ -1,14 +1,14 @@
 ---
 id: 54
 title: Collision-free issue IDs across branches and worktrees
-status: todo
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - feature
 created: '2026-10-14T21:43:46.806Z'
 createdBy: Justin Murray
-updated: '2026-10-14T21:43:46.806Z'
+updated: '2026-10-15T01:17:12.664Z'
 ---
 
 IDs come from `nextId` in `config.yaml`. Two branches/worktrees that each create an issue will (a) conflict on `config.yaml` and (b) produce duplicate IDs. This is guaranteed when multiple agents work in parallel worktrees.
