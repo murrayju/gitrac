@@ -154,6 +154,62 @@ describe('GET /api/issues', () => {
     expect(data[0]?.id).toBe(1);
     expect(data[1]?.id).toBe(3);
   });
+
+  // #52: same filter semantics as `gitrac ls` (src/core/query.ts)
+  async function ids(qs: string): Promise<number[]> {
+    const res = await req(`/issues?${qs}`);
+    expect(res.status).toBe(200);
+    return ((await res.json()) as Issue[]).map((i) => i.id);
+  }
+
+  test('multi-value filters (comma-separated or repeated)', async () => {
+    await writeIssue(dir, makeIssue({ id: 1, priority: 'urgent' }));
+    await writeIssue(
+      dir,
+      makeIssue({ id: 2, title: 'B', priority: 'high', labels: ['bug'] }),
+    );
+    await writeIssue(
+      dir,
+      makeIssue({ id: 3, title: 'C', priority: 'low', status: 'todo' }),
+    );
+    await writeIssue(
+      dir,
+      makeIssue({ id: 4, title: 'D', status: 'done', labels: ['ui'] }),
+      { closed: true },
+    );
+    expect(await ids('priority=urgent,high')).toEqual([1, 2]);
+    expect(await ids('priority=urgent&priority=low')).toEqual([1, 3]);
+    expect(await ids('status=todo,done')).toEqual([3, 4]);
+    expect(await ids('label=bug,ui&status=all')).toEqual([2, 4]);
+  });
+
+  test('assignee matches name or email; mine = server identity', async () => {
+    await writeIssue(
+      dir,
+      makeIssue({ id: 1, title: 'Mine', assignee: 'ada@example.com' }),
+    );
+    await writeIssue(dir, makeIssue({ id: 2, title: 'Bob', assignee: 'Bob' }));
+    expect(await ids('assignee=ADA@example.com')).toEqual([1]);
+    expect(await ids('assignee=bob')).toEqual([2]);
+    expect(await ids('mine=1')).toEqual([1]);
+  });
+
+  test('search over title and description', async () => {
+    await writeIssue(
+      dir,
+      makeIssue({ id: 1, title: 'Login bug', description: 'Times out' }),
+    );
+    await writeIssue(dir, makeIssue({ id: 2, title: 'Other' }));
+    expect(await ids('search=login')).toEqual([1]);
+    expect(await ids('search=LOGIN%20times')).toEqual([1]);
+    expect(await ids('search=login%20other')).toEqual([]);
+  });
+
+  test('rejects unknown status / priority / sort with 400', async () => {
+    for (const qs of ['status=nope', 'priority=meh', 'sort=color']) {
+      expect((await req(`/issues?${qs}`)).status).toBe(400);
+    }
+  });
 });
 
 describe('GET /api/issues/:id', () => {

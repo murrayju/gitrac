@@ -69,6 +69,9 @@ When installed as a binary, replace `./bun index.ts` with `gitrac` in all exampl
 | `gitrac edit <id> -s todo` | Update status |
 | `gitrac edit <id> -d "text"` | Replace the description (or `--description-file <path\|->`) |
 | `gitrac ls -o json` | Machine-readable output |
+| `gitrac ls --mine` | Issues assigned to you |
+| `gitrac ls --priority urgent,high --label bug` | Filters take comma-separated values (any of); `--status all` includes closed |
+| `gitrac ls --search "login timeout"` | Title/description contains every word |
 | `gitrac serve -p 4000` | Start the web UI (bare `gitrac` also serves, on :3000). Binds 127.0.0.1; `--host 0.0.0.0` exposes it to the network (no auth). Web changes are attributed to your git `user.name` (or `--author`); the sidebar's "Acting as" picker can switch to a configured assignee |
 
 ## The Workflow
@@ -160,6 +163,7 @@ Use `-o json` or `-o yaml` for machine-readable output:
 gitrac ls -o json                    # all open issues as JSON array
 gitrac show <id> -o json             # single issue as JSON
 gitrac ls -o json --status all       # include closed issues
+gitrac ls -o json --mine --status todo,in_progress  # my active work
 ```
 
 This is useful for programmatic decision-making about which issue to work on.

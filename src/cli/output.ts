@@ -32,13 +32,20 @@ function formatHumanList(issues: Issue[]): string {
     return 'No issues found.';
   }
 
+  // Wide enough for the longest assignee (usually an email) + 2 spaces.
+  const assigneeWidth = Math.max(
+    16,
+    ...issues.map((i) => (i.assignee || '-').length + 2),
+  );
+
   const header = [
     pad('ID', 6),
     pad('Title', 42),
     pad('Status', 12),
     pad('Priority', 10),
-    pad('Assignee', 16),
-    'Updated',
+    pad('Assignee', assigneeWidth),
+    pad('Updated', 12),
+    'Labels',
   ].join('');
 
   const separator = '-'.repeat(header.length);
@@ -49,8 +56,9 @@ function formatHumanList(issues: Issue[]): string {
       pad(truncate(issue.title, 40), 42),
       pad(issue.status, 12),
       pad(issue.priority, 10),
-      pad(issue.assignee || '-', 16),
-      shortDate(issue.updated),
+      pad(issue.assignee || '-', assigneeWidth),
+      pad(shortDate(issue.updated), 12),
+      issue.labels.join(', ') || '-',
     ].join(''),
   );
 

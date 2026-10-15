@@ -51,6 +51,24 @@ describe('formatIssueList', () => {
     expect(result).toContain('2024-01-15');
   });
 
+  test('human format shows labels (#52)', () => {
+    const result = formatIssueList([SAMPLE_ISSUE, SAMPLE_ISSUE_2], 'human');
+    const [header, , row1, row2] = result.split('\n');
+    expect(header).toContain('Labels');
+    expect(row1).toContain('bug, urgent');
+    expect(row2?.trimEnd().endsWith('-')).toBe(true);
+  });
+
+  test('human format keeps columns aligned for long assignees', () => {
+    const long = { ...SAMPLE_ISSUE, assignee: 'someone.long@example.com' };
+    const [header, , row] = formatIssueList(
+      [long, SAMPLE_ISSUE_2],
+      'human',
+    ).split('\n');
+    expect(row?.indexOf('2024-01-15')).toBe(header?.indexOf('Updated'));
+    expect(row?.indexOf('bug, urgent')).toBe(header?.indexOf('Labels'));
+  });
+
   test('human format truncates long titles', () => {
     const longTitle: Issue = {
       ...SAMPLE_ISSUE,

@@ -30,6 +30,10 @@ export interface IssueFilters {
   assignee?: string;
   label?: string;
   priority?: string;
+  /** Words that must all appear in the title or description. */
+  search?: string;
+  /** Only issues assigned to the server's identity. */
+  mine?: boolean;
   sort?: string;
 }
 
@@ -132,6 +136,8 @@ export async function fetchIssues(filters?: IssueFilters): Promise<Issue[]> {
   if (filters?.assignee) params.set('assignee', filters.assignee);
   if (filters?.label) params.set('label', filters.label);
   if (filters?.priority) params.set('priority', filters.priority);
+  if (filters?.search) params.set('search', filters.search);
+  if (filters?.mine) params.set('mine', '1');
   if (filters?.sort) params.set('sort', filters.sort);
   const qs = params.toString();
   return request<Issue[]>(`/api/issues${qs ? `?${qs}` : ''}`);

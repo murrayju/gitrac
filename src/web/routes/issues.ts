@@ -1,15 +1,9 @@
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { type Context, Hono } from 'hono';
 import { GitracError } from '../../core/errors.ts';
 import { parseIssue } from '../../core/issue.ts';
+import { type IssueQuery, parseIssueQuery } from '../../core/query.ts';
 import type { Issue } from '../../core/types.ts';
-import { isClosedStatus, type Status } from '../../core/types.ts';
-import {
-  listClosedIssueFiles,
-  listIssueFiles,
-  readIssueContent,
-} from '../../fs/issue-store.ts';
+import { readIssueContent } from '../../fs/issue-store.ts';
 import { IssueUnreadableError, ValidationError } from '../../service/errors.ts';
 import {
   addComment,
@@ -21,11 +15,13 @@ import {
   reopenIssue,
   updateIssue,
 } from '../../service/issues.ts';
+import { listIssues } from '../../service/list.ts';
 import type { Precondition } from '../../service/load.ts';
 import { ifMatchSatisfied, issueETag } from '../etag.ts';
 import { mutationLock } from '../lock.ts';
 import type { ServerContext } from '../server.ts';
 import { webServiceContext } from '../service-context.ts';
+import { serverIdentity } from './identity.ts';
 
 /** Treat a non-object JSON body as empty so field checks reject it. */
 function asRecord(value: unknown): Record<string, unknown> {
@@ -187,61 +183,33 @@ export function issueRoutes(ctx: ServerContext): Hono {
   // Serialize every mutation (in-process queue + cross-process lockfile)
   const locked = mutationLock(ctx);
 
-  // GET /issues — list issues with optional filters
+  // GET /issues — list issues with optional filters (same semantics as
+  // `gitrac ls`; see `src/core/query.ts`)
   app.get('/issues', async (c) => {
-    const { dir } = ctx;
-
-    const statusFilter = c.req.query('status');
-    const assignee = c.req.query('assignee');
-    const label = c.req.query('label');
-    const priority = c.req.query('priority');
-    const sort = c.req.query('sort');
-
-    let issues: Issue[] = [];
-
-    if (statusFilter === 'all') {
-      const [openFiles, closedFiles] = await Promise.all([
-        listIssueFiles(dir),
-        listClosedIssueFiles(dir),
-      ]);
-      const openIssues = await loadIssues(openFiles, join(dir, '.issues'));
-      const closedIssues = await loadIssues(
-        closedFiles,
-        join(dir, '.issues', 'closed'),
+    const { dir, config } = ctx;
+    const q = (name: string): string[] | undefined => c.req.queries(name);
+    let query: IssueQuery;
+    try {
+      query = parseIssueQuery(
+        {
+          status: q('status'),
+          assignee: q('assignee'),
+          label: q('label'),
+          priority: q('priority'),
+          search: q('search') ?? q('q'),
+          sort: q('sort'),
+        },
+        config,
+        {
+          mine: isTruthy(c.req.query('mine'))
+            ? await serverIdentity(ctx)
+            : undefined,
+        },
       );
-      issues = [...openIssues, ...closedIssues];
-    } else if (statusFilter && isClosedStatus(statusFilter as Status)) {
-      const closedFiles = await listClosedIssueFiles(dir);
-      const closedIssues = await loadIssues(
-        closedFiles,
-        join(dir, '.issues', 'closed'),
-      );
-      issues = closedIssues.filter((i) => i.status === statusFilter);
-    } else if (statusFilter) {
-      const openFiles = await listIssueFiles(dir);
-      const openIssues = await loadIssues(openFiles, join(dir, '.issues'));
-      issues = openIssues.filter((i) => i.status === statusFilter);
-    } else {
-      const openFiles = await listIssueFiles(dir);
-      issues = await loadIssues(openFiles, join(dir, '.issues'));
+    } catch (err) {
+      return errorResponse(c, err);
     }
-
-    // Apply filters
-    if (assignee) {
-      issues = issues.filter((i) => i.assignee === assignee);
-    }
-    if (label) {
-      issues = issues.filter((i) => i.labels.includes(label));
-    }
-    if (priority) {
-      issues = issues.filter((i) => i.priority === priority);
-    }
-
-    // Apply sorting
-    if (sort) {
-      issues = sortIssues(issues, sort);
-    }
-
+    const { issues } = await listIssues(dir, query, config);
     return c.json(issues);
   });
 
@@ -390,52 +358,9 @@ export function issueRoutes(ctx: ServerContext): Hono {
   return app;
 }
 
-async function loadIssues(files: string[], baseDir: string): Promise<Issue[]> {
-  const issues: Issue[] = [];
-  for (const f of files) {
-    try {
-      const content = await readFile(join(baseDir, f), 'utf-8');
-      issues.push(parseIssue(content));
-    } catch {
-      // Skip unreadable files
-    }
-  }
-  return issues;
-}
-
-const PRIORITY_ORDER: Record<string, number> = {
-  urgent: 0,
-  high: 1,
-  medium: 2,
-  low: 3,
-  none: 4,
-};
-
-function sortIssues(issues: Issue[], sort: string): Issue[] {
-  const sorted = [...issues];
-  switch (sort) {
-    case 'priority':
-      sorted.sort(
-        (a, b) =>
-          (PRIORITY_ORDER[a.priority] ?? 99) -
-          (PRIORITY_ORDER[b.priority] ?? 99),
-      );
-      break;
-    case 'created':
-      sorted.sort(
-        (a, b) => new Date(b.created).getTime() - new Date(a.created).getTime(),
-      );
-      break;
-    case 'updated':
-      sorted.sort(
-        (a, b) => new Date(b.updated).getTime() - new Date(a.updated).getTime(),
-      );
-      break;
-    case 'id':
-      sorted.sort((a, b) => a.id - b.id);
-      break;
-    default:
-      break;
-  }
-  return sorted;
+/** A boolean query flag: present and not `0` / `false` / `no`. */
+function isTruthy(value: string | undefined): boolean {
+  return (
+    value !== undefined && !['0', 'false', 'no'].includes(value.toLowerCase())
+  );
 }

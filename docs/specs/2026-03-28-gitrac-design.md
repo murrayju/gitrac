@@ -176,7 +176,7 @@ src/
 | `gitrac serve` | | Start web UI. `-p, --port <port>` (default: 3000), `--host <host>` (default: `127.0.0.1`). |
 | `gitrac init` | | Initialize `.issues/` in current repo. Errors if already exists (use `--force` to reinitialize). Errors if not in a git repo. |
 | `gitrac create` | `new`, `add` | Create a new issue (interactive or via flags) |
-| `gitrac list` | `ls` | List issues with filters. Default sort: ID ascending. |
+| `gitrac list` | `ls` | List issues with filters (`--status`, `--priority`, `--label`, `--assignee`, `--mine`, `--search`, `--sort`; see [List Filters](#list-filters)). Default: open issues, sorted by ID ascending. |
 | `gitrac show <id>` | `view` | Show full issue detail |
 | `gitrac edit <id>` | | Edit issue fields (title, status, priority, assignee, labels, description). See [Text Input](#text-input). |
 | `gitrac comment <id> [body]` | `c` | Add a comment. Body from the argument, `-F, --body-file <path\|->`, or piped stdin. |
@@ -279,8 +279,22 @@ gitrac ls --status all           # everything
 gitrac ls --assignee murrayju
 gitrac ls --label bug
 gitrac ls --priority urgent,high
+gitrac ls --status todo,in_progress --label bug,auth
+gitrac ls --assignee "Justin Murray"  # name or email, case-insensitive
+gitrac ls --mine                 # assigned to you (git user.email/user.name, or --author)
+gitrac ls --search "login timeout"
 gitrac ls --sort priority
 ```
+
+Filtering, search and sorting are one pure function (`src/core/query.ts`, loaded via `listIssues` in `src/service/list.ts`) shared by `gitrac ls` and `GET /api/issues`, so both return exactly the same issues in the same order:
+
+- `--status`, `--priority`, `--label`, `--assignee` take comma-separated values (and may be repeated). An issue matches a filter if it matches **any** of its values; it must match **every** filter given.
+- Without `--status`, only open (non-closed-status) issues are listed; `all` (alone or in a list) lists everything. `.issues/closed/` is only read when a closed status or `all` is asked for.
+- `--assignee` compares case-insensitively with the stored value, and a name or email listed in `config.assignees` also matches its counterpart (`--assignee "Justin Murray"` finds `assignee: justin@…`). `--mine` does the same for the current user's name and email.
+- `--search <text>`: every whitespace-separated word must occur (case-insensitively) in the title or description.
+- `--sort`: `id` (default, ascending), `priority` (urgent first), `status` (in_progress, todo, backlog, done, cancelled), `created` / `updated` (newest first); ties by ID.
+- Unknown statuses, priorities or sort fields are rejected (exit 2 / HTTP 400). Labels and assignees are free-form — no match just means an empty list.
+- The human output shows ID, title, status, priority, assignee, updated date and labels.
 
 ### Commit Messages
 
@@ -379,7 +393,7 @@ The server has no authentication, so exposure is limited instead (`src/web/secur
 
 | Method | Route | Description |
 |--------|-------|------------|
-| GET | `/api/issues` | List issues (supports query params for filtering) |
+| GET | `/api/issues` | List issues. Query params `status`, `priority`, `label`, `assignee` (comma-separated or repeated), `search`, `mine` (= the server's identity), `sort` — same semantics as `gitrac ls` (see [List Filters](#list-filters)) |
 | GET | `/api/issues/:id` | Get single issue. **409** `{ error, code: "duplicate_issue", files }` if several files have the ID (also for every mutation of that issue) |
 | POST | `/api/issues` | Create issue (optional `author` sets `createdBy`) |
 | PATCH | `/api/issues/:id` | Update issue metadata |
