@@ -8,12 +8,19 @@ export function registerCloseCommand(program: Command): void {
   program
     .command('close <id>')
     .description('Close an issue')
-    .option('--cancelled', 'Set status to cancelled instead of done')
+    .option(
+      '--cancelled',
+      'Close with the configured cancel status (default: cancelled)',
+    )
+    .option(
+      '-s, --status <status>',
+      'Closed status to set (default: config closeStatus, i.e. done)',
+    )
     .option('-c, --comment <text>', 'Add a comment when closing')
     .action(
       async (
         idStr: string,
-        options: { cancelled?: boolean; comment?: string },
+        options: { cancelled?: boolean; status?: string; comment?: string },
       ) => {
         const globalOpts = await resolveProjectOptions(program);
 
@@ -23,7 +30,11 @@ export function registerCloseCommand(program: Command): void {
         await closeIssue(
           cliServiceContext(globalOpts, printWrittenIssue(globalOpts)),
           id,
-          { cancelled: options.cancelled, comment: options.comment },
+          {
+            cancelled: options.cancelled,
+            status: options.status,
+            comment: options.comment,
+          },
         );
       },
     );

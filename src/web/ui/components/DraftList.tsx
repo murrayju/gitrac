@@ -64,16 +64,7 @@ export function DraftList() {
                     )}
                   </td>
                   <td className="px-3 py-2">
-                    <PriorityBadge
-                      priority={
-                        (draft.priority as
-                          | 'urgent'
-                          | 'high'
-                          | 'medium'
-                          | 'low'
-                          | 'none') || 'none'
-                      }
-                    />
+                    <PriorityBadge priority={draft.priority || 'none'} />
                   </td>
                   <td
                     className="px-3 py-2 text-sm text-gray-500"

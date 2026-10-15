@@ -360,14 +360,21 @@ export function issueRoutes(ctx: ServerContext): Hono {
     );
   });
 
-  // PATCH /issues/:id/close — close an issue (status done)
+  // PATCH /issues/:id/close — close an issue. Optional JSON body
+  // `{ status }` (a configured closed status) or `{ cancelled: true }` (the
+  // configured cancel status); default: the configured close status (done).
   app.patch('/issues/:id/close', locked, async (c) => {
     const id = Number.parseInt(c.req.param('id'), 10);
     if (Number.isNaN(id)) {
       return c.json({ error: 'Invalid issue ID' }, 400);
     }
+    const { status, cancelled } = asRecord(await readJsonBody(c));
     return mutateIssue(c, (precondition) =>
-      closeIssue(webServiceContext(ctx), id, { precondition }),
+      closeIssue(webServiceContext(ctx), id, {
+        status: status ?? undefined,
+        cancelled: cancelled === true,
+        precondition,
+      }),
     );
   });
 
@@ -407,7 +414,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
     }
     const byId = indexIssues((await loadAllIssues(ctx.dir)).issues);
     byId.set(id, loaded.issue);
-    return c.json(describeDependencies(loaded.issue, byId));
+    return c.json(describeDependencies(loaded.issue, byId, ctx.config));
   });
 
   // POST /issues/:id/link — `{ blockedBy?: id | id[], parent?: id }`: add

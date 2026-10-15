@@ -2,9 +2,15 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type ClaimedElsewhere, claimedElsewhere } from '../core/elsewhere.ts';
 import { parseIssueFile } from '../core/issue.ts';
-import { type IssueQuery, includesClosed, queryIssues } from '../core/query.ts';
+import {
+  type IssueQuery,
+  includesClosed,
+  type QueryConfig,
+  queryIssues,
+} from '../core/query.ts';
 import { parseIssueId } from '../core/slug.ts';
-import type { Config, Issue } from '../core/types.ts';
+import type { Issue } from '../core/types.ts';
+import type { WorkflowConfig } from '../core/workflow.ts';
 import { listClosedIssueFiles, listIssueFiles } from '../fs/issue-store.ts';
 import { issueStatesElsewhere } from '../git/elsewhere.ts';
 
@@ -48,10 +54,10 @@ async function loadDir(
 export async function listIssues(
   dir: string,
   query: IssueQuery,
-  config: Pick<Config, 'assignees'>,
+  config: QueryConfig,
 ): Promise<IssueListing> {
   const unreadable: string[] = [];
-  const withClosed = includesClosed(query);
+  const withClosed = includesClosed(query, config);
   const [openFiles, closedFiles] = await Promise.all([
     listIssueFiles(dir),
     withClosed ? listClosedIssueFiles(dir) : Promise.resolve([]),
@@ -91,6 +97,7 @@ export async function loadAllIssues(dir: string): Promise<IssueListing> {
 export async function findClaimsElsewhere(
   dir: string,
   issues: readonly Issue[],
+  config: WorkflowConfig,
 ): Promise<Map<number, ClaimedElsewhere>> {
   const claims = new Map<number, ClaimedElsewhere>();
   if (issues.length === 0) return claims;
@@ -98,7 +105,7 @@ export async function findClaimsElsewhere(
     ids: issues.map((i) => i.id),
   });
   for (const issue of issues) {
-    const claim = claimedElsewhere(issue, states.get(issue.id));
+    const claim = claimedElsewhere(issue, config, states.get(issue.id));
     if (claim) claims.set(issue.id, claim);
   }
   return claims;

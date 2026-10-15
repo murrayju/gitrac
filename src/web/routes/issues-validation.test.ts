@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { Hono } from 'hono';
 import { createDefaultConfig } from '../../core/config.ts';
 import type { Issue } from '../../core/types.ts';
+import { statusDefinitions } from '../../core/workflow.ts';
 import {
   initIssuesDir,
   readConfig,
@@ -199,7 +200,8 @@ describe('PATCH /api/issues/:id validation', () => {
   test('status must be one of the configured statuses', async () => {
     await writeConfig(dir, {
       ...ctx.config,
-      statuses: ['todo', 'in_progress', 'done'],
+      statuses: statusDefinitions(['todo', 'in_progress', 'done']),
+      defaultStatus: 'todo',
     });
     const res = await send('PATCH', '/issues/1', { status: 'backlog' });
     expect(res.status).toBe(400);

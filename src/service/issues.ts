@@ -2,11 +2,12 @@ import { GitracError, invalidInput } from '../core/errors.ts';
 import {
   assertCanClose,
   assertCanReopen,
+  closingStatus,
   reopenStatus,
 } from '../core/lifecycle.ts';
 import type { Config, Issue, Status } from '../core/types.ts';
-import { isClosedStatus } from '../core/types.ts';
 import { validateIssue, validateIssueFields } from '../core/validate.ts';
+import { isClosedStatus } from '../core/workflow.ts';
 import {
   registerLabels,
   relocateIssue,
@@ -205,7 +206,7 @@ export async function updateIssue(
     // Write to the directory matching the status; drop the old file if the
     // path changed (moved between directories or renamed).
     const [newPath, ...oldPaths] = await relocateIssue(ctx.dir, issue, stored, {
-      closed: isClosedStatus(issue.status),
+      closed: isClosedStatus(config, issue.status),
     });
     // config.yaml only changes (and is committed) when new labels were
     // registered.
@@ -358,25 +359,31 @@ export async function deleteComment(
 }
 
 /**
- * Close an issue: status `done` (or `cancelled`), file moved into
- * `.issues/closed/`. Closing a closed issue is `invalid_state` and writes
- * nothing (see `src/core/lifecycle.ts`).
+ * Close an issue: status `options.status` (a configured closed status), or
+ * the configured close status (`closeStatus`, default `done`) — the cancel
+ * status (`cancelStatus`, default `cancelled`) with `cancelled` — and the
+ * file moved into `.issues/closed/`. A bad status, or `cancelled` with no
+ * cancel status configured, is `invalid_input`; closing a closed issue is
+ * `invalid_state`; neither writes anything (see `src/core/lifecycle.ts`).
  */
 export async function closeIssue(
   ctx: ServiceContext,
   id: number,
   options: ExistingIssueOptions & {
     cancelled?: boolean;
+    status?: unknown;
     comment?: string;
   } = {},
 ): Promise<IssueChange> {
   return withRepoLock(ctx.dir, async () => {
     const config = await loadConfig(ctx);
+    // Input errors take precedence over issue errors (missing, closed...).
+    const status = validStatus(() => closingStatus(config, options));
     const stored = await loadStoredIssue(ctx.dir, id, options.precondition);
     const { issue } = stored;
-    assertCanClose(issue, stored.closed);
+    assertCanClose(issue, stored.closed, config);
 
-    issue.status = options.cancelled ? 'cancelled' : 'done';
+    issue.status = status;
     const now = new Date().toISOString();
     issue.updated = now;
     await appendComment(ctx, issue, options.comment, now);
@@ -394,10 +401,10 @@ export async function closeIssue(
   });
 }
 
-/** `reopenStatus`, reporting a bad status as a {@link ValidationError}. */
-function validReopenStatus(config: Config, requested: unknown): Status {
+/** Pick a status, reporting a bad one as a {@link ValidationError}. */
+function validStatus(pick: () => Status): Status {
   try {
-    return reopenStatus(config, requested);
+    return pick();
   } catch (err) {
     if (err instanceof GitracError) throw new ValidationError([err.message]);
     throw err;
@@ -417,10 +424,10 @@ export async function reopenIssue(
   return withRepoLock(ctx.dir, async () => {
     const config = await loadConfig(ctx);
     // Input errors take precedence over issue errors (missing, open...).
-    const status = validReopenStatus(config, options.status);
+    const status = validStatus(() => reopenStatus(config, options.status));
     const stored = await loadStoredIssue(ctx.dir, id, options.precondition);
     const { issue } = stored;
-    assertCanReopen(issue, stored.closed);
+    assertCanReopen(issue, stored.closed, config);
 
     issue.status = status;
     const now = new Date().toISOString();

@@ -11,6 +11,11 @@ import {
   serializeConfig,
   validateConfig,
 } from './config.ts';
+import {
+  isClosedStatus as isClosed,
+  priorityNames,
+  statusNames,
+} from './workflow.ts';
 
 const VALID_YAML = `
 version: 1
@@ -49,7 +54,7 @@ describe('parseConfig', () => {
     const config = parseConfig(VALID_YAML);
     expect(config.version).toBe(1);
     expect(config.nextId).toBe(5);
-    expect(config.statuses).toEqual([
+    expect(statusNames(config)).toEqual([
       'backlog',
       'todo',
       'in_progress',
@@ -80,7 +85,8 @@ version: 1
 nextId: 1
 statuses:
   - backlog
-  - invalid_status
+  - Invalid Status
+  - done
 labels: {}
 priorities:
   - medium
@@ -92,7 +98,9 @@ git:
   commitPrefix: "issue:"
   defaultBranch: main
 `;
-    expect(() => parseConfig(yaml)).toThrow();
+    expect(() => parseConfig(yaml)).toThrow(
+      'statuses[1]: invalid name "Invalid Status"',
+    );
   });
 
   test('uses defaults for missing git section', () => {
@@ -312,7 +320,7 @@ describe('createDefaultConfig', () => {
     const config = createDefaultConfig();
     expect(config.version).toBe(1);
     expect(config.nextId).toBeUndefined();
-    expect(config.statuses).toEqual([
+    expect(statusNames(config)).toEqual([
       'backlog',
       'todo',
       'in_progress',
@@ -327,7 +335,7 @@ describe('createDefaultConfig', () => {
       'chore',
     ]);
     expect(config.assignees).toEqual([]);
-    expect(config.priorities).toEqual([
+    expect(priorityNames(config)).toEqual([
       'urgent',
       'high',
       'medium',
@@ -379,20 +387,19 @@ describe('validateConfig', () => {
     );
   });
 
-  test('returns false for invalid status values', () => {
-    const config = {
-      ...createDefaultConfig(),
-      statuses: ['backlog', 'invalid'],
-    };
-    expect(validateConfig(config)).toBe(false);
-  });
-
-  test('returns false for invalid priority values', () => {
-    const config = {
-      ...createDefaultConfig(),
-      priorities: ['high', 'invalid'],
-    };
-    expect(validateConfig(config)).toBe(false);
+  test('custom status/priority names are valid (#57); malformed ones are not', () => {
+    const config = createDefaultConfig();
+    expect(
+      validateConfig({ ...config, statuses: ['backlog', 'review', 'done'] }),
+    ).toBe(true);
+    expect(
+      validateConfig({ ...config, statuses: ['backlog', 'In review', 'done'] }),
+    ).toBe(false);
+    expect(validateConfig({ ...config, priorities: ['p0', 'medium'] })).toBe(
+      true,
+    );
+    // defaultPriority must be configured
+    expect(validateConfig({ ...config, priorities: ['p0', 'p1'] })).toBe(false);
   });
 
   test('returns false for invalid labels (non-object)', () => {
@@ -577,5 +584,212 @@ describe('resolveAssigneeName', () => {
 
   test('returns empty string for empty input', () => {
     expect(resolveAssigneeName(assignees, '')).toBe('');
+  });
+});
+
+/** Regression tests for #57: status/priority definitions in config.yaml. */
+describe('status and priority definitions (#57)', () => {
+  const base = (statuses: string, extra = '') => `version: 1
+statuses:
+${statuses}
+labels: {}
+priorities:
+  - high
+  - low
+defaultStatus: open
+defaultPriority: low
+${extra}`;
+
+  /** The error message parseConfig throws for `yaml` ('' if it parses). */
+  function errorOf(yaml: string): string {
+    try {
+      parseConfig(yaml);
+      return '';
+    } catch (err) {
+      return (err as Error).message;
+    }
+  }
+
+  test('legacy plain names migrate on read: done/cancelled closed, others open', () => {
+    const config = parseConfig(
+      VALID_YAML.replace('  - todo\n', '  - review\n'),
+    );
+    expect(config.statuses).toEqual([
+      { name: 'backlog', closed: false },
+      { name: 'review', closed: false },
+      { name: 'in_progress', closed: false },
+      { name: 'done', closed: true },
+      { name: 'cancelled', closed: true },
+    ]);
+    expect(config.priorities[0]).toEqual({ name: 'urgent' });
+  });
+
+  test('parses definitions (label, color, closed) and plain names mixed', () => {
+    const config = parseConfig(
+      base(
+        `  - open
+  - name: shipped
+    label: Shipped!
+    color: '#4dba6f'
+    closed: true
+  - name: done`,
+      ).replace(
+        '  - high\n',
+        "  - name: high\n    label: Hot\n    color: '#f00'\n",
+      ),
+    );
+    expect(config.statuses).toEqual([
+      { name: 'open', closed: false },
+      { name: 'shipped', label: 'Shipped!', color: '#4dba6f', closed: true },
+      { name: 'done', closed: true },
+    ]);
+    expect(config.priorities).toEqual([
+      { name: 'high', label: 'Hot', color: '#f00' },
+      { name: 'low' },
+    ]);
+  });
+
+  test('serializes compactly: plain names unless a definition needs more', () => {
+    const yaml = base(
+      `  - open
+  - name: review
+  - name: shipped
+    color: '#4dba6f'
+    closed: true
+  - name: dropped
+    closed: true
+  - name: done
+    closed: true`,
+      'activeStatus: review\n',
+    );
+    expect(serializeConfig(parseConfig(yaml))).toBe(
+      [
+        'version: 1',
+        'statuses:',
+        '  - open',
+        '  - review',
+        '  - name: shipped',
+        "    color: '#4dba6f'",
+        '    closed: true',
+        '  - name: dropped',
+        '    closed: true',
+        '  - done',
+        'labels: {}',
+        'priorities:',
+        '  - high',
+        '  - low',
+        'defaultStatus: open',
+        'defaultPriority: low',
+        'activeStatus: review',
+        'git:',
+        '  autoCommit: true',
+        '  autoPush: false',
+        "  commitPrefix: 'issue:'",
+        '  defaultBranch: main',
+        'assignees: []',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  test('a definition overriding the legacy closed rule is kept as a definition', () => {
+    const config = parseConfig(
+      base(`  - open
+  - name: done
+    closed: false
+  - name: closed
+    closed: true`),
+    );
+    expect(isClosed(config, 'done')).toBe(false);
+    const out = serializeConfig(config);
+    expect(out).toContain('  - name: done\n    closed: false\n');
+    expect(parseConfig(out)).toEqual(config);
+  });
+
+  test('every status and priority is validated with a clear message', () => {
+    const cases: [string, string][] = [
+      [base('  - open'), 'statuses: at least one must be closed'],
+      [
+        base('  - done', '').replace(
+          'defaultStatus: open',
+          'defaultStatus: done',
+        ),
+        'statuses: at least one must be open',
+      ],
+      [
+        base('  - open\n  - done').replace(
+          'defaultStatus: open',
+          'defaultStatus: done',
+        ),
+        'defaultStatus "done" must be an open status',
+      ],
+      [
+        base('  - open\n  - done').replace(
+          'defaultStatus: open',
+          'defaultStatus: todo',
+        ),
+        'defaultStatus "todo" is not a configured status (open, done)',
+      ],
+      [
+        base('  - open\n  - done\n  - open'),
+        'statuses[2]: duplicate name "open"',
+      ],
+      [base('  - open\n  - done\n  - all'), 'statuses[2]: "all" is reserved'],
+      [base('  - open\n  - In Review\n  - done'), 'statuses[1]: invalid name'],
+      [
+        base('  - open\n  - name: done\n    color: red'),
+        'statuses[1]: color must be a hex color',
+      ],
+      [
+        base('  - open\n  - name: done\n    close: true'),
+        'statuses[1]: unknown key "close"',
+      ],
+      [
+        base('  - open\n  - name: done\n    closed: yes'),
+        'statuses[1]: closed must be true or false',
+      ],
+      [
+        base('  - open\n  - done', 'activeStatus: done\n'),
+        'activeStatus "done" must be an open status',
+      ],
+      [
+        base('  - open\n  - done', 'activeStatus: doing\n'),
+        'activeStatus "doing" is not a configured status',
+      ],
+      [
+        base('  - open\n  - done', 'unclaimStatus: done\n'),
+        'unclaimStatus "done" must be an open status',
+      ],
+      [
+        base('  - open\n  - done', 'activeStatus: open\nunclaimStatus: open\n'),
+        'unclaimStatus must differ from activeStatus',
+      ],
+      [
+        base('  - open\n  - done', 'closeStatus: open\n'),
+        'closeStatus "open" must be a closed status',
+      ],
+      [
+        base('  - open\n  - done', 'cancelStatus: cancelled\n'),
+        'cancelStatus "cancelled" is not a configured status',
+      ],
+      [
+        base('  - open\n  - done').replace('  - low\n', ''),
+        'defaultPriority "low" is not a configured priority (high)',
+      ],
+      [
+        base('  - open\n  - done').replace('  - high\n  - low\n', '  []\n'),
+        'priorities must not be empty',
+      ],
+    ];
+    for (const [yaml, message] of cases) {
+      expect(errorOf(yaml)).toContain(message);
+    }
+    // ...and a valid one parses.
+    expect(errorOf(base('  - open\n  - done'))).toBe('');
+  });
+
+  test('implicit defaults (in_progress, todo, done, cancelled) need not exist', () => {
+    // Older configs could list any subset of the built-in statuses.
+    expect(errorOf(base('  - open\n  - done'))).toBe('');
   });
 });

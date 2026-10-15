@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { createDefaultConfig } from './config.ts';
 import {
   blocksOf,
   childrenOf,
@@ -10,6 +11,8 @@ import {
   validateLinks,
 } from './dependencies.ts';
 import type { Issue } from './types.ts';
+
+const CONFIG = createDefaultConfig();
 
 /** Regression tests for #55: issue dependencies (blockedBy / parent). */
 
@@ -56,7 +59,7 @@ describe('derived relations', () => {
       issue(3, { status: 'in_progress' }),
       issue(9, { blockedBy: [1, 2, 3, 4] }),
     ]);
-    expect(openBlockers(byId.get(9) as Issue, byId)).toEqual([3]);
+    expect(openBlockers(byId.get(9) as Issue, byId, CONFIG)).toEqual([3]);
   });
 
   test('describeDependencies resolves titles and statuses', () => {
@@ -64,7 +67,7 @@ describe('derived relations', () => {
       ...issues,
       issue(5, { blockedBy: [3, 42], parent: 4 }),
     ]);
-    const deps = describeDependencies(byId.get(3) as Issue, byId);
+    const deps = describeDependencies(byId.get(3) as Issue, byId, CONFIG);
     expect(deps).toEqual({
       parent: { id: 1, title: 'Issue 1', status: 'todo', resolved: false },
       children: [],
@@ -75,7 +78,7 @@ describe('derived relations', () => {
       blocks: [{ id: 5, title: 'Issue 5', status: 'todo', resolved: false }],
       blocked: true,
     });
-    const five = describeDependencies(byId.get(5) as Issue, byId);
+    const five = describeDependencies(byId.get(5) as Issue, byId, CONFIG);
     expect(five.blockedBy[1]).toEqual({
       id: 42,
       title: '',

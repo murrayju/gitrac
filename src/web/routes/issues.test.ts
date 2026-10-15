@@ -573,6 +573,42 @@ describe('PATCH /api/issues/:id/close', () => {
   });
 });
 
+describe('PATCH /api/issues/:id/close with configured statuses (#57)', () => {
+  const patch = (body: unknown) =>
+    req('/issues/1/close', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+  test('{ cancelled: true } and { status } pick the closed status', async () => {
+    await writeIssue(dir, makeIssue({ id: 1, title: 'One' }));
+    const res = await patch({ cancelled: true });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as Issue).status).toBe('cancelled');
+  });
+
+  test('uses the configured close status; rejects an open status with 400', async () => {
+    const config = createDefaultConfig();
+    config.git.autoCommit = false;
+    config.statuses.push({ name: 'shipped', closed: true });
+    config.closeStatus = 'shipped';
+    await writeConfig(dir, config);
+    await writeIssue(dir, makeIssue({ id: 1, title: 'One' }));
+    const path = join(dir, '.issues', '1-one.md');
+    const before = await Bun.file(path).text();
+
+    const bad = await patch({ status: 'todo' });
+    expect(bad.status).toBe(400);
+    expect(await Bun.file(path).text()).toBe(before);
+
+    const res = await req('/issues/1/close', { method: 'PATCH' });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as Issue).status).toBe('shipped');
+    expect(await listClosedIssueFiles(dir)).toEqual(['1-one.md']);
+  });
+});
+
 describe('PATCH /api/issues/:id/reopen', () => {
   test('reopens a closed issue', async () => {
     await writeIssue(dir, makeIssue({ id: 1, title: 'Issue' }));

@@ -1,7 +1,13 @@
 import type { ClaimUser } from './claim.ts';
 import { invalidInput } from './errors.ts';
 import type { Config, Issue, Priority, Status } from './types.ts';
-import { isClosedStatus } from './types.ts';
+import {
+  isClosedStatus,
+  priorityNames,
+  type StatusConfig,
+  statusNames,
+  statusSortOrder,
+} from './workflow.ts';
 
 /**
  * Issue list filtering, search and sorting — shared by `gitrac ls` and
@@ -11,7 +17,8 @@ import { isClosedStatus } from './types.ts';
  *   an issue matches a filter if it matches **any** of its values, and must
  *   match **every** filter given.
  * - `status`: configured statuses, or `all`. Without it only open
- *   (non-closed) issues are listed.
+ *   (non-closed) issues are listed. Status and priority names are matched
+ *   case-insensitively (configured names are lowercase).
  * - `assignee`: case-insensitive, by stored value, name or email (names and
  *   emails are linked through `config.assignees`).
  * - `mine`: issues assigned to the given user (their name or email).
@@ -38,6 +45,9 @@ export const SORT_FIELDS = [
   'updated',
 ] as const;
 export type SortField = (typeof SORT_FIELDS)[number];
+
+/** The config a query is parsed, filtered and sorted against. */
+export type QueryConfig = Pick<Config, 'statuses' | 'priorities' | 'assignees'>;
 
 /** Raw filter input: CLI option strings or (possibly repeated) query params. */
 export interface RawIssueQuery {
@@ -74,28 +84,28 @@ export function parseIssueQuery(
   options: { mine?: ClaimUser } = {},
 ): IssueQuery {
   const errors: string[] = [];
+  const knownStatuses = statusNames(config);
+  const knownPriorities = priorityNames(config);
 
   const statuses = splitValues(raw.status).map((s) => s.toLowerCase());
   let status: IssueQuery['status'];
   if (statuses.includes('all')) {
     status = 'all';
   } else if (statuses.length > 0) {
-    const bad = statuses.filter((s) => !config.statuses.includes(s as Status));
+    const bad = statuses.filter((s) => !knownStatuses.includes(s));
     if (bad.length > 0) {
       errors.push(
-        `Invalid status "${bad.join(', ')}": must be one of ${[...config.statuses, 'all'].join(', ')}`,
+        `Invalid status "${bad.join(', ')}": must be one of ${[...knownStatuses, 'all'].join(', ')}`,
       );
     }
-    status = unique(statuses) as Status[];
+    status = unique(statuses);
   }
 
   const priorities = splitValues(raw.priority).map((p) => p.toLowerCase());
-  const badPriorities = priorities.filter(
-    (p) => !config.priorities.includes(p as Priority),
-  );
+  const badPriorities = priorities.filter((p) => !knownPriorities.includes(p));
   if (badPriorities.length > 0) {
     errors.push(
-      `Invalid priority "${badPriorities.join(', ')}": must be one of ${config.priorities.join(', ')}`,
+      `Invalid priority "${badPriorities.join(', ')}": must be one of ${knownPriorities.join(', ')}`,
     );
   }
 
@@ -117,8 +127,7 @@ export function parseIssueQuery(
 
   return {
     status,
-    priority:
-      priorities.length > 0 ? (unique(priorities) as Priority[]) : undefined,
+    priority: priorities.length > 0 ? unique(priorities) : undefined,
     label: labels.length > 0 ? unique(labels) : undefined,
     assignee: assignees.length > 0 ? unique(assignees) : undefined,
     mine: options.mine,
@@ -131,9 +140,12 @@ export function parseIssueQuery(
  * Whether the query can match issues in `.issues/closed/` (so the caller
  * must load them): `status=all`, or any closed status.
  */
-export function includesClosed(query: Pick<IssueQuery, 'status'>): boolean {
+export function includesClosed(
+  query: Pick<IssueQuery, 'status'>,
+  config: StatusConfig,
+): boolean {
   if (query.status === 'all') return true;
-  return (query.status ?? []).some((s) => isClosedStatus(s));
+  return (query.status ?? []).some((s) => isClosedStatus(config, s));
 }
 
 function norm(value: string): string {
@@ -172,7 +184,7 @@ function matchesSearch(issue: Issue, search: string): boolean {
 export function filterIssues(
   issues: Issue[],
   query: Omit<IssueQuery, 'sort'>,
-  config: Pick<Config, 'assignees'> = { assignees: [] },
+  config: Pick<Config, 'statuses' | 'assignees'>,
 ): Issue[] {
   const { status, priority, label, assignee, mine, search } = query;
   const assigneeSet = assignee && assigneeAliases(assignee, config.assignees);
@@ -180,7 +192,7 @@ export function filterIssues(
     mine && assigneeAliases([mine.name, mine.email], config.assignees);
   return issues.filter((issue) => {
     if (status === undefined) {
-      if (isClosedStatus(issue.status)) return false;
+      if (isClosedStatus(config, issue.status)) return false;
     } else if (status !== 'all' && !status.includes(issue.status)) {
       return false;
     }
@@ -193,15 +205,6 @@ export function filterIssues(
   });
 }
 
-const PRIORITY_ORDER: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
-const STATUS_ORDER: Status[] = [
-  'in_progress',
-  'todo',
-  'backlog',
-  'done',
-  'cancelled',
-];
-
 function rank<T>(order: T[], value: T): number {
   const i = order.indexOf(value);
   return i === -1 ? order.length : i;
@@ -213,19 +216,30 @@ function time(iso: string): number {
 }
 
 /**
- * Sort issues (returns a new array). `id` ascending; `priority` most urgent
- * first; `status` in_progress, todo, backlog, done, cancelled; `created` /
- * `updated` newest first. Ties are broken by ID ascending.
+ * Sort issues (returns a new array). `id` ascending; `priority` in configured
+ * order (most urgent first); `status` open statuses furthest along the
+ * workflow first, then closed ones in configured order
+ * (`statusSortOrder`; built-in: in_progress, todo, backlog, done,
+ * cancelled); `created` / `updated` newest first. Unconfigured statuses and
+ * priorities sort last. Ties are broken by ID ascending.
  */
-export function sortIssues(issues: Issue[], sort: SortField): Issue[] {
+export function sortIssues(
+  issues: Issue[],
+  sort: SortField,
+  config: Pick<Config, 'statuses' | 'priorities'>,
+): Issue[] {
   const compare: (a: Issue, b: Issue) => number = (() => {
     switch (sort) {
-      case 'priority':
+      case 'priority': {
+        const order: Priority[] = priorityNames(config);
         return (a: Issue, b: Issue) =>
-          rank(PRIORITY_ORDER, a.priority) - rank(PRIORITY_ORDER, b.priority);
-      case 'status':
+          rank(order, a.priority) - rank(order, b.priority);
+      }
+      case 'status': {
+        const order: Status[] = statusSortOrder(config);
         return (a: Issue, b: Issue) =>
-          rank(STATUS_ORDER, a.status) - rank(STATUS_ORDER, b.status);
+          rank(order, a.status) - rank(order, b.status);
+      }
       case 'created':
         return (a: Issue, b: Issue) => time(b.created) - time(a.created);
       case 'updated':
@@ -241,7 +255,7 @@ export function sortIssues(issues: Issue[], sort: SortField): Issue[] {
 export function queryIssues(
   issues: Issue[],
   query: IssueQuery,
-  config: Pick<Config, 'assignees'> = { assignees: [] },
+  config: QueryConfig,
 ): Issue[] {
-  return sortIssues(filterIssues(issues, query, config), query.sort);
+  return sortIssues(filterIssues(issues, query, config), query.sort, config);
 }

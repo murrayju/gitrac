@@ -6,6 +6,7 @@ import {
   validateIssue,
   validateIssueFields,
 } from './validate.ts';
+import { priorityDefinitions, statusDefinitions } from './workflow.ts';
 
 function makeValidIssue(overrides: Partial<Issue> = {}): Issue {
   return {
@@ -178,8 +179,8 @@ describe('validateIssueFields', () => {
   test('rejects statuses/priorities not in the configured lists', () => {
     const narrow = {
       ...config,
-      statuses: ['todo', 'done'] as Issue['status'][],
-      priorities: ['high', 'low'] as Issue['priority'][],
+      statuses: statusDefinitions(['todo', 'done']),
+      priorities: priorityDefinitions(['high', 'low']),
     };
     const result = validateIssueFields(
       { status: 'backlog', priority: 'medium' },

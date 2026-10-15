@@ -3,6 +3,7 @@ import { findAssigneeByEmail } from '../core/config.ts';
 import { describeLocation } from '../core/elsewhere.ts';
 import { GitracError } from '../core/errors.ts';
 import type { Config, Issue } from '../core/types.ts';
+import { activeStatus, unclaimStatus } from '../core/workflow.ts';
 import { relocateIssue, writeConfig } from '../fs/issue-store.ts';
 import { issueStatesElsewhere } from '../git/elsewhere.ts';
 import { withRepoLock } from '../git/lock.ts';
@@ -52,7 +53,8 @@ function addClaimComment(
 
 /**
  * Assign the issue to the context's identity (email if known, else name) and
- * set it `in_progress`. Throws `already_claimed` if someone else has it —
+ * set it to the configured active status (`activeStatus`, default
+ * `in_progress`). Throws `already_claimed` if someone else has it —
  * here, or in a newer version on another branch or in another worktree
  * (committed or not; `details.ref` / `details.worktree` say where) — and
  * `issue_closed` if it is closed (`force` overrides both; a closed issue is
@@ -75,7 +77,8 @@ export async function claimIssue(
     );
 
     // Decided under the lock, on the freshly-read issue.
-    const decision = decideClaim(issue, user, {
+    const active = activeStatus(config);
+    const decision = decideClaim(issue, user, config, {
       force: options.force,
       inClosedDir: stored.closed,
       elsewhere,
@@ -85,8 +88,8 @@ export async function claimIssue(
       throw new GitracError(
         'already_claimed',
         where
-          ? `Issue #${id} is already claimed by ${where.assignee} (in_progress) ${describeLocation(where)}.`
-          : `Issue #${id} is already claimed by ${decision.assignee} (in_progress).`,
+          ? `Issue #${id} is already claimed by ${where.assignee} (${active}) ${describeLocation(where)}.`
+          : `Issue #${id} is already claimed by ${decision.assignee} (${active}).`,
         {
           details: where
             ? { id, assignee: where.assignee, claimedElsewhere: where }
@@ -107,7 +110,7 @@ export async function claimIssue(
 
     // Use email as the canonical identifier if available, else the name
     issue.assignee = claimAssignee(user);
-    issue.status = 'in_progress';
+    issue.status = active;
 
     // Add the user to config.assignees if not already present (by email)
     let configChanged = false;
@@ -120,7 +123,7 @@ export async function claimIssue(
     issue.updated = now;
     addClaimComment(issue, user.name, options.comment, now);
 
-    // in_progress is an open status, so write to the open dir; the old file
+    // The active status is open (config validation), so write to the open dir; the old file
     // goes if it was in the closed dir or its name doesn't match the title.
     const paths = await relocateIssue(ctx.dir, issue, stored, {
       closed: false,
@@ -139,8 +142,9 @@ export async function claimIssue(
 }
 
 /**
- * Give an issue back: clear the assignee and move `in_progress` back to
- * `todo`. Throws `already_claimed` if it is someone else's (unless `force`)
+ * Give an issue back: clear the assignee and move it from the active status
+ * (default `in_progress`) back to the unclaim status (`unclaimStatus`,
+ * default `todo`); other statuses are kept. Throws `already_claimed` if it is someone else's (unless `force`)
  * and `issue_closed` if it is closed.
  */
 export async function unclaimIssue(
@@ -154,7 +158,7 @@ export async function unclaimIssue(
     const stored = await loadStoredIssue(ctx.dir, id);
     const { issue } = stored;
 
-    const decision = decideUnclaim(issue, user, {
+    const decision = decideUnclaim(issue, user, config, {
       force: options.force,
       inClosedDir: stored.closed,
     });
@@ -177,8 +181,8 @@ export async function unclaimIssue(
     }
 
     issue.assignee = '';
-    if (issue.status === 'in_progress') {
-      issue.status = 'todo';
+    if (issue.status === activeStatus(config)) {
+      issue.status = unclaimStatus(config);
     }
     const now = new Date().toISOString();
     issue.updated = now;

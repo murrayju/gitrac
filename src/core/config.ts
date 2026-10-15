@@ -1,20 +1,18 @@
 import yaml from 'js-yaml';
-import type { Assignee, Config, GitConfig } from './types.ts';
-
-const VALID_STATUSES: readonly string[] = [
-  'backlog',
-  'todo',
-  'in_progress',
-  'done',
-  'cancelled',
-];
-const VALID_PRIORITIES: readonly string[] = [
-  'urgent',
-  'high',
-  'medium',
-  'low',
-  'none',
-];
+import type {
+  Assignee,
+  Config,
+  GitConfig,
+  PriorityDefinition,
+  StatusDefinition,
+} from './types.ts';
+import {
+  DEFAULT_PRIORITY,
+  DEFAULT_STATUS,
+  defaultPriorityDefinitions,
+  defaultStatusDefinitions,
+  isLegacyClosed,
+} from './workflow.ts';
 
 const DEFAULT_GIT: GitConfig = {
   autoCommit: true,
@@ -122,81 +120,292 @@ export function createDefaultConfig(): Config {
   const defaultLabelNames = ['bug', 'feature', 'enhancement', 'docs', 'chore'];
   return {
     version: 1,
-    statuses: ['backlog', 'todo', 'in_progress', 'done', 'cancelled'],
+    statuses: defaultStatusDefinitions(),
     labels: ensureLabelColors(defaultLabelNames, {}),
     assignees: [],
-    priorities: ['urgent', 'high', 'medium', 'low', 'none'],
-    defaultStatus: 'backlog',
-    defaultPriority: 'medium',
+    priorities: defaultPriorityDefinitions(),
+    defaultStatus: DEFAULT_STATUS,
+    defaultPriority: DEFAULT_PRIORITY,
     git: { ...DEFAULT_GIT },
   };
 }
 
 /**
- * Type guard to validate that an unknown value is a valid Config.
+ * Status and priority names: lowercase letters, digits, `_` and `-`,
+ * starting with a letter or digit (list filters are comma-separated and
+ * case-insensitive, so names can't contain commas or differ only by case).
  */
-export function validateConfig(value: unknown): value is Config {
-  if (typeof value !== 'object' || value === null) {
-    return false;
+const NAME_RE = /^[a-z0-9][a-z0-9_-]*$/;
+/** Status / priority badge colors. */
+const COLOR_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+const STATUS_KEYS = new Set(['name', 'label', 'color', 'closed']);
+const PRIORITY_KEYS = new Set(['name', 'label', 'color']);
+
+/** The optional workflow-status keys and whether each must be closed. */
+const WORKFLOW_KEYS = [
+  ['activeStatus', false],
+  ['unclaimStatus', false],
+  ['closeStatus', true],
+  ['cancelStatus', true],
+] as const;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Check one `statuses` / `priorities` entry (a plain name, or a definition
+ * object); returns its name, or null (with `errors` added) if invalid.
+ */
+function checkEntry(
+  entry: unknown,
+  where: string,
+  allowed: ReadonlySet<string>,
+  errors: string[],
+): string | null {
+  if (typeof entry === 'string') {
+    if (!NAME_RE.test(entry)) {
+      errors.push(
+        `${where}: invalid name ${JSON.stringify(entry)} (use lowercase letters, digits, "_" and "-")`,
+      );
+      return null;
+    }
+    return entry;
   }
+  if (!isPlainObject(entry)) {
+    errors.push(`${where}: must be a name or an object with a "name"`);
+    return null;
+  }
+  let ok = true;
+  for (const key of Object.keys(entry)) {
+    if (!allowed.has(key)) {
+      errors.push(
+        `${where}: unknown key "${key}" (allowed: ${[...allowed].join(', ')})`,
+      );
+      ok = false;
+    }
+  }
+  if (typeof entry.name !== 'string' || !NAME_RE.test(entry.name)) {
+    errors.push(
+      `${where}: invalid name ${JSON.stringify(entry.name)} (use lowercase letters, digits, "_" and "-")`,
+    );
+    ok = false;
+  }
+  if (
+    entry.label !== undefined &&
+    (typeof entry.label !== 'string' || !entry.label.trim())
+  ) {
+    errors.push(`${where}: label must be a non-empty string`);
+    ok = false;
+  }
+  if (
+    entry.color !== undefined &&
+    (typeof entry.color !== 'string' || !COLOR_RE.test(entry.color))
+  ) {
+    errors.push(`${where}: color must be a hex color like "#4dba6f"`);
+    ok = false;
+  }
+  if (entry.closed !== undefined && typeof entry.closed !== 'boolean') {
+    errors.push(`${where}: closed must be true or false`);
+    ok = false;
+  }
+  return ok ? (entry.name as string) : null;
+}
 
-  const obj = value as Record<string, unknown>;
+/**
+ * Check a `statuses` / `priorities` list; returns the valid entries' names
+ * (and, for statuses, closed flags), or null if the list itself is invalid.
+ */
+function checkList(
+  value: unknown,
+  key: 'statuses' | 'priorities',
+  errors: string[],
+): Map<string, boolean> | null {
+  if (!Array.isArray(value)) {
+    errors.push(`${key} must be a list`);
+    return null;
+  }
+  if (value.length === 0) {
+    errors.push(`${key} must not be empty`);
+    return null;
+  }
+  const allowed = key === 'statuses' ? STATUS_KEYS : PRIORITY_KEYS;
+  const names = new Map<string, boolean>();
+  let ok = true;
+  value.forEach((entry: unknown, i) => {
+    const name = checkEntry(entry, `${key}[${i}]`, allowed, errors);
+    if (name === null) {
+      ok = false;
+      return;
+    }
+    if (names.has(name)) {
+      errors.push(`${key}[${i}]: duplicate name "${name}"`);
+      ok = false;
+      return;
+    }
+    if (key === 'statuses' && name === 'all') {
+      errors.push(`${key}[${i}]: "all" is reserved (it means every status)`);
+      ok = false;
+      return;
+    }
+    const closed =
+      isPlainObject(entry) && typeof entry.closed === 'boolean'
+        ? entry.closed
+        : isLegacyClosed(name);
+    names.set(name, closed);
+  });
+  return ok ? names : null;
+}
 
-  if (typeof obj.version !== 'number') return false;
+/** Check the status-valued keys against the (valid) statuses. */
+function checkWorkflow(
+  obj: Record<string, unknown>,
+  statuses: Map<string, boolean>,
+  errors: string[],
+): void {
+  const list = [...statuses.keys()].join(', ');
+  const open = [...statuses.values()].filter((closed) => !closed).length;
+  if (open === 0) errors.push('statuses: at least one must be open');
+  if (open === statuses.size) {
+    errors.push('statuses: at least one must be closed (closed: true)');
+  }
+  const check = (key: string, mustBeClosed: boolean, required: boolean) => {
+    const value = obj[key];
+    if (value === undefined && !required) return;
+    if (typeof value !== 'string') {
+      errors.push(`${key} must be a status name`);
+      return;
+    }
+    const closed = statuses.get(value);
+    if (closed === undefined) {
+      errors.push(`${key} "${value}" is not a configured status (${list})`);
+    } else if (closed !== mustBeClosed) {
+      errors.push(
+        `${key} "${value}" must be ${mustBeClosed ? 'a closed' : 'an open'} status`,
+      );
+    }
+  };
+  check('defaultStatus', false, true);
+  for (const [key, mustBeClosed] of WORKFLOW_KEYS) {
+    check(key, mustBeClosed, false);
+  }
+  if (
+    typeof obj.unclaimStatus === 'string' &&
+    obj.unclaimStatus === obj.activeStatus
+  ) {
+    errors.push('unclaimStatus must differ from activeStatus');
+  }
+}
+
+/**
+ * Every problem with a config (empty if it is valid), as readable messages.
+ * Accepts the file form (`statuses` / `priorities` entries may be plain
+ * names or definition objects) and so also a parsed {@link Config}.
+ *
+ * Rules: statuses and priorities are non-empty lists of unique names
+ * (lowercase letters, digits, `_`, `-`; `all` is not a status) with optional
+ * `label` / hex `color` (and, for statuses, `closed`); at least one status is
+ * open and one closed; `defaultStatus` is a configured open status and
+ * `defaultPriority` a configured priority; `activeStatus` / `unclaimStatus`,
+ * if set, are configured open statuses (and differ); `closeStatus` /
+ * `cancelStatus`, if set, are configured closed statuses.
+ */
+export function configErrors(value: unknown): string[] {
+  if (!isPlainObject(value)) return ['config must be a YAML object'];
+  const obj = value;
+  const errors: string[] = [];
+
+  if (typeof obj.version !== 'number') errors.push('version must be a number');
   // Legacy ID counter: optional, but must be a number if present.
-  if (obj.nextId !== undefined && typeof obj.nextId !== 'number') return false;
-  if (!Array.isArray(obj.statuses)) return false;
-  if (!Array.isArray(obj.priorities)) return false;
-  if (typeof obj.defaultStatus !== 'string') return false;
-  if (typeof obj.defaultPriority !== 'string') return false;
-
-  // Validate labels is a plain object with string values (label name -> hex color)
-  if (typeof obj.labels !== 'object' || obj.labels === null) {
-    return false;
-  }
-  if (Array.isArray(obj.labels)) return false;
-  for (const v of Object.values(obj.labels as Record<string, unknown>)) {
-    if (typeof v !== 'string') return false;
+  if (obj.nextId !== undefined && typeof obj.nextId !== 'number') {
+    errors.push('nextId must be a number');
   }
 
-  // Validate all statuses are valid
-  for (const s of obj.statuses) {
-    if (!VALID_STATUSES.includes(s as string)) return false;
+  const statuses = checkList(obj.statuses, 'statuses', errors);
+  if (statuses) {
+    checkWorkflow(obj, statuses, errors);
+  } else if (typeof obj.defaultStatus !== 'string') {
+    errors.push('defaultStatus must be a status name');
   }
 
-  // Validate all priorities are valid
-  for (const p of obj.priorities) {
-    if (!VALID_PRIORITIES.includes(p as string)) return false;
+  const priorities = checkList(obj.priorities, 'priorities', errors);
+  if (typeof obj.defaultPriority !== 'string') {
+    errors.push('defaultPriority must be a priority name');
+  } else if (priorities && !priorities.has(obj.defaultPriority)) {
+    errors.push(
+      `defaultPriority "${obj.defaultPriority}" is not a configured priority (${[...priorities.keys()].join(', ')})`,
+    );
   }
 
-  // Validate defaultStatus is in the statuses list
-  if (!VALID_STATUSES.includes(obj.defaultStatus as string)) return false;
+  // labels: a map of label name -> color
+  if (!isPlainObject(obj.labels)) {
+    errors.push('labels must be a map of label name to color');
+  } else if (Object.values(obj.labels).some((v) => typeof v !== 'string')) {
+    errors.push('labels: every color must be a string');
+  }
 
-  // Validate defaultPriority is in the priorities list
-  if (!VALID_PRIORITIES.includes(obj.defaultPriority as string)) return false;
-
-  // Validate assignees if present (optional, defaults to [] for backward compat)
+  // assignees: optional (defaults to [] for backward compat)
   if (obj.assignees !== undefined) {
-    if (!Array.isArray(obj.assignees)) return false;
-    for (const a of obj.assignees) {
-      if (typeof a !== 'object' || a === null) return false;
-      const assignee = a as Record<string, unknown>;
-      if (typeof assignee.name !== 'string') return false;
-      if (typeof assignee.email !== 'string') return false;
+    if (
+      !Array.isArray(obj.assignees) ||
+      obj.assignees.some(
+        (a: unknown) =>
+          !isPlainObject(a) ||
+          typeof a.name !== 'string' ||
+          typeof a.email !== 'string',
+      )
+    ) {
+      errors.push('assignees must be a list of { name, email }');
     }
   }
 
-  // Validate git section if present
+  // git: optional
   if (obj.git !== undefined) {
-    if (typeof obj.git !== 'object' || obj.git === null) return false;
-    const git = obj.git as Record<string, unknown>;
-    if (typeof git.autoCommit !== 'boolean') return false;
-    if (typeof git.autoPush !== 'boolean') return false;
-    if (typeof git.commitPrefix !== 'string') return false;
-    if (typeof git.defaultBranch !== 'string') return false;
+    const git = obj.git;
+    if (
+      !isPlainObject(git) ||
+      typeof git.autoCommit !== 'boolean' ||
+      typeof git.autoPush !== 'boolean' ||
+      typeof git.commitPrefix !== 'string' ||
+      typeof git.defaultBranch !== 'string'
+    ) {
+      errors.push(
+        'git must have boolean autoCommit/autoPush and string commitPrefix/defaultBranch',
+      );
+    }
   }
 
-  return true;
+  return errors;
+}
+
+/** Whether `value` is a valid config (see {@link configErrors}). */
+export function validateConfig(value: unknown): value is Config {
+  return configErrors(value).length === 0;
+}
+
+/** Normalize a (valid) `statuses` entry to a definition. */
+function toStatusDefinition(entry: unknown): StatusDefinition {
+  if (typeof entry === 'string') {
+    return { name: entry, closed: isLegacyClosed(entry) };
+  }
+  const e = entry as Record<string, unknown>;
+  const name = e.name as string;
+  return {
+    name,
+    ...(typeof e.label === 'string' ? { label: e.label } : {}),
+    ...(typeof e.color === 'string' ? { color: e.color } : {}),
+    closed: typeof e.closed === 'boolean' ? e.closed : isLegacyClosed(name),
+  };
+}
+
+/** Normalize a (valid) `priorities` entry to a definition. */
+function toPriorityDefinition(entry: unknown): PriorityDefinition {
+  if (typeof entry === 'string') return { name: entry };
+  const e = entry as Record<string, unknown>;
+  const def: PriorityDefinition = { name: e.name as string };
+  if (typeof e.label === 'string') def.label = e.label;
+  if (typeof e.color === 'string') def.color = e.color;
+  return def;
 }
 
 /**
@@ -262,11 +471,14 @@ export function parseConfig(yamlStr: string): Config {
     raw.assignees = [];
   }
 
-  if (!validateConfig(raw)) {
-    throw new Error('Invalid config: validation failed');
-  }
+  const errors = configErrors(raw);
+  if (errors.length > 0) throw new Error(errors.join('; '));
 
-  return raw;
+  // Plain-name entries (the legacy format) become definitions: `done` /
+  // `cancelled` are closed, any other name is open.
+  raw.statuses = (raw.statuses as unknown[]).map(toStatusDefinition);
+  raw.priorities = (raw.priorities as unknown[]).map(toPriorityDefinition);
+  return raw as unknown as Config;
 }
 
 /**
@@ -301,5 +513,44 @@ export function resolveAssigneeName(
  * existing config files byte-identical.
  */
 export function serializeConfig(config: Config): string {
-  return yaml.dump(config, { lineWidth: -1 });
+  return yaml.dump(
+    {
+      ...config,
+      statuses: config.statuses.map(compactStatus),
+      priorities: config.priorities.map(compactPriority),
+    },
+    { lineWidth: -1 },
+  );
+}
+
+/**
+ * A status as written to `config.yaml`: its plain name when that says
+ * everything (no label/color, and `closed` is the default for the name: true
+ * only for `done` / `cancelled`), else `{ name, label?, color?, closed }`. So
+ * a plain-list config is written back unchanged (and stays readable by older
+ * gitrac versions) until a status needs more than a name.
+ */
+function compactStatus(def: StatusDefinition): string | StatusDefinition {
+  if (
+    def.label === undefined &&
+    def.color === undefined &&
+    def.closed === isLegacyClosed(def.name)
+  ) {
+    return def.name;
+  }
+  return {
+    name: def.name,
+    ...(def.label !== undefined ? { label: def.label } : {}),
+    ...(def.color !== undefined ? { color: def.color } : {}),
+    closed: def.closed,
+  };
+}
+
+/** A priority as written: its plain name unless it has a label or color. */
+function compactPriority(def: PriorityDefinition): string | PriorityDefinition {
+  if (def.label === undefined && def.color === undefined) return def.name;
+  const out: PriorityDefinition = { name: def.name };
+  if (def.label !== undefined) out.label = def.label;
+  if (def.color !== undefined) out.color = def.color;
+  return out;
 }

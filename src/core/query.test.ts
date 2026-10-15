@@ -155,27 +155,79 @@ describe('parseIssueQuery + queryIssues', () => {
 
 describe('includesClosed', () => {
   test('only when a closed status or all is requested', () => {
-    expect(includesClosed({})).toBe(false);
-    expect(includesClosed({ status: ['todo'] })).toBe(false);
-    expect(includesClosed({ status: ['todo', 'done'] })).toBe(true);
-    expect(includesClosed({ status: 'all' })).toBe(true);
+    expect(includesClosed({}, config)).toBe(false);
+    expect(includesClosed({ status: ['todo'] }, config)).toBe(false);
+    expect(includesClosed({ status: ['todo', 'done'] }, config)).toBe(true);
+    expect(includesClosed({ status: 'all' }, config)).toBe(true);
   });
 });
 
 describe('sortIssues', () => {
-  const all = filterIssues(ISSUES, { status: 'all' });
+  const all = filterIssues(ISSUES, { status: 'all' }, config);
   test('priority: most urgent first, ties by id', () => {
-    expect(sortIssues(all, 'priority').map((i) => i.id)).toEqual([
+    expect(sortIssues(all, 'priority', config).map((i) => i.id)).toEqual([
       1, 3, 4, 2, 5,
     ]);
   });
   test('status: in_progress, todo, backlog, done, cancelled', () => {
-    expect(sortIssues(all, 'status').map((i) => i.id)).toEqual([4, 1, 2, 3, 5]);
+    expect(sortIssues(all, 'status', config).map((i) => i.id)).toEqual([
+      4, 1, 2, 3, 5,
+    ]);
   });
   test('updated/created: newest first', () => {
     const a = issue({ id: 1, updated: '2025-01-01T00:00:00Z' });
     const b = issue({ id: 2, updated: '2025-02-01T00:00:00Z', created: 'x' });
-    expect(sortIssues([a, b], 'updated').map((i) => i.id)).toEqual([2, 1]);
-    expect(sortIssues([b, a], 'created').map((i) => i.id)).toEqual([1, 2]);
+    expect(sortIssues([a, b], 'updated', config).map((i) => i.id)).toEqual([
+      2, 1,
+    ]);
+    expect(sortIssues([b, a], 'created', config).map((i) => i.id)).toEqual([
+      1, 2,
+    ]);
+  });
+});
+
+describe('configured statuses and priorities (#57)', () => {
+  const custom: Config = {
+    ...config,
+    statuses: [
+      { name: 'new', closed: false },
+      { name: 'doing', closed: false },
+      { name: 'review', closed: false },
+      { name: 'shipped', closed: true },
+      { name: 'dropped', closed: true },
+    ],
+    priorities: [{ name: 'p0' }, { name: 'p1' }, { name: 'p2' }],
+    defaultStatus: 'new',
+    defaultPriority: 'p1',
+  };
+  const list = [
+    issue({ id: 1, status: 'new', priority: 'p2' }),
+    issue({ id: 2, status: 'shipped', priority: 'p0' }),
+    issue({ id: 3, status: 'review', priority: 'p1' }),
+    issue({ id: 4, status: 'doing', priority: 'p0' }),
+    issue({ id: 5, status: 'dropped', priority: 'p2' }),
+  ];
+  const run = (raw: Parameters<typeof parseIssueQuery>[0]) =>
+    queryIssues(list, parseIssueQuery(raw, custom), custom).map((i) => i.id);
+
+  test('default listing hides the configured closed statuses', () => {
+    expect(run({})).toEqual([1, 3, 4]);
+    expect(includesClosed({ status: ['shipped'] }, custom)).toBe(true);
+    expect(includesClosed({ status: ['review'] }, custom)).toBe(false);
+  });
+
+  test('sorts by the configured orders', () => {
+    expect(run({ status: 'all', sort: 'status' })).toEqual([3, 4, 1, 2, 5]);
+    expect(run({ status: 'all', sort: 'priority' })).toEqual([2, 4, 3, 1, 5]);
+  });
+
+  test('filters validate against (and match case-insensitively) the configured names', () => {
+    expect(run({ status: 'REVIEW', priority: 'P1' })).toEqual([3]);
+    expect(() => run({ status: 'todo' })).toThrow(
+      'must be one of new, doing, review, shipped, dropped, all',
+    );
+    expect(() => run({ priority: 'urgent' })).toThrow(
+      'must be one of p0, p1, p2',
+    );
   });
 });

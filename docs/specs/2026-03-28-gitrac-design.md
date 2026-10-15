@@ -53,7 +53,45 @@ git:
   defaultBranch: main
 ```
 
-`statuses`, `labels`, and `priorities` are the source of truth — the CLI/UI validate against these. Users can customize by editing config. Config is validated on load with fail-fast behavior and clear error messages for invalid/missing fields. A `nextId:` key written by older gitrac versions is still accepted (it must be a number) and read as a lower bound for new IDs, but gitrac never writes, bumps or adds it any more — see [Issue ID Scheme](#issue-id-scheme). Like issue frontmatter, `config.yaml` is parsed with the YAML core schema (js-yaml 4, a pinned direct dependency): `!!js/*`, `!!timestamp`, `!!binary`, `!!set`/`!!omap` tags are rejected, so a config from an untrusted clone/PR can only ever yield plain strings, numbers, booleans, nulls, lists and maps, and date-like values (e.g. `defaultBranch: 2026-03-28`) stay strings.
+`statuses`, `labels`, and `priorities` are the source of truth — the CLI/UI validate against these. Users can customize by editing config (see [Statuses and Priorities](#statuses-and-priorities)). Config is validated on load with fail-fast behavior and clear error messages for invalid/missing fields. A `nextId:` key written by older gitrac versions is still accepted (it must be a number) and read as a lower bound for new IDs, but gitrac never writes, bumps or adds it any more — see [Issue ID Scheme](#issue-id-scheme). Like issue frontmatter, `config.yaml` is parsed with the YAML core schema (js-yaml 4, a pinned direct dependency): `!!js/*`, `!!timestamp`, `!!binary`, `!!set`/`!!omap` tags are rejected, so a config from an untrusted clone/PR can only ever yield plain strings, numbers, booleans, nulls, lists and maps, and date-like values (e.g. `defaultBranch: 2026-03-28`) stay strings.
+
+#### Statuses and Priorities
+
+Statuses and priorities are fully configurable; nothing in gitrac depends on the built-in names (`backlog`, `todo`, `in_progress`, `done`, `cancelled`; `urgent` … `none`) except as defaults. The rules live in `src/core/workflow.ts`.
+
+```yaml
+statuses:                  # workflow order: dropdowns, filters
+  - backlog                # a plain name...
+  - todo
+  - name: in_progress      # ...or a definition
+    label: In Progress     #   optional display name (default: name humanized)
+    color: '#d4a843'       #   optional badge color (#rgb / #rrggbb)
+  - name: review
+    closed: false          #   closed issues live in .issues/closed/
+  - done
+  - name: wontfix
+    label: Won't fix
+    closed: true
+priorities:                # most urgent first (--sort priority order)
+  - name: urgent
+    color: '#e05d5d'
+  - high
+  - medium
+  - low
+defaultStatus: backlog     # new issues and reopen; must be open
+defaultPriority: medium
+activeStatus: in_progress  # optional: what claim sets (claimed = this + assigned); open
+unclaimStatus: todo        # optional: where unclaim moves an active issue; open
+closeStatus: done          # optional: what close sets; closed
+cancelStatus: wontfix      # optional: what close --cancelled sets; closed
+```
+
+- **Entries** are a plain name or `{ name, label?, color?, closed? }` (priorities: no `closed`). Names are lowercase letters, digits, `_` and `-` (filters are comma-separated and case-insensitive); `all` is not a status. A plain name — or a definition without `closed` — is closed only if it is `done` or `cancelled`, so the old plain-list format (`statuses: [backlog, todo, in_progress, done, cancelled]`) still works unchanged and is read as before; an unknown legacy name is open. A status an issue has but the config doesn't list is judged by the same rule.
+- **Workflow statuses:** when a key is unset, the built-in name is used if it is a configured status of the right kind, else a fallback: `activeStatus` → `in_progress`, else the last open status; `unclaimStatus` → `todo` (unless it's the active status), else `defaultStatus`; `closeStatus` → `done`, else the first closed status; `cancelStatus` → `cancelled`, else none (`close --cancelled` then fails with `invalid_input`, exit 2 / HTTP 400, naming the closed statuses).
+- **Validation** (on every read; an inconsistent config is `invalid_config`, exit 1, with every problem listed, e.g. `Invalid .issues/config.yaml: defaultStatus "done" must be an open status`): `statuses` and `priorities` are non-empty lists of unique, valid names; unknown keys in a definition, a non-hex `color` or a non-boolean `closed` are errors; at least one status is open and one closed; `defaultStatus` is a configured open status, `defaultPriority` a configured priority; `activeStatus` / `unclaimStatus` (if set) are configured open statuses and differ; `closeStatus` / `cancelStatus` (if set) are configured closed statuses.
+- **Order:** `--sort priority` follows `priorities`; `--sort status` lists open statuses furthest along the workflow first (reverse of their order in `statuses`), then closed ones in configured order — for the built-ins `in_progress, todo, backlog, done, cancelled`. Unconfigured values sort last. The web UI's column sort uses the same orders.
+- **Format on disk:** gitrac never rewrites `config.yaml` just because it read it. When it writes it for another reason (registering a label, adding an assignee, a merge), each status/priority that needs nothing beyond its name (no label/color, `closed` equal to the default for that name) is written as a plain name and the rest as definitions — so a plain-list config stays byte-for-byte a plain list (and readable by older gitrac versions) until a status needs more than a name. The optional workflow keys are only written if present.
+- **Web UI:** status/priority dropdowns, list filters and badges come from `GET /api/config` (`statuses` / `priorities` are returned as normalized definitions, `closed` always set); a configured `color` tints the badge, otherwise the built-in colors by name, gray for anything else.
 
 **Write validation:** Every create/update path (CLI `create`/`edit`, `POST`/`PATCH /api/issues`) validates its input with `validateIssueFields` (`src/core/validate.ts`) before writing anything: `status` and `priority` must be in the configured lists, `title` must be a non-empty string, `labels` an array of non-empty strings, `assignee`/`description` strings. Titles and labels are trimmed and labels de-duplicated. Invalid input is rejected as a whole — the CLI prints each error and exits 2 (`invalid_input`), the API returns 400 `{ error, errors[] }` — and no file changes and no ID is allocated. Unknown labels are not an error: both the CLI and the web register them in `config.labels` with an auto-assigned color, committed alongside the issue.
 
@@ -126,11 +164,11 @@ Two optional relations, stored only in the dependent issue's frontmatter (one ed
 - `blockedBy: [ids]` — this issue can't start until those are closed. The inverse, "blocks", is derived.
 - `parent: id` — this issue is a sub-issue of that one (inverse: sub-issues). Informational only: it doesn't affect readiness.
 
-**Resolved blockers.** A blocker is resolved when it is closed with either `done` **or** `cancelled`, or no longer exists (deleted). A cancelled blocker will never be done, so treating it as blocking would strand its dependents forever; re-plan them instead (e.g. `unlink`, or cancel them too).
+**Resolved blockers.** A blocker is resolved when it is in any closed status — e.g. `done` **or** `cancelled` — or no longer exists (deleted). A cancelled blocker will never be done, so treating it as blocking would strand its dependents forever; re-plan them instead (e.g. `unlink`, or cancel them too).
 
 **Validation** (`validateLinks`, `src/core/dependencies.ts`, run by `linkIssue` under the repo lock against every open and closed issue): an issue can't be blocked by itself or be its own parent, every target must exist, a new `blockedBy` edge must not close a cycle (directly or transitively), and a new parent must not make the issue its own ancestor. Violations are `invalid_input` (exit 2 / HTTP 400 `{ error, errors }`) and nothing is written. Unlinking needs no validation (links to deleted issues can be removed). Links that two branches add independently can still form a cycle after a merge; such issues are simply never ready until one link is removed.
 
-**Ready.** An issue is *ready* for a user when it is available to them (`isAvailableTo`, `src/core/ready.ts`: open, and unassigned or assigned to them — issues assigned to someone else are skipped in any status; judged by the issue's effective state across worktrees and branches, see [Claims on other branches and worktrees](#claims-on-other-branches-and-worktrees)) and none of its blockers is open. `gitrac ready` lists them (default sort: priority, then ID); `gitrac next` picks the first one that isn't already `in_progress` (so several agents sharing one git identity each get a different issue) and `next --claim` claims it with the normal claim rules, choosing and claiming under one hold of the repo lock so concurrent `next --claim`s never get the same issue.
+**Ready.** An issue is *ready* for a user when it is available to them (`isAvailableTo`, `src/core/ready.ts`: open, and unassigned or assigned to them — issues assigned to someone else are skipped in any status; judged by the issue's effective state across worktrees and branches, see [Claims on other branches and worktrees](#claims-on-other-branches-and-worktrees)) and none of its blockers is open. `gitrac ready` lists them (default sort: priority, then ID); `gitrac next` picks the first one that isn't already in the active status (`in_progress` by default; so several agents sharing one git identity each get a different issue) and `next --claim` claims it with the normal claim rules, choosing and claiming under one hold of the repo lock so concurrent `next --claim`s never get the same issue.
 
 ### Issue ID Scheme
 
@@ -197,15 +235,15 @@ src/
 | `gitrac show <id>` | `view` | Show full issue detail |
 | `gitrac edit <id>` | | Edit issue fields (title, status, priority, assignee, labels, description). See [Text Input](#text-input). |
 | `gitrac comment <id> [body]` | `c` | Add a comment. Body from the argument, `-F, --body-file <path\|->`, or piped stdin. |
-| `gitrac close <id>` | | Close issue (moves to `.issues/closed/`). `--cancelled` flag sets status to `cancelled` instead of `done`. Fails with exit **3** (`invalid_state`, nothing written) if the issue is already closed. |
+| `gitrac close <id>` | | Close issue (moves to `.issues/closed/`) with the configured `closeStatus` (default `done`); `--cancelled` uses `cancelStatus` (default `cancelled`; exit **2** if none is configured), `-s, --status <status>` any configured closed status. Fails with exit **3** (`invalid_state`, nothing written) if the issue is already closed. |
 | `gitrac reopen <id>` | | Reopen issue (moves back to `.issues/`) with status `defaultStatus` from the config, or `-s, --status <status>` (any configured non-closed status). Fails with exit **3** (`invalid_state`) if the issue is already open. |
-| `gitrac claim <id>` | | Assign to self + set status to `in_progress`. Exclusive: see [Claiming](#claiming). |
+| `gitrac claim <id>` | | Assign to self + set status to the configured `activeStatus` (default `in_progress`). Exclusive: see [Claiming](#claiming). |
 | `gitrac delete <id>` | `rm` | Delete an issue (open or closed): removes its file plus any `.issues/assets/` files no other issue or draft references, and commits the removal (`issue: delete #N <title>`). See [Deleting](#deleting). |
-| `gitrac unclaim <id>` | `release` | Give an issue back: clear `assignee`, and set `in_progress` back to `todo`. See [Claiming](#claiming). |
+| `gitrac unclaim <id>` | `release` | Give an issue back: clear `assignee`, and set the active status (`in_progress`) back to `unclaimStatus` (`todo`). See [Claiming](#claiming). |
 | `gitrac link <id>` | | Add dependencies: `-b, --blocked-by <ids>` (comma-separated, repeatable) adds blockers, `--parent <id>` sets the parent. Exit 2 (nothing written) for a missing target, a self-link or a cycle; re-adding existing links is a no-op (exit 0, no commit). Commit: `issue: link #N <title>`. See [Dependencies](#dependencies). |
 | `gitrac unlink <id>` | | Remove dependencies: `-b, --blocked-by <ids>`, `--parent` (clears it). Removing links that aren't there is a no-op. |
 | `gitrac ready` | | List ready issues (see [Dependencies](#dependencies)): open, unassigned or yours, no open blockers; sorted by priority, then ID. Filters `--status` (open statuses; default all of them), `--priority`, `--label`, `--mine`, `--search`, `--sort` as in [List Filters](#list-filters). |
-| `gitrac next` | | Show the top ready issue that isn't already `in_progress`; `--claim` claims it atomically (`-c` adds a comment). Same filters as `ready`. Exit **5** (`no_ready_issues`) if there is none. |
+| `gitrac next` | | Show the top ready issue that isn't already in the active status (`in_progress`); `--claim` claims it atomically (`-c` adds a comment). Same filters as `ready`. Exit **5** (`no_ready_issues`) if there is none. |
 | `gitrac install-merge-driver` | | Install the git merge driver: write `.issues/.gitattributes` (committed if changed) and `merge.gitrac.*` in the local git config. `--command <cmd>` sets what git runs. Idempotent; run once per clone. See [Conflict Resolution](#conflict-resolution). |
 | `gitrac merge-driver <base> <ours> <theirs> [path]` | | The merge driver itself (run by git as `%O %A %B %P`, `--marker-size %L`). Writes the result to `<ours>`; exits 0 if clean, 1 if conflicts remain. |
 
@@ -232,12 +270,14 @@ Because global flags are matched anywhere on the command line, they must not def
 
 The claimer's identity is their git `user.email` (falling back to `user.name`), or the `--author` name if given; an `assignee` matches the user if it equals (case-insensitively) either their email or name. The check and the write happen under the repo mutation lock, so of several concurrent claims exactly one wins.
 
+In this section `in_progress` stands for the configured `activeStatus` and `todo` for `unclaimStatus` (see [Statuses and Priorities](#statuses-and-priorities)); "closed" means any closed status.
+
 | Situation | `claim` | `claim --force` |
 |-----------|---------|-----------------|
 | Open, unassigned (or assigned but not `in_progress`) | Claims | Claims |
 | `in_progress`, assigned to someone else | Fails, exit **3**, no change | Takes over |
 | `in_progress`, assigned to you | No-op (exit 0, no commit; `-c` comment is not added) | No-op |
-| Closed (`done`/`cancelled`) | Fails, exit **4**, no change | Reopens and claims |
+| Closed (a closed status, e.g. `done`/`cancelled`) | Fails, exit **4**, no change | Reopens and claims |
 
 `unclaim <id>` (alias `release`) clears `assignee` and moves `in_progress` back to `todo` (other statuses are kept). It fails with exit **3** if the issue is assigned to someone else (`--force` overrides), exits **4** for closed issues, and is a no-op if the issue is unassigned. Accepts `-c, --comment`.
 
@@ -341,7 +381,8 @@ Filtering, search and sorting are one pure function (`src/core/query.ts`, loaded
 - Without `--status`, only open (non-closed-status) issues are listed; `all` (alone or in a list) lists everything. `.issues/closed/` is only read when a closed status or `all` is asked for.
 - `--assignee` compares case-insensitively with the stored value, and a name or email listed in `config.assignees` also matches its counterpart (`--assignee "Justin Murray"` finds `assignee: justin@…`). `--mine` does the same for the current user's name and email.
 - `--search <text>`: every whitespace-separated word must occur (case-insensitively) in the title or description.
-- `--sort`: `id` (default, ascending), `priority` (urgent first), `status` (in_progress, todo, backlog, done, cancelled), `created` / `updated` (newest first); ties by ID.
+- `--sort`: `id` (default, ascending), `priority` (configured order, most urgent first), `status` (open statuses furthest along first, then closed; built-in: in_progress, todo, backlog, done, cancelled — see [Statuses and Priorities](#statuses-and-priorities)), `created` / `updated` (newest first); ties by ID.
+- Status and priority values are matched case-insensitively against the configured names.
 - Unknown statuses, priorities or sort fields are rejected (exit 2 / HTTP 400). Labels and assignees are free-form — no match just means an empty list.
 - The human output shows ID, title, status, priority, assignee, updated date and labels.
 
@@ -475,7 +516,7 @@ The server has no authentication, so exposure is limited instead (`src/web/secur
 | GET | `/api/issues/:id/dependencies` | `{ parent, children, blockedBy, blocks, blocked }`: the linked issues as `{ id, title, status, resolved }` (`status: null`, `resolved: true` for a missing issue); `blocks`/`children` are derived. The issue itself (`GET /api/issues/:id`) carries `parent` / `blockedBy` when set |
 | POST | `/api/issues/:id/link` | `{ blockedBy?: id \| id[], parent?: id }`: add blockers / set the parent. **400** `{ error, errors }` for a missing target, a self-link or a cycle. Honors `If-Match` |
 | POST | `/api/issues/:id/unlink` | `{ blockedBy?: id \| id[], parent?: true }`: remove blockers / clear the parent. Honors `If-Match` |
-| PATCH | `/api/issues/:id/close` | Close issue (status `done`). **409** `{ error, code: "invalid_state", current }` if already closed |
+| PATCH | `/api/issues/:id/close` | Close issue with the configured close status (`done`); optional body `{ status }` (a configured closed status) or `{ cancelled: true }` (the cancel status), else 400. **409** `{ error, code: "invalid_state", current }` if already closed |
 | PATCH | `/api/issues/:id/reopen` | Reopen issue with `defaultStatus` (optional body `{ status }`: a non-closed status, else 400). **409** `invalid_state` if already open |
 | GET | `/api/config` | Get project config |
 | PATCH | `/api/config/labels` | Merge label colors (`{ labels: { name: color } }`). **400** if `labels` isn't an object (including a non-JSON or `null` body) |
@@ -493,7 +534,7 @@ The server has no authentication, so exposure is limited instead (`src/web/secur
 
 **Detail View:** Tiptap WYSIWYG editor for description (auto-save on change; external changes are loaded into the editor or flagged as a conflict — see "Concurrency"). Inline metadata editing (dropdowns for status, priority, assignee, labels). Below the metadata, a read-only dependencies panel lists the parent, sub-issues, blockers and the issues this one blocks (linked, with status; closed/missing ones struck through; refreshed on every change); links are edited with `gitrac link` / `unlink` or the API. Comments rendered below with author/timestamp. Tiptap "add comment" editor at bottom. "Delete issue" at the bottom of the sidebar asks for confirmation, deletes with `If-Match` (a 409 shows the latest version instead), then returns to the list. All changes trigger commit (with amend-until-pushed logic).
 
-**Visual Style:** Dark theme by default (with light theme option). Status colors: backlog=gray, todo=blue, in_progress=yellow, done=green, cancelled=red. Clean sans-serif typography, minimal chrome.
+**Visual Style:** Dark theme by default (with light theme option). Status colors: a status's configured `color`, else backlog=gray, todo=blue, in_progress=yellow, done=green, cancelled=red, gray for other statuses (priority dots likewise). Clean sans-serif typography, minimal chrome.
 
 **Branch Warning:** Persistent yellow banner when not on default branch.
 

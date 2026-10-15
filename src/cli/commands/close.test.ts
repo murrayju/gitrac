@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import simpleGit from 'simple-git';
 import { EXIT_CONFLICT, EXIT_INVALID_INPUT } from '../../core/errors.ts';
+import type { Config } from '../../core/types.ts';
 import {
   findIssueFile,
   listClosedIssueFiles,
@@ -101,6 +102,62 @@ describe('close', () => {
     expect(await listIssueFiles(dir)).toEqual([]);
     expect(await listClosedIssueFiles(dir)).toEqual(['1-some-work.md']);
     expect(await commitCount()).toBe(commits);
+  });
+});
+
+describe('close with configured statuses (#57)', () => {
+  async function useStatuses(extra: Partial<Config> = {}) {
+    const config = await readConfig(dir);
+    config.statuses = [
+      { name: 'backlog', closed: false },
+      { name: 'doing', closed: false },
+      { name: 'fixed', closed: true },
+      { name: 'wontfix', label: "Won't fix", closed: true },
+    ];
+    Object.assign(config, extra);
+    await writeConfig(dir, config);
+  }
+
+  test('closes with closeStatus, -s, or --cancelled -> cancelStatus', async () => {
+    await useStatuses({ closeStatus: 'fixed', cancelStatus: 'wontfix' });
+    expect((await cli('close', '1')).code).toBe(0);
+    expect((await readIssue(dir, 1)).status).toBe('fixed');
+    expect((await cli('reopen', '1')).code).toBe(0);
+    expect((await cli('close', '1', '--cancelled')).code).toBe(0);
+    expect((await readIssue(dir, 1)).status).toBe('wontfix');
+    expect((await cli('reopen', '1')).code).toBe(0);
+    expect((await cli('close', '1', '-s', 'wontfix')).code).toBe(0);
+    expect((await readIssue(dir, 1)).status).toBe('wontfix');
+    expect(await listClosedIssueFiles(dir)).toEqual(['1-some-work.md']);
+  });
+
+  test('--cancelled without a cancel status fails clearly (exit 2), nothing written', async () => {
+    await useStatuses();
+    const before = await issueText();
+    const commits = await commitCount();
+    const res = await cli('close', '1', '--cancelled');
+    expect(res.code).toBe(EXIT_INVALID_INPUT);
+    expect(res.stderr).toContain('No cancel status is configured');
+    // -s with an open status is rejected too
+    const bad = await cli('close', '1', '-s', 'doing');
+    expect(bad.code).toBe(EXIT_INVALID_INPUT);
+    expect(bad.stderr).toContain('must be one of fixed, wontfix');
+    expect(await issueText()).toBe(before);
+    expect(await commitCount()).toBe(commits);
+  });
+
+  test('an invalid status config is reported as invalid_config', async () => {
+    const path = join(dir, '.issues', 'config.yaml');
+    const content = await readFile(path, 'utf-8');
+    await writeFile(
+      path,
+      content.replace('defaultStatus: backlog', 'defaultStatus: done'),
+    );
+    const res = await cli('ls');
+    expect(res.code).toBe(1);
+    expect(res.stderr).toContain(
+      'Invalid .issues/config.yaml: defaultStatus "done" must be an open status',
+    );
   });
 });
 

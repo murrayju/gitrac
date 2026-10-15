@@ -32,9 +32,11 @@ export function registerShowCommand(program: Command): void {
       if (globalOpts.output === 'human') {
         const byId = indexIssues((await loadAllIssues(dir)).issues);
         byId.set(issue.id, issue);
-        deps = describeDependencies(issue, byId);
+        deps = describeDependencies(issue, byId, config);
       }
-      const claim = (await findClaimsElsewhere(dir, [issue])).get(issue.id);
+      const claim = (await findClaimsElsewhere(dir, [issue], config)).get(
+        issue.id,
+      );
       console.log(formatIssueDetail(issue, globalOpts.output, deps, claim));
     });
 }

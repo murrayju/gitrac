@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -18,6 +19,7 @@ import {
 } from './api.ts';
 import { issueEvents } from './lib/event-stream.ts';
 import { createSharedQuery } from './lib/shared-query.ts';
+import { type WorkflowView, workflowView } from './lib/workflow.ts';
 
 /**
  * Call `onEvent` whenever the server reports changes (and on every
@@ -174,6 +176,16 @@ export function useConfig(): {
     refetch: refetchConfig,
     applyConfig: configQuery.set,
   };
+}
+
+/**
+ * The configured statuses and priorities (names, labels, order; see
+ * `lib/workflow.ts`), from the shared config — the built-in defaults until
+ * it has loaded.
+ */
+export function useWorkflow(): WorkflowView {
+  const { config } = useConfig();
+  return useMemo(() => workflowView(config), [config]);
 }
 
 function refetchConfig(): void {

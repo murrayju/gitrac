@@ -2,9 +2,10 @@ import type { ClaimUser } from '../core/claim.ts';
 import { indexIssues } from '../core/dependencies.ts';
 import { type ClaimedElsewhere, claimedElsewhere } from '../core/elsewhere.ts';
 import { GitracError } from '../core/errors.ts';
-import type { IssueQuery } from '../core/query.ts';
+import type { IssueQuery, QueryConfig } from '../core/query.ts';
 import { nextIssue, readyIssues } from '../core/ready.ts';
-import type { Config, Issue } from '../core/types.ts';
+import type { Issue } from '../core/types.ts';
+import type { WorkflowConfig } from '../core/workflow.ts';
 import { issueStatesElsewhere } from '../git/elsewhere.ts';
 import { withRepoLock } from '../git/lock.ts';
 import { type ClaimResult, claimIssue } from './claim.ts';
@@ -35,7 +36,7 @@ export async function listReadyIssues(
   dir: string,
   user: ClaimUser,
   query: IssueQuery,
-  config: Pick<Config, 'assignees'>,
+  config: QueryConfig & WorkflowConfig,
 ): Promise<ReadyListing> {
   const [{ issues, unreadable }, elsewhere] = await Promise.all([
     loadAllIssues(dir),
@@ -51,14 +52,14 @@ export async function listReadyIssues(
   );
   const claims = new Map<number, ClaimedElsewhere>();
   for (const issue of ready) {
-    const claim = claimedElsewhere(issue, elsewhere.get(issue.id));
+    const claim = claimedElsewhere(issue, config, elsewhere.get(issue.id));
     if (claim) claims.set(issue.id, claim);
   }
   return {
     issues: ready,
     unreadable,
     claimedElsewhere: claims,
-    next: nextIssue(ready, elsewhere),
+    next: nextIssue(ready, config, elsewhere),
   };
 }
 
@@ -75,7 +76,7 @@ export async function findNextIssue(
   dir: string,
   user: ClaimUser,
   query: IssueQuery,
-  config: Pick<Config, 'assignees'>,
+  config: QueryConfig & WorkflowConfig,
 ): Promise<{ issue: Issue; unreadable: string[] }> {
   const { next: issue, unreadable } = await listReadyIssues(
     dir,

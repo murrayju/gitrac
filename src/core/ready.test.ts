@@ -41,23 +41,33 @@ function ready(issues: Issue[], raw: Record<string, string> = {}): number[] {
 
 describe('isAvailableTo', () => {
   test('open and unassigned or mine', () => {
-    expect(isAvailableTo(issue(1), ME)).toBe(true);
-    expect(isAvailableTo(issue(1, { assignee: 'ADA@example.com' }), ME)).toBe(
-      true,
-    );
+    expect(isAvailableTo(issue(1), ME, config)).toBe(true);
     expect(
-      isAvailableTo(issue(1, { status: 'in_progress', assignee: 'Ada' }), ME),
+      isAvailableTo(issue(1, { assignee: 'ADA@example.com' }), ME, config),
+    ).toBe(true);
+    expect(
+      isAvailableTo(
+        issue(1, { status: 'in_progress', assignee: 'Ada' }),
+        ME,
+        config,
+      ),
     ).toBe(true);
   });
 
   test("not closed, and not someone else's (in any status)", () => {
-    expect(isAvailableTo(issue(1, { status: 'done' }), ME)).toBe(false);
-    expect(isAvailableTo(issue(1, { status: 'cancelled' }), ME)).toBe(false);
-    expect(isAvailableTo(issue(1, { assignee: 'bob@example.com' }), ME)).toBe(
+    expect(isAvailableTo(issue(1, { status: 'done' }), ME, config)).toBe(false);
+    expect(isAvailableTo(issue(1, { status: 'cancelled' }), ME, config)).toBe(
       false,
     );
     expect(
-      isAvailableTo(issue(1, { status: 'in_progress', assignee: 'bob' }), ME),
+      isAvailableTo(issue(1, { assignee: 'bob@example.com' }), ME, config),
+    ).toBe(false);
+    expect(
+      isAvailableTo(
+        issue(1, { status: 'in_progress', assignee: 'bob' }),
+        ME,
+        config,
+      ),
     ).toBe(false);
   });
 });
@@ -125,8 +135,8 @@ describe('nextIssue', () => {
       issue(2),
       issue(3),
     ];
-    expect(nextIssue(list)?.id).toBe(2);
-    expect(nextIssue([list[0] as Issue])).toBeUndefined();
+    expect(nextIssue(list, config)?.id).toBe(2);
+    expect(nextIssue([list[0] as Issue], config)).toBeUndefined();
   });
 });
 
@@ -143,26 +153,31 @@ describe('with versions elsewhere (#56)', () => {
   });
 
   test('isAvailableTo uses the effective (newest) state', () => {
-    expect(isAvailableTo(issue(1), ME, [claimElsewhere()])).toBe(false);
+    expect(isAvailableTo(issue(1), ME, config, [claimElsewhere()])).toBe(false);
     // Closed on another branch that isn't merged yet.
     expect(
-      isAvailableTo(issue(1), ME, [claimElsewhere({ status: 'done' })]),
+      isAvailableTo(issue(1), ME, config, [claimElsewhere({ status: 'done' })]),
     ).toBe(false);
     // Mine elsewhere: still available to me.
     expect(
-      isAvailableTo(issue(1), ME, [claimElsewhere({ assignee: ME.email })]),
+      isAvailableTo(issue(1), ME, config, [
+        claimElsewhere({ assignee: ME.email }),
+      ]),
     ).toBe(true);
     // Older than the local version: ignored.
     expect(
-      isAvailableTo(issue(1, { updated: '2025-01-03T00:00:00Z' }), ME, [
+      isAvailableTo(issue(1, { updated: '2025-01-03T00:00:00Z' }), ME, config, [
         claimElsewhere(),
       ]),
     ).toBe(true);
     // A newer release elsewhere frees a local claim.
     expect(
-      isAvailableTo(issue(1, { status: 'in_progress', assignee: 'bob' }), ME, [
-        claimElsewhere({ status: 'todo', assignee: '' }),
-      ]),
+      isAvailableTo(
+        issue(1, { status: 'in_progress', assignee: 'bob' }),
+        ME,
+        config,
+        [claimElsewhere({ status: 'todo', assignee: '' })],
+      ),
     ).toBe(true);
   });
 
@@ -182,7 +197,7 @@ describe('with versions elsewhere (#56)', () => {
       elsewhere,
     );
     expect(list.map((i) => i.id)).toEqual([2, 3]);
-    expect(nextIssue(list, elsewhere)?.id).toBe(3);
-    expect(nextIssue(list)?.id).toBe(2);
+    expect(nextIssue(list, config, elsewhere)?.id).toBe(3);
+    expect(nextIssue(list, config)?.id).toBe(2);
   });
 });

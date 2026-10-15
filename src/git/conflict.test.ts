@@ -544,6 +544,40 @@ describe('mergeConfigFiles', () => {
     expect(merged.defaultStatus).toBe('todo');
   });
 
+  test('merges status definitions changed on one side with labels on the other (#57)', () => {
+    const statuses = [
+      ...baseConfig.statuses.slice(0, 3),
+      { name: 'review', color: '#d4a843', closed: false },
+      ...baseConfig.statuses.slice(3),
+    ];
+    const merged = mergeConfigFiles(
+      base,
+      variant({ labels: { ...baseConfig.labels, api: '#4dba6f' } }),
+      variant({ statuses, activeStatus: 'review' }),
+    );
+    const config = parseConfig(merged);
+    expect(config.statuses).toEqual(statuses);
+    expect(config.activeStatus).toBe('review');
+    expect(config.labels.api).toBe('#4dba6f');
+    // Untouched statuses stay plain names in the file.
+    expect(merged).toContain(
+      "  - in_progress\n  - name: review\n    color: '#d4a843'\n    closed: false\n  - done\n",
+    );
+  });
+
+  test('an inconsistent merged status config falls back (throws) (#57)', () => {
+    // Ours drops `cancelled`; theirs makes it the cancel status.
+    expect(() =>
+      mergeConfigFiles(
+        base,
+        variant({
+          statuses: baseConfig.statuses.filter((s) => s.name !== 'cancelled'),
+        }),
+        variant({ cancelStatus: 'cancelled' }),
+      ),
+    ).toThrow('the merged config is invalid');
+  });
+
   test('unions labels; ours wins color conflicts; recolors clashes', () => {
     const merged = parseConfig(
       mergeConfigFiles(

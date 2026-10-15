@@ -109,7 +109,10 @@ export function registerReadyCommands(program: Command): void {
         'Show the top ready issue that is not already in progress; with --claim, claim it ' +
           '(atomically, under the repo lock). Exits 5 if no issue is ready.',
       )
-      .option('--claim', 'Claim it (assign to yourself and set in_progress)')
+      .option(
+        '--claim',
+        'Claim it (assign to yourself and set the active status, default in_progress)',
+      )
       .option('-c, --comment <text>', 'Add a comment when claiming'),
   ).action(
     async (

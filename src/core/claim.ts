@@ -6,14 +6,19 @@ import {
   newestElsewhere,
 } from './elsewhere.ts';
 import type { Issue } from './types.ts';
-import { isClosedStatus } from './types.ts';
+import {
+  activeStatus,
+  isClosedStatus,
+  type WorkflowConfig,
+} from './workflow.ts';
 
 /**
  * Exit codes for `claim` / `unclaim`: {@link EXIT_ALREADY_CLAIMED} when the
- * issue is claimed by someone else (in_progress + assigned to another user;
- * `--force` overrides), {@link EXIT_ISSUE_CLOSED} when it is closed (`done` or
- * `cancelled`; `claim --force` reopens and claims it). Defined with the other
- * exit codes in `errors.ts`.
+ * issue is claimed by someone else (in the configured active status —
+ * `in_progress` by default — and assigned to another user; `--force`
+ * overrides), {@link EXIT_ISSUE_CLOSED} when it is closed (a closed status;
+ * `claim --force` reopens and claims it). Defined with the other exit codes
+ * in `errors.ts`.
  */
 export { EXIT_ALREADY_CLAIMED, EXIT_ISSUE_CLOSED } from './errors.ts';
 
@@ -49,12 +54,12 @@ export function isAssignedTo(
 }
 
 export type ClaimDecision =
-  /** Proceed: assign to the user and set in_progress. */
+  /** Proceed: assign to the user and set the active status. */
   | { action: 'claim'; reopen: boolean }
-  /** Already in_progress and assigned to the user: nothing to do. */
+  /** Already active and assigned to the user: nothing to do. */
   | { action: 'noop' }
   /**
-   * Refused: in_progress and assigned to someone else — here, or (`elsewhere`)
+   * Refused: active and assigned to someone else — here, or (`elsewhere`)
    * on another branch or worktree whose version is newer.
    */
   | {
@@ -83,23 +88,27 @@ export interface ClaimOptions {
 }
 
 /**
- * Decide what `claim` should do with `issue` (pure; no I/O).
+ * Decide what `claim` should do with `issue` (pure; no I/O). "Active" is
+ * the configured active status (`activeStatus`, default `in_progress`; see
+ * `src/core/workflow.ts`).
  *
- * - Closed issues (status `done`/`cancelled`, or living in `closed/`) are
- *   refused unless `force`, in which case they are reopened and claimed.
+ * - Closed issues (a closed status, or living in `closed/`) are refused
+ *   unless `force`, in which case they are reopened and claimed.
  * - An issue whose effective state (the newest version here or in
- *   `elsewhere`) is `in_progress` and assigned to someone else is refused
- *   unless `force`.
- * - An issue that is `in_progress` and already assigned to the user here,
- *   with no newer version elsewhere, is a no-op.
+ *   `elsewhere`) is active and assigned to someone else is refused unless
+ *   `force`.
+ * - An issue that is active and already assigned to the user here, with no
+ *   newer version elsewhere, is a no-op.
  * - Anything else is claimed.
  */
 export function decideClaim(
   issue: LocalState,
   user: ClaimUser,
+  config: WorkflowConfig,
   options: ClaimOptions = {},
 ): ClaimDecision {
-  const closed = options.inClosedDir === true || isClosedStatus(issue.status);
+  const closed =
+    options.inClosedDir === true || isClosedStatus(config, issue.status);
   if (closed) {
     return options.force
       ? { action: 'claim', reopen: true }
@@ -107,7 +116,7 @@ export function decideClaim(
   }
   const newer = newestElsewhere(issue, options.elsewhere);
   const effective = effectiveState(issue, options.elsewhere);
-  if (effective.status === 'in_progress') {
+  if (effective.status === activeStatus(config)) {
     if (!newer && isAssignedTo(issue.assignee, user)) {
       return { action: 'noop' };
     }
@@ -116,7 +125,7 @@ export function decideClaim(
       !isAssignedTo(effective.assignee, user) &&
       !options.force
     ) {
-      const elsewhere = claimedElsewhere(issue, options.elsewhere);
+      const elsewhere = claimedElsewhere(issue, config, options.elsewhere);
       return elsewhere
         ? { action: 'already-claimed', assignee: elsewhere.assignee, elsewhere }
         : { action: 'already-claimed', assignee: effective.assignee };
@@ -126,7 +135,7 @@ export function decideClaim(
 }
 
 export type UnclaimDecision =
-  /** Proceed: clear the assignee (and move in_progress back to todo). */
+  /** Proceed: clear the assignee (and move the active status back). */
   | { action: 'unclaim' }
   /** Not assigned to anyone: nothing to do. */
   | { action: 'noop' }
@@ -144,9 +153,10 @@ export type UnclaimDecision =
 export function decideUnclaim(
   issue: Pick<Issue, 'status' | 'assignee'>,
   user: ClaimUser,
+  config: WorkflowConfig,
   options: { force?: boolean; inClosedDir?: boolean } = {},
 ): UnclaimDecision {
-  if (options.inClosedDir === true || isClosedStatus(issue.status)) {
+  if (options.inClosedDir === true || isClosedStatus(config, issue.status)) {
     return { action: 'closed' };
   }
   if (!issue.assignee?.trim()) {

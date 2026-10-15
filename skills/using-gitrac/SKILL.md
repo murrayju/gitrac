@@ -64,7 +64,7 @@ When installed as a binary, replace `./bun index.ts` with `gitrac` in all exampl
 | `gitrac link <id> --blocked-by 3,4` | `<id>` can't start until #3 and #4 are closed (`--parent <n>` makes it a sub-issue of #n). Rejects self-links, missing issues and cycles (exit 2) |
 | `gitrac unlink <id> --blocked-by 3` | Remove a blocker (`--parent` clears the parent) |
 | `gitrac unclaim <id>` | Give an issue back (alias `release`) |
-| `gitrac close <id>` | Close an issue (moves to closed/) |
+| `gitrac close <id>` | Close an issue (moves to closed/; status = config `closeStatus`, default `done`; `--cancelled` = `cancelStatus`, default `cancelled`; `-s <status>` any closed status) |
 | `gitrac close <id> --no-commit` | Close without committing (for atomic commits) |
 | `gitrac close <id> -c "text"` | Close with an inline comment |
 | `gitrac delete <id> --yes` | Delete an issue (duplicates, test issues) and the assets only it uses, in one commit. Without `--yes` and no terminal it only prints what would be deleted and exits 2; `--dry-run` previews (exit 0) |
@@ -246,6 +246,8 @@ gitrac create -t "Brief description" -p high -l bug
 Flags: `-t` title (required), `-p` priority, `-l` labels (comma-separated), `-a` assignee, `-s` status, `-d` description (markdown), `--description-file <path|->` description from a file or stdin (`-`).
 
 Status and priority must be one of the values in `.issues/config.yaml` — anything else is rejected (exit 2, nothing written). New labels are added to the config automatically with a color.
+
+**Statuses and priorities are project-specific.** Check `statuses` / `priorities` in `.issues/config.yaml` (or the error message, which lists them) rather than assuming the defaults (`backlog, todo, in_progress, done, cancelled`; `urgent, high, medium, low, none`). A status entry is a plain name or `{ name, label?, color?, closed? }`; `closed: true` statuses live in `.issues/closed/` (plain `done`/`cancelled` are closed, other plain names open). Optional keys pick the statuses commands use: `activeStatus` (what `claim` sets; default `in_progress`), `unclaimStatus` (`todo`), `closeStatus` (`done`), `cancelStatus` (`cancelled`; without one, `close --cancelled` exits 2). In this guide `in_progress` / `todo` / `done` mean those configured statuses. An inconsistent config (e.g. `defaultStatus` closed, no closed status) makes every command exit 1 (`invalid_config`) listing each problem.
 
 Don't over-describe in the title — put details (context, acceptance criteria) in the markdown description. For multi-line text, use a heredoc instead of shell-quoting:
 

@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { resolveAssigneeName } from '../../../core/config.ts';
 import type { Priority, Status } from '../../../core/types.ts';
+import { DEFAULT_STATUS } from '../../../core/workflow.ts';
 import type { Draft } from '../api.ts';
 import { createIssue, deleteDraft, saveDraft, uploadAsset } from '../api.ts';
-import { useConfig } from '../hooks.ts';
+import { useConfig, useWorkflow } from '../hooks.ts';
 import { useIdentityStore } from '../stores/identityStore.ts';
 import { AssigneePicker } from './AssigneePicker.tsx';
 import { Dropdown } from './Dropdown.tsx';
@@ -13,23 +14,6 @@ import { LabelBadge } from './LabelBadge.tsx';
 import { LabelPicker } from './LabelPicker.tsx';
 import { PriorityBadge } from './PriorityBadge.tsx';
 import { StatusBadge } from './StatusBadge.tsx';
-
-const PRIORITIES: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
-const STATUSES: Status[] = [
-  'backlog',
-  'todo',
-  'in_progress',
-  'done',
-  'cancelled',
-];
-
-const STATUS_LABELS: Record<Status, string> = {
-  backlog: 'Backlog',
-  todo: 'Todo',
-  in_progress: 'In Progress',
-  done: 'Done',
-  cancelled: 'Cancelled',
-};
 
 export interface CreateIssueModalProps {
   onClose: (reason?: 'submitted' | 'deleted' | 'saved') => void;
@@ -42,13 +26,19 @@ export function CreateIssueModal({
 }: CreateIssueModalProps) {
   const navigate = useNavigate();
   const { config } = useConfig();
+  const workflow = useWorkflow();
   const author = useIdentityStore((s) => s.author);
   const [title, setTitle] = useState(initialDraft?.title ?? '');
   const [status, setStatus] = useState<Status>(
-    (initialDraft?.status as Status) ?? config?.defaultStatus ?? 'backlog',
+    initialDraft?.status ?? config?.defaultStatus ?? DEFAULT_STATUS,
   );
+  // New issues start at priority `none` (or, if that isn't configured, the
+  // configured default priority).
   const [priority, setPriority] = useState<Priority>(
-    (initialDraft?.priority as Priority) ?? 'none',
+    initialDraft?.priority ??
+      (workflow.priorities.includes('none')
+        ? 'none'
+        : (config?.defaultPriority ?? 'none')),
   );
   const [assignee, setAssignee] = useState(initialDraft?.assignee ?? '');
   const [labels, setLabels] = useState<string[]>(initialDraft?.labels ?? []);
@@ -357,8 +347,8 @@ export function CreateIssueModal({
                 {/* Status pill */}
                 <Dropdown
                   value={status}
-                  options={STATUSES}
-                  labels={STATUS_LABELS}
+                  options={workflow.statuses}
+                  labels={workflow.statusLabels}
                   onChange={setStatus}
                 >
                   <StatusBadge status={status} onClick={() => {}} />
@@ -367,7 +357,8 @@ export function CreateIssueModal({
                 {/* Priority pill */}
                 <Dropdown
                   value={priority}
-                  options={PRIORITIES}
+                  options={workflow.priorities}
+                  labels={workflow.priorityLabels}
                   onChange={setPriority}
                 >
                   <PriorityBadge priority={priority} onClick={() => {}} />

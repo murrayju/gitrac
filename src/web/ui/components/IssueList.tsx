@@ -1,29 +1,15 @@
 import { useMemo } from 'react';
-import type { Issue, Priority, Status } from '../../../core/types.ts';
+import type { Issue } from '../../../core/types.ts';
+import { statusSortOrder } from '../../../core/workflow.ts';
 import type { IssueFilters } from '../api.ts';
-import { useConfig, useIssues } from '../hooks.ts';
+import { useConfig, useIssues, useWorkflow } from '../hooks.ts';
 import type { SortField } from '../stores/filterStore.ts';
 import { useFilterStore } from '../stores/filterStore.ts';
 import { IssueRow } from './IssueRow.tsx';
 
-const PRIORITY_ORDER: Record<Priority, number> = {
-  urgent: 0,
-  high: 1,
-  medium: 2,
-  low: 3,
-  none: 4,
-};
-
-const STATUS_ORDER: Record<Status, number> = {
-  in_progress: 0,
-  todo: 1,
-  backlog: 2,
-  done: 3,
-  cancelled: 4,
-};
-
 export function IssueList() {
   const { config } = useConfig();
+  const workflow = useWorkflow();
   const statusFilter = useFilterStore((s) => s.statusFilter);
   const setStatusFilter = useFilterStore((s) => s.setStatusFilter);
   const priorityFilter = useFilterStore((s) => s.priorityFilter);
@@ -43,6 +29,12 @@ export function IssueList() {
   const { issues, loading, error } = useIssues(filters);
 
   const sorted = useMemo(() => {
+    // Same orders as `gitrac ls --sort status|priority` (src/core/query.ts).
+    const statusOrder = statusSortOrder(workflow.source);
+    const rank = (order: string[], value: string) => {
+      const i = order.indexOf(value);
+      return i === -1 ? order.length : i;
+    };
     const list = [...issues];
     list.sort((a, b) => {
       let cmp = 0;
@@ -54,12 +46,12 @@ export function IssueList() {
           cmp = a.title.localeCompare(b.title);
           break;
         case 'status':
-          cmp = (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99);
+          cmp = rank(statusOrder, a.status) - rank(statusOrder, b.status);
           break;
         case 'priority':
           cmp =
-            (PRIORITY_ORDER[a.priority] ?? 99) -
-            (PRIORITY_ORDER[b.priority] ?? 99);
+            rank(workflow.priorities, a.priority) -
+            rank(workflow.priorities, b.priority);
           break;
         case 'assignee':
           cmp = a.assignee.localeCompare(b.assignee);
@@ -71,7 +63,7 @@ export function IssueList() {
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return list;
-  }, [issues, sortField, sortDir]);
+  }, [issues, sortField, sortDir, workflow]);
 
   function handleSort(field: SortField) {
     if (sortField === field) {
@@ -99,11 +91,10 @@ export function IssueList() {
             placeholder="Status"
             options={[
               { value: '', label: 'Open' },
-              { value: 'backlog', label: 'Backlog' },
-              { value: 'todo', label: 'Todo' },
-              { value: 'in_progress', label: 'In Progress' },
-              { value: 'done', label: 'Done' },
-              { value: 'cancelled', label: 'Cancelled' },
+              ...workflow.statuses.map((s) => ({
+                value: s,
+                label: workflow.statusLabels[s] ?? s,
+              })),
               { value: 'all', label: 'All' },
             ]}
           />
@@ -113,11 +104,10 @@ export function IssueList() {
             placeholder="Priority"
             options={[
               { value: '', label: 'All priorities' },
-              { value: 'urgent', label: 'Urgent' },
-              { value: 'high', label: 'High' },
-              { value: 'medium', label: 'Medium' },
-              { value: 'low', label: 'Low' },
-              { value: 'none', label: 'None' },
+              ...workflow.priorities.map((p) => ({
+                value: p,
+                label: workflow.priorityLabels[p] ?? p,
+              })),
             ]}
           />
           <FilterSelect

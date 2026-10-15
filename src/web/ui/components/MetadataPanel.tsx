@@ -1,7 +1,7 @@
 import { resolveAssigneeName } from '../../../core/config.ts';
 import type { Issue, Priority, Status } from '../../../core/types.ts';
 import { updateIssue } from '../api.ts';
-import { useConfig } from '../hooks.ts';
+import { useConfig, useWorkflow } from '../hooks.ts';
 import { AssigneePicker } from './AssigneePicker.tsx';
 import { Dropdown } from './Dropdown.tsx';
 import { LabelBadge } from './LabelBadge.tsx';
@@ -9,33 +9,9 @@ import { LabelPicker } from './LabelPicker.tsx';
 import { PriorityBadge } from './PriorityBadge.tsx';
 import { StatusBadge } from './StatusBadge.tsx';
 
-const STATUS_LABELS: Record<Status, string> = {
-  backlog: 'Backlog',
-  todo: 'Todo',
-  in_progress: 'In Progress',
-  done: 'Done',
-  cancelled: 'Cancelled',
-};
-
-const PRIORITY_LABELS: Record<Priority, string> = {
-  urgent: 'Urgent',
-  high: 'High',
-  medium: 'Medium',
-  low: 'Low',
-  none: 'None',
-};
-
-const STATUSES: Status[] = [
-  'backlog',
-  'todo',
-  'in_progress',
-  'done',
-  'cancelled',
-];
-const PRIORITIES: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
-
 export function MetadataPanel({ issue }: { issue: Issue }) {
   const { config } = useConfig();
+  const workflow = useWorkflow();
 
   async function handleStatusChange(status: Status) {
     await updateIssue(issue.id, { status });
@@ -77,8 +53,8 @@ export function MetadataPanel({ issue }: { issue: Issue }) {
         </div>
         <Dropdown
           value={issue.status}
-          options={STATUSES}
-          labels={STATUS_LABELS}
+          options={workflow.statuses}
+          labels={workflow.statusLabels}
           onChange={handleStatusChange}
         >
           <StatusBadge status={issue.status} onClick={() => {}} />
@@ -91,8 +67,8 @@ export function MetadataPanel({ issue }: { issue: Issue }) {
         </div>
         <Dropdown
           value={issue.priority}
-          options={PRIORITIES}
-          labels={PRIORITY_LABELS}
+          options={workflow.priorities}
+          labels={workflow.priorityLabels}
           onChange={handlePriorityChange}
         >
           <PriorityBadge priority={issue.priority} onClick={() => {}} />

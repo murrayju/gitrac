@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { createDefaultConfig } from './config.ts';
 import {
   claimedElsewhere,
   describeLocation,
@@ -9,6 +10,8 @@ import {
 } from './elsewhere.ts';
 
 /** Regression tests for #56: claims visible across worktrees and branches. */
+
+const CONFIG = createDefaultConfig();
 
 const local = {
   status: 'todo' as const,
@@ -75,7 +78,7 @@ describe('newestElsewhere / effectiveState', () => {
 describe('claimedElsewhere', () => {
   test('where and by whom, when the newest version is a claim', () => {
     expect(
-      claimedElsewhere(local, [
+      claimedElsewhere(local, CONFIG, [
         state('2026-01-03T00:00:00Z', { worktree: '/wt/a' }),
       ]),
     ).toEqual({
@@ -84,7 +87,9 @@ describe('claimedElsewhere', () => {
       assignee: 'bob@example.com',
       updated: '2026-01-03T00:00:00Z',
     });
-    expect(claimedElsewhere(local, [state('2026-01-03T00:00:00Z')])).toEqual({
+    expect(
+      claimedElsewhere(local, CONFIG, [state('2026-01-03T00:00:00Z')]),
+    ).toEqual({
       ref: 'feature',
       assignee: 'bob@example.com',
       updated: '2026-01-03T00:00:00Z',
@@ -97,17 +102,17 @@ describe('claimedElsewhere', () => {
       state('2026-01-04T00:00:00Z', { status: 'todo', assignee: '' }),
       state('2026-01-04T00:00:00Z', { status: 'done' }),
     ]) {
-      expect(claimedElsewhere(local, [claim, later])).toBeUndefined();
+      expect(claimedElsewhere(local, CONFIG, [claim, later])).toBeUndefined();
     }
     // ... and so does a newer local version.
     expect(
-      claimedElsewhere({ updated: '2026-01-05T00:00:00Z' }, [claim]),
+      claimedElsewhere({ updated: '2026-01-05T00:00:00Z' }, CONFIG, [claim]),
     ).toBeUndefined();
   });
 
   test('in progress but unassigned is not a claim', () => {
     expect(
-      claimedElsewhere(local, [
+      claimedElsewhere(local, CONFIG, [
         state('2026-01-03T00:00:00Z', { assignee: ' ' }),
       ]),
     ).toBeUndefined();

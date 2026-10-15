@@ -68,7 +68,7 @@ export function registerListCommand(program: Command): void {
           console.warn(`Warning: skipping unreadable issue file ${path}`);
         }
 
-        const claims = await findClaimsElsewhere(dir, issues);
+        const claims = await findClaimsElsewhere(dir, issues, config);
         console.log(formatIssueList(issues, globalOpts.output, claims));
       },
     );

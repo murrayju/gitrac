@@ -1,5 +1,5 @@
 import type { Issue } from './types.ts';
-import { isClosedStatus } from './types.ts';
+import { isClosedStatus, type StatusConfig } from './workflow.ts';
 
 /**
  * Issue dependencies (pure; no I/O). Two relations live in the frontmatter of
@@ -12,9 +12,9 @@ import { isClosedStatus } from './types.ts';
  *   "children", is derived the same way). It is informational: it doesn't
  *   affect readiness.
  *
- * A blocker counts as resolved when it is closed — `done` **or**
- * `cancelled` (a cancelled blocker will never be done, so treating it as
- * blocking would strand its dependents forever; re-plan them instead) — or
+ * A blocker counts as resolved when it is in any closed status — e.g. `done`
+ * **or** `cancelled` (a cancelled blocker will never be done, so treating it
+ * as blocking would strand its dependents forever; re-plan them instead) — or
  * when it doesn't exist any more (deleted), since nothing can resolve it.
  */
 
@@ -48,21 +48,23 @@ export function childrenOf(id: number, issues: Iterable<Issue>): number[] {
   return ids.sort((a, b) => a - b);
 }
 
-/** Whether blocker `id` is resolved: closed (done/cancelled) or missing. */
+/** Whether blocker `id` is resolved: in a closed status, or missing. */
 export function isBlockerResolved(
   id: number,
   byId: ReadonlyMap<number, Issue>,
+  config: StatusConfig,
 ): boolean {
   const blocker = byId.get(id);
-  return blocker === undefined || isClosedStatus(blocker.status);
+  return blocker === undefined || isClosedStatus(config, blocker.status);
 }
 
 /** The blockers of `issue` that are still open (existing and not closed). */
 export function openBlockers(
   issue: Pick<Issue, 'blockedBy'>,
   byId: ReadonlyMap<number, Issue>,
+  config: StatusConfig,
 ): number[] {
-  return blockersOf(issue).filter((id) => !isBlockerResolved(id, byId));
+  return blockersOf(issue).filter((id) => !isBlockerResolved(id, byId, config));
 }
 
 /**
@@ -277,7 +279,7 @@ export interface IssueRef {
   title: string;
   /** Null if the issue doesn't exist. */
   status: Issue['status'] | null;
-  /** Whether the linked issue is closed (done/cancelled) or missing. */
+  /** Whether the linked issue is in a closed status, or missing. */
   resolved: boolean;
 }
 
@@ -293,14 +295,18 @@ export interface IssueDependencies {
   blocked: boolean;
 }
 
-function issueRef(id: number, byId: ReadonlyMap<number, Issue>): IssueRef {
+function issueRef(
+  id: number,
+  byId: ReadonlyMap<number, Issue>,
+  config: StatusConfig,
+): IssueRef {
   const issue = byId.get(id);
   return issue
     ? {
         id,
         title: issue.title,
         status: issue.status,
-        resolved: isClosedStatus(issue.status),
+        resolved: isClosedStatus(config, issue.status),
       }
     : { id, title: '', status: null, resolved: true };
 }
@@ -309,14 +315,16 @@ function issueRef(id: number, byId: ReadonlyMap<number, Issue>): IssueRef {
 export function describeDependencies(
   issue: Issue,
   byId: ReadonlyMap<number, Issue>,
+  config: StatusConfig,
 ): IssueDependencies {
   const all = [...byId.values()];
-  const blockedBy = blockersOf(issue).map((id) => issueRef(id, byId));
+  const ref = (id: number) => issueRef(id, byId, config);
+  const blockedBy = blockersOf(issue).map(ref);
   return {
-    parent: issue.parent === undefined ? null : issueRef(issue.parent, byId),
-    children: childrenOf(issue.id, all).map((id) => issueRef(id, byId)),
+    parent: issue.parent === undefined ? null : ref(issue.parent),
+    children: childrenOf(issue.id, all).map(ref),
     blockedBy,
-    blocks: blocksOf(issue.id, all).map((id) => issueRef(id, byId)),
+    blocks: blocksOf(issue.id, all).map(ref),
     blocked: blockedBy.some((ref) => !ref.resolved),
   };
 }

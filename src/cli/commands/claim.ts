@@ -11,7 +11,7 @@ export function registerClaimCommand(program: Command): void {
   program
     .command('claim <id>')
     .description(
-      'Claim an issue (assign to yourself and set in_progress). ' +
+      'Claim an issue (assign to yourself and set the active status, default in_progress). ' +
         `Exits ${EXIT_ALREADY_CLAIMED} if someone else has it, ` +
         `${EXIT_ISSUE_CLOSED} if it is closed (override with --force).`,
     )

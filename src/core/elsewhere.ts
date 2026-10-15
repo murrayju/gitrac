@@ -1,4 +1,5 @@
 import type { Issue, Status } from './types.ts';
+import { activeStatus, type WorkflowConfig } from './workflow.ts';
 
 /**
  * Issue state on other branches and worktrees (pure; no I/O).
@@ -72,15 +73,21 @@ export function effectiveState(
 }
 
 /**
- * Whether the effective version of `issue` is a claim (in_progress and
- * assigned) found on another branch or worktree; returns where and by whom.
+ * Whether the effective version of `issue` is a claim (in the configured
+ * active status, default `in_progress`, and assigned) found on another
+ * branch or worktree; returns where and by whom.
  */
 export function claimedElsewhere(
   issue: { updated?: string },
+  config: WorkflowConfig,
   states: readonly IssueStateElsewhere[] = [],
 ): ClaimedElsewhere | undefined {
   const newest = newestElsewhere(issue, states);
-  if (newest?.status !== 'in_progress' || !newest.assignee.trim()) {
+  if (
+    newest === undefined ||
+    newest.status !== activeStatus(config) ||
+    !newest.assignee.trim()
+  ) {
     return undefined;
   }
   const { ref, worktree, assignee, updated } = newest;

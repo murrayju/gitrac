@@ -3,6 +3,7 @@ import { readdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { GitracError } from '../core/errors.ts';
 import { serializeIssue } from '../core/issue.ts';
+import { statusDefinitions } from '../core/workflow.ts';
 import {
   findIssueFile,
   listAllIssueFiles,
@@ -127,11 +128,15 @@ describe('createIssue', () => {
 
   test('a default status missing from the configured statuses is rejected', async () => {
     const config = await readConfig(fx.dir);
-    config.statuses = ['todo', 'done'];
+    config.statuses = statusDefinitions(['todo', 'done']);
     await writeConfig(fx.dir, config);
     const before = await snapshot();
+    // The config itself is invalid (#57), so nothing gets as far as writing.
     const err = await rejection(createIssue(fx.context(), { title: 'A' }));
-    expect((err as ValidationError).errors[0]).toContain('Invalid status');
+    expect((err as GitracError).code).toBe('invalid_config');
+    expect((err as GitracError).message).toContain(
+      'defaultStatus "backlog" is not a configured status (todo, done)',
+    );
     expect(await snapshot()).toEqual(before);
   });
 

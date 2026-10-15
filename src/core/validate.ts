@@ -1,4 +1,5 @@
 import type { Config, Issue, Priority, Status } from './types.ts';
+import { priorityNames, statusNames } from './workflow.ts';
 
 export interface ValidationResult {
   valid: boolean;
@@ -24,16 +25,18 @@ export function validateIssue(issue: Issue, config: Config): ValidationResult {
   }
 
   // Status must be in config.statuses
-  if (!config.statuses.includes(issue.status)) {
+  const statuses = statusNames(config);
+  if (!statuses.includes(issue.status)) {
     errors.push(
-      `Invalid status "${issue.status}": must be one of ${config.statuses.join(', ')}`,
+      `Invalid status "${issue.status}": must be one of ${statuses.join(', ')}`,
     );
   }
 
   // Priority must be in config.priorities
-  if (!config.priorities.includes(issue.priority)) {
+  const priorities = priorityNames(config);
+  if (!priorities.includes(issue.priority)) {
     errors.push(
-      `Invalid priority "${issue.priority}": must be one of ${config.priorities.join(', ')}`,
+      `Invalid priority "${issue.priority}": must be one of ${priorities.join(', ')}`,
     );
   }
 
@@ -128,28 +131,27 @@ export function validateIssueFields(
   }
 
   if (raw.status !== undefined) {
-    if (
-      typeof raw.status !== 'string' ||
-      !config.statuses.includes(raw.status as Status)
-    ) {
+    const statuses = statusNames(config);
+    if (typeof raw.status !== 'string' || !statuses.includes(raw.status)) {
       errors.push(
-        `Invalid status ${JSON.stringify(raw.status)}: must be one of ${config.statuses.join(', ')}`,
+        `Invalid status ${JSON.stringify(raw.status)}: must be one of ${statuses.join(', ')}`,
       );
     } else {
-      values.status = raw.status as Status;
+      values.status = raw.status;
     }
   }
 
   if (raw.priority !== undefined) {
+    const priorities = priorityNames(config);
     if (
       typeof raw.priority !== 'string' ||
-      !config.priorities.includes(raw.priority as Priority)
+      !priorities.includes(raw.priority)
     ) {
       errors.push(
-        `Invalid priority ${JSON.stringify(raw.priority)}: must be one of ${config.priorities.join(', ')}`,
+        `Invalid priority ${JSON.stringify(raw.priority)}: must be one of ${priorities.join(', ')}`,
       );
     } else {
-      values.priority = raw.priority as Priority;
+      values.priority = raw.priority;
     }
   }
 

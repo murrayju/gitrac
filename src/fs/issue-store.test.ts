@@ -89,7 +89,7 @@ describe('readConfig / writeConfig', () => {
     const config = await readConfig(dir);
     expect(config.version).toBe(1);
     expect(config.nextId).toBeUndefined();
-    expect(config.statuses).toContain('backlog');
+    expect(config.statuses).toContainEqual({ name: 'backlog', closed: false });
   });
 
   test('writes and reads back config, preserving a legacy nextId', async () => {
