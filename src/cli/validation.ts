@@ -1,10 +1,11 @@
+import { invalidInput } from '../core/errors.ts';
+
 /**
- * Print validation errors (one per line, prefixed with `Error:`) and exit 1.
- * Safe to call inside `withMutationLock`: the lock is released on exit.
+ * Throw an `invalid_input` error carrying every validation message (printed
+ * one `Error:` line each, or as `errors: [...]` in JSON) — exit code
+ * `EXIT_INVALID_INPUT`. Safe inside `withMutationLock`: the lock is released
+ * as the error propagates.
  */
-export function exitWithErrors(errors: string[]): never {
-  for (const err of errors) {
-    console.error(`Error: ${err}`);
-  }
-  process.exit(1);
+export function throwValidationErrors(errors: string[]): never {
+  throw invalidInput(errors);
 }

@@ -1,10 +1,8 @@
 import type { Command } from 'commander';
+import { GitracError, invalidInput } from '../../core/errors.ts';
 import { readConfig } from '../../fs/issue-store.ts';
 import { startServer } from '../../web/server.ts';
-import {
-  getGlobalOptions,
-  resolveProjectRootOrExit,
-} from '../global-options.ts';
+import { getGlobalOptions, resolveProjectRoot } from '../global-options.ts';
 
 export interface ServeOptions {
   dir: string;
@@ -42,30 +40,23 @@ function parsePort(value: string): number {
   return Number.parseInt(value, 10);
 }
 
-/** Start the web server, exiting with a helpful message on failure. */
+/** Start the web server, throwing a `GitracError` on failure. */
 export async function runServe(options: ServeOptions): Promise<void> {
   const { port, host } = options;
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
-    console.error(`Error: Invalid port "${port}".`);
-    process.exit(1);
+    throw invalidInput(`Invalid port "${port}".`);
   }
-  const dir = await resolveProjectRootOrExit(options.dir);
-  let config: Awaited<ReturnType<typeof readConfig>>;
-  try {
-    config = await readConfig(dir);
-  } catch {
-    console.error('Error: Could not start server. Is this a gitrac project?');
-    console.error('Run "gitrac init" to initialize the .issues directory.');
-    process.exit(1);
-  }
+  const dir = await resolveProjectRoot(options.dir);
+  const config = await readConfig(dir);
   try {
     await startServer({ dir, port, host, config, author: options.author });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(
-      `Error: Could not start server on ${host}:${port}: ${message}`,
+    throw new GitracError(
+      'server_error',
+      `Could not start server on ${host}:${port}: ${message}`,
+      { cause: err },
     );
-    process.exit(1);
   }
 }
 

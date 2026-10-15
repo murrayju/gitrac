@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { Command } from 'commander';
+import { GitracError } from '../core/errors.ts';
 import type { Config, OutputFormat } from '../core/types.ts';
-import { LockTimeoutError } from '../fs/lock.ts';
 import { withRepoLock } from '../git/lock.ts';
 import { commitIssueChange, pushIfConfigured } from '../git/operations.ts';
 import { getGitRoot } from '../git/status.ts';
@@ -63,13 +63,19 @@ export function getGlobalOptions(program: Command): GlobalOptions {
   };
 }
 
-/** Thrown by {@link resolveProjectRoot} with a user-facing message. */
-export class ProjectRootError extends Error {
+/**
+ * Thrown by {@link resolveProjectRoot} with a user-facing message. Its code is
+ * `not_a_git_repo` or `not_initialized` (exit code `EXIT_NOT_A_PROJECT`).
+ */
+export class ProjectRootError extends GitracError {
   constructor(
     message: string,
     readonly reason: 'not-a-git-repo' | 'not-initialized',
   ) {
-    super(message);
+    super(
+      reason === 'not-a-git-repo' ? 'not_a_git_repo' : 'not_initialized',
+      message,
+    );
     this.name = 'ProjectRootError';
   }
 }
@@ -125,30 +131,15 @@ export async function resolveProjectRoot(
 /**
  * Like {@link getGlobalOptions}, but with `dir` replaced by the resolved
  * project root (see {@link resolveProjectRoot}). Every command should use
- * this. On failure, prints a friendly error and exits 1.
+ * this. On failure, throws a {@link ProjectRootError}, which the top-level
+ * handler prints as a friendly error.
  */
 export async function resolveProjectOptions(
   program: Command,
   options: { requireInit?: boolean } = {},
 ): Promise<GlobalOptions> {
   const opts = getGlobalOptions(program);
-  return { ...opts, dir: await resolveProjectRootOrExit(opts.dir, options) };
-}
-
-/** {@link resolveProjectRoot}, printing a friendly error and exiting 1 on failure. */
-export async function resolveProjectRootOrExit(
-  dir: string,
-  options: { requireInit?: boolean } = {},
-): Promise<string> {
-  try {
-    return await resolveProjectRoot(dir, options);
-  } catch (err) {
-    if (err instanceof ProjectRootError) {
-      console.error(`Error: ${err.message}`);
-      process.exit(1);
-    }
-    throw err;
-  }
+  return { ...opts, dir: await resolveProjectRoot(opts.dir, options) };
 }
 
 /** Whether a mutating command should auto-commit its changes. */
@@ -181,19 +172,13 @@ export async function commitAndMaybePush(
  * gitrac lock, so concurrent gitrac processes and the web server can't
  * interleave. Keep interactive input (prompts, stdin) outside of `fn`.
  *
- * If the lock can't be acquired in time, prints an error and exits 1.
+ * The lock is released when `fn` settles, so commands signal failure by
+ * throwing (a `GitracError`) rather than calling `process.exit`. If the lock
+ * can't be acquired in time, throws a `LockTimeoutError` (`lock_timeout`).
  */
 export async function withMutationLock<T>(
   opts: GlobalOptions,
   fn: () => Promise<T>,
 ): Promise<T> {
-  try {
-    return await withRepoLock(opts.dir, fn);
-  } catch (err) {
-    if (err instanceof LockTimeoutError) {
-      console.error(`Error: ${err.message}`);
-      process.exit(1);
-    }
-    throw err;
-  }
+  return withRepoLock(opts.dir, fn);
 }

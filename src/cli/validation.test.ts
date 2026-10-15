@@ -3,11 +3,12 @@ import { mkdtemp, readdir, readFile, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import simpleGit from 'simple-git';
+import { EXIT_INVALID_INPUT } from '../core/errors.ts';
 import { readConfig, readIssue } from '../fs/issue-store.ts';
 
 /**
  * Regression tests for #41: `create` and `edit` must validate status,
- * priority, title and labels before writing; invalid input exits 1 with a
+ * priority, title and labels before writing; invalid input exits 2 (EXIT_INVALID_INPUT) with a
  * clear error and leaves the files (and git history) untouched. Unknown labels
  * are registered in config.yaml with a color, like the web UI.
  */
@@ -73,7 +74,7 @@ describe('create validation', () => {
   ])('rejects %s', async (_name, args, pattern) => {
     const before = await snapshot();
     const res = await cli('create', '-t', 'New one', ...args);
-    expect(res.code).toBe(1);
+    expect(res.code).toBe(EXIT_INVALID_INPUT);
     expect(res.stderr).toMatch(pattern);
     expect(res.stderr).not.toMatch(/^\s+at /m);
     // No issue file, no nextId bump, no commit
@@ -82,7 +83,7 @@ describe('create validation', () => {
 
   test('reports every invalid field at once', async () => {
     const res = await cli('create', '-t', 'x', '-s', 'nope', '-p', 'nah');
-    expect(res.code).toBe(1);
+    expect(res.code).toBe(EXIT_INVALID_INPUT);
     expect(res.stderr).toContain('Invalid status');
     expect(res.stderr).toContain('Invalid priority');
   });
@@ -108,7 +109,7 @@ describe('edit validation', () => {
   ])('rejects %s', async (_name, args, pattern) => {
     const before = await snapshot();
     const res = await cli('edit', '1', ...args);
-    expect(res.code).toBe(1);
+    expect(res.code).toBe(EXIT_INVALID_INPUT);
     expect(res.stderr).toMatch(pattern);
     expect(await snapshot()).toEqual(before);
   });
@@ -116,7 +117,7 @@ describe('edit validation', () => {
   test('a single invalid field rejects the whole edit', async () => {
     const before = await snapshot();
     const res = await cli('edit', '1', '-t', 'Renamed', '-s', 'bogus');
-    expect(res.code).toBe(1);
+    expect(res.code).toBe(EXIT_INVALID_INPUT);
     expect(await snapshot()).toEqual(before);
     expect((await readIssue(root, 1)).title).toBe('Existing');
   });

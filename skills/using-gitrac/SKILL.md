@@ -163,6 +163,30 @@ gitrac ls -o json --status all       # include closed issues
 
 This is useful for programmatic decision-making about which issue to work on.
 
+### Errors and exit codes
+
+stdout only ever holds the result. Errors and warnings (e.g. "not on the default branch") go to **stderr**. With `-o json`, the error is a single JSON line — the last line of stderr:
+
+```json
+{"error":{"code":"not_found","message":"Issue #9 not found","id":9}}
+```
+
+(`-o yaml` prints the same object as YAML; human mode prints `Error: <message>`.) Branch on the exit code or `code`:
+
+| Exit | `code` | Meaning |
+|------|--------|---------|
+| 0 | | Success |
+| 1 | `error`, `invalid_config` | Unexpected error, or unparseable `.issues/config.yaml` |
+| 2 | `invalid_input`, `usage` | Bad ID / field value / flag / missing argument — nothing was written |
+| 3 | `already_claimed`, `already_initialized`, `invalid_state` | Conflict: claimed by someone else, already initialized, reopening an open issue |
+| 4 | `issue_closed` | `claim`/`unclaim` on a closed issue |
+| 5 | `not_found` | No such issue |
+| 6 | `lock_timeout` | Another gitrac process held the repo lock too long — retry |
+| 7 | `git_error` | git commit/push failed (the issue file may already be changed — check `git status`) |
+| 8 | `not_a_git_repo`, `not_initialized` | Not in a git repo, or run `gitrac init` |
+
+Stack traces are hidden unless you pass `--debug`.
+
 ## Common Mistakes
 
 | Mistake | Why it's wrong | Fix |
@@ -184,7 +208,7 @@ gitrac create -t "Brief description" -p high -l bug
 
 Flags: `-t` title (required), `-p` priority, `-l` labels (comma-separated), `-a` assignee, `-s` status, `-d` description (markdown), `--description-file <path|->` description from a file or stdin (`-`).
 
-Status and priority must be one of the values in `.issues/config.yaml` — anything else is rejected (exit 1, nothing written). New labels are added to the config automatically with a color.
+Status and priority must be one of the values in `.issues/config.yaml` — anything else is rejected (exit 2, nothing written). New labels are added to the config automatically with a color.
 
 Don't over-describe in the title — put details (context, acceptance criteria) in the markdown description. For multi-line text, use a heredoc instead of shell-quoting:
 

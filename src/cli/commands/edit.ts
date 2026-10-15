@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import type { Command } from 'commander';
+import { issueNotFound, parseIssueIdArg } from '../../core/errors.ts';
 import { isClosedStatus } from '../../core/types.ts';
 import { parseLabelList, validateIssueFields } from '../../core/validate.ts';
 import {
@@ -16,8 +17,8 @@ import {
   withMutationLock,
 } from '../global-options.ts';
 import { formatIssueDetail } from '../output.ts';
-import { resolveTextOptionOrExit } from '../text-input.ts';
-import { exitWithErrors } from '../validation.ts';
+import { resolveTextOption } from '../text-input.ts';
+import { throwValidationErrors } from '../validation.ts';
 
 export function registerEditCommand(program: Command): void {
   program
@@ -51,14 +52,10 @@ export function registerEditCommand(program: Command): void {
         const globalOpts = await resolveProjectOptions(program);
         const { dir } = globalOpts;
 
-        const id = Number.parseInt(idStr, 10);
-        if (Number.isNaN(id)) {
-          console.error('Error: Invalid issue ID.');
-          process.exit(1);
-        }
+        const id = parseIssueIdArg(idStr);
 
         // Read the description (possibly from stdin) before taking the lock.
-        const newDescription = await resolveTextOptionOrExit({
+        const newDescription = await resolveTextOption({
           inline: options.description,
           file: options.descriptionFile,
           inlineFlag: '--description',
@@ -68,10 +65,7 @@ export function registerEditCommand(program: Command): void {
         await withMutationLock(globalOpts, async () => {
           const config = await readConfig(dir);
           const found = await findIssueFile(dir, id);
-          if (!found) {
-            console.error(`Error: Issue #${id} not found.`);
-            process.exit(1);
-          }
+          if (!found) throw issueNotFound(id);
 
           const wasClosed = found.closed;
           const oldFilename = found.filename;
@@ -93,7 +87,7 @@ export function registerEditCommand(program: Command): void {
             },
             config,
           );
-          if (!fields.valid) exitWithErrors(fields.errors);
+          if (!fields.valid) throwValidationErrors(fields.errors);
           const { title, status, priority, assignee, labels, description } =
             fields.values;
 

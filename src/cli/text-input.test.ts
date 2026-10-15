@@ -10,6 +10,7 @@ import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import simpleGit from 'simple-git';
+import { EXIT_INVALID_INPUT } from '../core/errors.ts';
 import { readIssue } from '../fs/issue-store.ts';
 import { resolveTextOption } from './text-input.ts';
 
@@ -138,12 +139,12 @@ describe('create description', () => {
       '--description-file',
       'desc.md',
     ]);
-    expect(res.code).toBe(1);
+    expect(res.code).toBe(EXIT_INVALID_INPUT);
     expect(res.stderr).toContain('not both');
     expect(await head()).toBe(before);
   });
 
-  test('missing --description-file exits 1 without writing', async () => {
+  test('missing --description-file is invalid input; nothing written', async () => {
     const before = await head();
     const res = await cli([
       'create',
@@ -152,7 +153,7 @@ describe('create description', () => {
       '--description-file',
       'nope.md',
     ]);
-    expect(res.code).toBe(1);
+    expect(res.code).toBe(EXIT_INVALID_INPUT);
     expect(res.stderr).toContain('file not found: nope.md');
     expect(res.stderr).not.toMatch(/^\s+at /m);
     expect(await head()).toBe(before);
@@ -203,7 +204,7 @@ describe('edit description', () => {
   test('rejects both -d and --description-file without writing', async () => {
     const before = await head();
     const res = await cli(['edit', '1', '-d', 'x', '--description-file', '-']);
-    expect(res.code).toBe(1);
+    expect(res.code).toBe(EXIT_INVALID_INPUT);
     expect(res.stderr).toContain('not both');
     expect(await head()).toBe(before);
   });
@@ -244,7 +245,7 @@ describe('comment --body-file', () => {
     await Bun.write(join(root, 'c.md'), 'file');
     const before = await head();
     const res = await cli(['comment', '1', 'inline', '--body-file', 'c.md']);
-    expect(res.code).toBe(1);
+    expect(res.code).toBe(EXIT_INVALID_INPUT);
     expect(res.stderr).toContain('not both');
     expect(await head()).toBe(before);
   });
@@ -253,7 +254,7 @@ describe('comment --body-file', () => {
     await Bun.write(join(root, 'c.md'), '  \n');
     const before = await head();
     const res = await cli(['comment', '1', '--body-file', 'c.md']);
-    expect(res.code).toBe(1);
+    expect(res.code).toBe(EXIT_INVALID_INPUT);
     expect(res.stderr).toContain('Comment body is required');
     expect(await head()).toBe(before);
   });

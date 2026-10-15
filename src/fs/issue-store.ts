@@ -13,6 +13,7 @@ import {
   parseConfig,
   serializeConfig,
 } from '../core/config.ts';
+import { GitracError, issueNotFound } from '../core/errors.ts';
 import { parseIssue, serializeIssue } from '../core/issue.ts';
 import { issueFilename, parseIssueId } from '../core/slug.ts';
 import type { Config, Issue } from '../core/types.ts';
@@ -30,11 +31,34 @@ function configPath(dir: string): string {
 }
 
 /**
- * Read and parse the .issues/config.yaml file.
+ * Read and parse the .issues/config.yaml file. Throws a `GitracError` with
+ * code `not_initialized` if it doesn't exist, or `invalid_config` if it can't
+ * be parsed.
  */
 export async function readConfig(dir: string): Promise<Config> {
-  const content = await readFile(configPath(dir), 'utf-8');
-  return parseConfig(content);
+  let content: string;
+  try {
+    content = await readFile(configPath(dir), 'utf-8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new GitracError(
+        'not_initialized',
+        `gitrac is not initialized in ${dir} (no .issues/config.yaml). Run "gitrac init" to set it up.`,
+        { cause: err },
+      );
+    }
+    throw err;
+  }
+  try {
+    return parseConfig(content);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new GitracError(
+      'invalid_config',
+      `Invalid .issues/config.yaml: ${reason}`,
+      { cause: err },
+    );
+  }
 }
 
 /**
@@ -137,7 +161,7 @@ export async function readIssueContent(
 export async function readIssue(dir: string, id: number): Promise<Issue> {
   const raw = await readIssueContent(dir, id);
   if (!raw) {
-    throw new Error(`Issue #${id} not found`);
+    throw issueNotFound(id);
   }
   return parseIssue(raw.content);
 }
@@ -182,8 +206,13 @@ export async function deleteIssueFile(
  */
 export async function moveToClose(dir: string, id: number): Promise<void> {
   const found = await findIssueFile(dir, id);
-  if (!found || found.closed) {
-    throw new Error(`Open issue #${id} not found`);
+  if (!found) {
+    throw issueNotFound(id);
+  }
+  if (found.closed) {
+    throw new GitracError('invalid_state', `Issue #${id} is already closed`, {
+      details: { id },
+    });
   }
   await rename(
     join(issuesDir(dir), found.filename),
@@ -196,8 +225,13 @@ export async function moveToClose(dir: string, id: number): Promise<void> {
  */
 export async function moveToReopen(dir: string, id: number): Promise<void> {
   const found = await findIssueFile(dir, id);
-  if (!found?.closed) {
-    throw new Error(`Closed issue #${id} not found`);
+  if (!found) {
+    throw issueNotFound(id);
+  }
+  if (!found.closed) {
+    throw new GitracError('invalid_state', `Issue #${id} is not closed`, {
+      details: { id },
+    });
   }
   await rename(
     join(closedDir(dir), found.filename),
@@ -216,7 +250,10 @@ export async function initIssuesDir(
   const issDir = issuesDir(dir);
   const exists = await Bun.file(join(issDir, 'config.yaml')).exists();
   if (exists && !options?.force) {
-    throw new Error('.issues directory already exists');
+    throw new GitracError(
+      'already_initialized',
+      '.issues directory already exists (use --force to overwrite)',
+    );
   }
   await mkdir(issDir, { recursive: true });
   await mkdir(closedDir(dir), { recursive: true });

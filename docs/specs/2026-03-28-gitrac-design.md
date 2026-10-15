@@ -55,7 +55,7 @@ git:
 
 `statuses`, `labels`, and `priorities` are the source of truth — the CLI/UI validate against these. Users can customize by editing config. Config is validated on load with fail-fast behavior and clear error messages for invalid/missing fields. Like issue frontmatter, `config.yaml` is parsed with the YAML core schema (js-yaml 4, a pinned direct dependency): `!!js/*`, `!!timestamp`, `!!binary`, `!!set`/`!!omap` tags are rejected, so a config from an untrusted clone/PR can only ever yield plain strings, numbers, booleans, nulls, lists and maps, and date-like values (e.g. `defaultBranch: 2026-03-28`) stay strings.
 
-**Write validation:** Every create/update path (CLI `create`/`edit`, `POST`/`PATCH /api/issues`) validates its input with `validateIssueFields` (`src/core/validate.ts`) before writing anything: `status` and `priority` must be in the configured lists, `title` must be a non-empty string, `labels` an array of non-empty strings, `assignee`/`description` strings. Titles and labels are trimmed and labels de-duplicated. Invalid input is rejected as a whole — the CLI prints each error and exits 1, the API returns 400 `{ error, errors[] }` — and no file (not even `nextId`) changes. Unknown labels are not an error: both the CLI and the web register them in `config.labels` with an auto-assigned color, committed alongside the issue.
+**Write validation:** Every create/update path (CLI `create`/`edit`, `POST`/`PATCH /api/issues`) validates its input with `validateIssueFields` (`src/core/validate.ts`) before writing anything: `status` and `priority` must be in the configured lists, `title` must be a non-empty string, `labels` an array of non-empty strings, `assignee`/`description` strings. Titles and labels are trimmed and labels de-duplicated. Invalid input is rejected as a whole — the CLI prints each error and exits 2 (`invalid_input`), the API returns 400 `{ error, errors[] }` — and no file (not even `nextId`) changes. Unknown labels are not an error: both the CLI and the web register them in `config.labels` with an auto-assigned color, committed alongside the issue.
 
 ### Issue File Format
 
@@ -178,10 +178,11 @@ src/
 | `--no-commit` | Skip git commit entirely |
 | `--author <name>` | Override comment author / `createdBy` (default: `git config user.name`); with `serve`, the default author for web changes |
 | `--dir <path>` | Directory to locate the project from (default: cwd). Any path inside the repo works. |
+| `--debug` | Print stack traces on errors |
 | `--port <port>` | Web server port for bare `gitrac` (long form only; `serve` also accepts `-p`) |
 | `--host <host>` | Web server bind interface (default `127.0.0.1`; e.g. `0.0.0.0` for all interfaces) |
 
-**Project root resolution:** every command (including `serve` / bare `gitrac`) resolves the project root once, via `git rev-parse --show-toplevel` starting from `--dir` (or the cwd), so gitrac works from any subdirectory of the repo. `.issues/` always lives at that root. Outside a git repo, commands exit 1 with `Error: Not inside a git repository`; if `.issues/config.yaml` is missing, every command except `init` exits 1 with a message to run `gitrac init`.
+**Project root resolution:** every command (including `serve` / bare `gitrac`) resolves the project root once, via `git rev-parse --show-toplevel` starting from `--dir` (or the cwd), so gitrac works from any subdirectory of the repo. `.issues/` always lives at that root. Outside a git repo, commands exit 8 (`not_a_git_repo`) with `Error: Not inside a git repository`; if `.issues/config.yaml` is missing, every command except `init` exits 8 (`not_initialized`) with a message to run `gitrac init`.
 
 Global flags may appear before or after the subcommand (`gitrac --no-commit close 1` and `gitrac close 1 --no-commit` are equivalent). `--no-commit` applies to every mutating command (`init`, `create`, `edit`, `comment`, `close`, `reopen`, `claim`, `unclaim`) and also suppresses push. If both `--push` and `--no-push` are given, the last one wins.
 
@@ -200,7 +201,32 @@ The claimer's identity is their git `user.email` (falling back to `user.name`), 
 
 `unclaim <id>` (alias `release`) clears `assignee` and moves `in_progress` back to `todo` (other statuses are kept). It fails with exit **3** if the issue is assigned to someone else (`--force` overrides), exits **4** for closed issues, and is a no-op if the issue is unassigned. Accepts `-c, --comment`.
 
-Exit codes: `1` general error, `3` claimed by someone else, `4` issue is closed.
+Exit codes: `3` claimed by someone else, `4` issue is closed (see [Errors and Exit Codes](#errors-and-exit-codes)).
+
+### Errors and Exit Codes
+
+Commands never call `process.exit` on failure: they throw a `GitracError` (`src/core/errors.ts`) carrying a machine-readable `code`, and a single top-level handler (`runCli` in `src/cli/index.ts`, using `src/cli/errors.ts`) prints it and exits with that code's exit status. Errors from simple-git become `git_error`; Commander usage errors (unknown option, missing argument, bad `-o` value) become `usage`; anything else becomes `error` with the original message.
+
+Errors always go to **stderr**; stdout carries only the command's result (so with `-o json`, stdout is either the result or empty). Warnings (e.g. the non-default-branch warning) also go to stderr, before the error.
+
+- **human:** `Error: <message>` (one line per message when several fields are invalid).
+- **`-o json`:** one line, the last line of stderr: `{"error":{"code":"not_found","message":"Issue #9 not found","id":9}}`. `code` and `message` are always present; some errors add fields (`id`, `assignee`, `status`, `errors` for multiple validation messages, `lockPath`, `reason` for usage errors).
+- **`-o yaml`:** the same object as YAML.
+- Stack traces are printed only with `--debug` (before the error line).
+
+| Exit | `code` | Meaning |
+|------|--------|---------|
+| 0 | — | Success (including no-op claims) |
+| 1 | `error`, `invalid_config`, `server_error` | Unexpected error, unparseable `.issues/config.yaml`, web server failed to start |
+| 2 | `invalid_input`, `usage` | Bad issue ID, field value, text input, flag, or missing argument; nothing written |
+| 3 | `already_claimed`, `already_initialized`, `invalid_state` | Conflicts with current state: claimed by someone else (`claim`/`unclaim`), `init` on an initialized repo, `reopen` of an open issue |
+| 4 | `issue_closed` | `claim`/`unclaim` on a closed issue |
+| 5 | `not_found` | The issue doesn't exist |
+| 6 | `lock_timeout` | Timed out waiting for the repo lock (safe to retry) |
+| 7 | `git_error` | A git command (commit, push) failed. The issue file may already be written (and its result printed) |
+| 8 | `not_a_git_repo`, `not_initialized` | Not inside a git work tree, or `gitrac init` hasn't been run |
+
+These values are a public contract for scripts and agents; keep them stable.
 
 ### Create Flags
 
@@ -221,8 +247,8 @@ Long text can be passed inline or read from a file; `-` reads stdin.
 | `create`, `edit` | `-d, --description <text>` | `--description-file <path\|->` |
 | `comment` | `[body]` argument | `-F, --body-file <path\|->` |
 
-- Giving both the inline and file form is an error (exit 1, nothing written).
-- File paths are relative to the current working directory (not `--dir`). A missing file exits 1.
+- Giving both the inline and file form is an error (exit 2, nothing written).
+- File paths are relative to the current working directory (not `--dir`). A missing file exits 2.
 - Text is trimmed (it is trimmed on read-back anyway). `edit -d ""` clears the description; an empty comment body is rejected.
 - `edit` replaces the whole description; comments are untouched.
 - `comment` with no body argument and no `--body-file` still reads stdin when it is piped (not a TTY).
@@ -276,7 +302,7 @@ issue: claim #3 (murrayju)
 
 Every mutation — CLI command or web API request — runs its whole read-modify-write-commit sequence (reading the issue/config, ID allocation, writing files, `git add`/`commit`/amend, and push) while holding a repo-wide lock. This applies even with `--no-commit`, since the file writes themselves can race.
 
-- **Cross-process:** a lockfile at `$(git rev-parse --git-common-dir)/gitrac.lock` (shared by all worktrees of the repo). It is created atomically (temp file + hard link) and records the holder's PID, hostname, and a token. Waiters retry with jittered exponential backoff and give up after 120s (CLI: error + exit 1; web: HTTP 503).
+- **Cross-process:** a lockfile at `$(git rev-parse --git-common-dir)/gitrac.lock` (shared by all worktrees of the repo). It is created atomically (temp file + hard link) and records the holder's PID, hostname, and a token. Waiters retry with jittered exponential backoff and give up after 120s (CLI: `lock_timeout`, exit 6; web: HTTP 503).
 - **In-process:** within one process (notably the web server) callers queue FIFO per lock before competing for the lockfile, so overlapping autosave/comment requests are applied one at a time.
 - **Stale locks:** a lock is broken if its holder is on the same host and its PID is dead, or if its mtime is older than 60s. Holders refresh the mtime every 15s, so a long push is never mistaken for an abandoned lock. Breaking happens under a secondary `gitrac.lock.break` lock and re-verifies the lock contents, so a freshly acquired lock is never removed. A process that calls `process.exit()` while holding the lock removes it on exit.
 - **Re-entrant:** nested acquisitions in the same async context are no-ops; low-level git helpers (`commitPaths`, `commitOrAmend`, push/pull) take the lock themselves as a safety net.

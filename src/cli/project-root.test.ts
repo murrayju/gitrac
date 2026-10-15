@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import simpleGit from 'simple-git';
+import { EXIT_NOT_A_PROJECT } from '../core/errors.ts';
 import { listIssueFiles, readIssue } from '../fs/issue-store.ts';
 import { ProjectRootError, resolveProjectRoot } from './global-options.ts';
 
@@ -187,21 +188,21 @@ describe('CLI from a nested directory', () => {
   test('friendly error when .issues/ is not initialized', async () => {
     for (const args of [['ls'], ['show', '1'], ['create', '-t', 'x']]) {
       const res = await cli(nested, ...args);
-      expect(res.code).toBe(1);
+      expect(res.code).toBe(EXIT_NOT_A_PROJECT);
       expectFriendlyError(res.stderr, /not initialized.*Run "gitrac init"/);
     }
   });
 
   test('serve: friendly error when .issues/ is not initialized', async () => {
     const res = await cli(nested, 'serve', '-p', '0');
-    expect(res.code).toBe(1);
+    expect(res.code).toBe(EXIT_NOT_A_PROJECT);
     expectFriendlyError(res.stderr, /Run "gitrac init"/);
   });
 
   test('friendly error outside a git repo', async () => {
     for (const args of [['ls'], ['init'], ['serve', '-p', '0']]) {
       const res = await cli(outside, ...args);
-      expect(res.code).toBe(1);
+      expect(res.code).toBe(EXIT_NOT_A_PROJECT);
       expectFriendlyError(res.stderr, /Not inside a git repository/);
     }
   });

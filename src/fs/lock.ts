@@ -10,6 +10,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { hostname } from 'node:os';
+import { GitracError } from '../core/errors.ts';
 
 /**
  * Cross-process + in-process mutual exclusion keyed by a lockfile path.
@@ -51,7 +52,8 @@ export interface LockInfo {
   acquiredAt: string;
 }
 
-export class LockTimeoutError extends Error {
+/** Timed out waiting for the lock (error code `lock_timeout`). */
+export class LockTimeoutError extends GitracError {
   readonly lockPath: string;
   readonly holder: LockInfo | null;
   constructor(lockPath: string, holder: LockInfo | null, timeoutMs: number) {
@@ -59,8 +61,10 @@ export class LockTimeoutError extends Error {
       ? ` (held by pid ${holder.pid} on ${holder.hostname} since ${holder.acquiredAt})`
       : '';
     super(
+      'lock_timeout',
       `Timed out after ${timeoutMs}ms waiting for lock ${lockPath}${who}. ` +
         'If no other gitrac process is running, delete the lock file.',
+      { details: { lockPath } },
     );
     this.name = 'LockTimeoutError';
     this.lockPath = lockPath;

@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import { invalidInput } from '../../core/errors.ts';
 import type { Issue } from '../../core/types.ts';
 import {
   parseLabelList,
@@ -17,8 +18,8 @@ import {
   withMutationLock,
 } from '../global-options.ts';
 import { formatIssueDetail } from '../output.ts';
-import { resolveTextOptionOrExit } from '../text-input.ts';
-import { exitWithErrors } from '../validation.ts';
+import { resolveTextOption } from '../text-input.ts';
+import { throwValidationErrors } from '../validation.ts';
 
 export function registerCreateCommand(program: Command): void {
   program
@@ -50,7 +51,7 @@ export function registerCreateCommand(program: Command): void {
         const { dir } = globalOpts;
 
         // Read the description (possibly from stdin) before taking the lock.
-        const description = await resolveTextOptionOrExit({
+        const description = await resolveTextOption({
           inline: options.description,
           file: options.descriptionFile,
           inlineFlag: '--description',
@@ -61,8 +62,7 @@ export function registerCreateCommand(program: Command): void {
         if (!title) {
           const prompted = prompt('Issue title: ');
           if (!prompted) {
-            console.error('Error: Title is required.');
-            process.exit(1);
+            throw invalidInput('Title is required.');
           }
           title = prompted;
         }
@@ -100,7 +100,7 @@ export function registerCreateCommand(program: Command): void {
             config,
             { requireTitle: true },
           );
-          if (!fields.valid) exitWithErrors(fields.errors);
+          if (!fields.valid) throwValidationErrors(fields.errors);
           const values = fields.values;
 
           const now = new Date().toISOString();
@@ -120,7 +120,7 @@ export function registerCreateCommand(program: Command): void {
           // Final gate on the assembled issue (e.g. config defaults that
           // aren't in the configured statuses/priorities).
           const check = validateIssue({ ...issue, id: 1 }, config);
-          if (!check.valid) exitWithErrors(check.errors);
+          if (!check.valid) throwValidationErrors(check.errors);
 
           const id = await allocateNextId(dir);
           issue.id = id;

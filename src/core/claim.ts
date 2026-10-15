@@ -2,16 +2,13 @@ import type { Issue } from './types.ts';
 import { isClosedStatus } from './types.ts';
 
 /**
- * Exit code for `claim` / `unclaim` when the issue is claimed by someone else
- * (in_progress + assigned to another user). Pass `--force` to override.
+ * Exit codes for `claim` / `unclaim`: {@link EXIT_ALREADY_CLAIMED} when the
+ * issue is claimed by someone else (in_progress + assigned to another user;
+ * `--force` overrides), {@link EXIT_ISSUE_CLOSED} when it is closed (`done` or
+ * `cancelled`; `claim --force` reopens and claims it). Defined with the other
+ * exit codes in `errors.ts`.
  */
-export const EXIT_ALREADY_CLAIMED = 3;
-
-/**
- * Exit code for `claim` / `unclaim` when the issue is closed (`done` or
- * `cancelled`). `claim --force` reopens and claims it.
- */
-export const EXIT_ISSUE_CLOSED = 4;
+export { EXIT_ALREADY_CLAIMED, EXIT_ISSUE_CLOSED } from './errors.ts';
 
 /** The identity of the user running a command (as used for `assignee`). */
 export interface ClaimUser {

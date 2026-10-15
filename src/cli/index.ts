@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import { registerClaimCommand } from './commands/claim.ts';
 import { registerCloseCommand } from './commands/close.ts';
 import { registerCommentCommand } from './commands/comment.ts';
@@ -14,6 +14,7 @@ import {
 } from './commands/serve.ts';
 import { registerShowCommand } from './commands/show.ts';
 import { registerUnclaimCommand } from './commands/unclaim.ts';
+import { reportError, scanErrorOptions } from './errors.ts';
 
 export function createProgram(): Command {
   const program = new Command();
@@ -22,11 +23,17 @@ export function createProgram(): Command {
     .name('gitrac')
     .description('Manage project issues as markdown files in git')
     .version('0.1.0')
-    .option(
-      '-o, --output <format>',
-      'Output format (human, json, yaml)',
-      'human',
+    // Errors (including usage errors) are thrown instead of exiting, and
+    // printed by the top-level handler in runCli. Subcommands inherit both
+    // settings, so these must come before the commands are registered.
+    .exitOverride()
+    .configureOutput({ outputError: () => {} })
+    .addOption(
+      new Option('-o, --output <format>', 'Output format (human, json, yaml)')
+        .choices(['human', 'json', 'yaml'])
+        .default('human'),
     )
+    .option('--debug', 'Print stack traces on errors')
     .option('--push', 'Push after commit')
     .option('--no-push', 'Do not push after commit')
     .option('--no-commit', 'Do not auto-commit changes')
@@ -58,4 +65,20 @@ export function createProgram(): Command {
   registerUnclaimCommand(program);
 
   return program;
+}
+
+/**
+ * Run the CLI with the single top-level error handler: any error thrown by a
+ * command (or by Commander's argument parsing) is printed to stderr as
+ * `Error: <message>` (human) or `{"error":{"code","message"}}` (json/yaml)
+ * and the process exits with the error's exit code (see `src/core/errors.ts`).
+ * Stack traces are only shown with `--debug`.
+ */
+export async function runCli(argv: string[] = process.argv): Promise<void> {
+  const program = createProgram();
+  try {
+    await program.parseAsync(argv);
+  } catch (err) {
+    process.exit(reportError(err, scanErrorOptions(argv.slice(2))));
+  }
 }

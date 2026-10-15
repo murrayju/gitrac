@@ -6,6 +6,11 @@ import {
   EXIT_ISSUE_CLOSED,
 } from '../../core/claim.ts';
 import {
+  GitracError,
+  issueNotFound,
+  parseIssueIdArg,
+} from '../../core/errors.ts';
+import {
   deleteIssueFile,
   findIssueFile,
   readConfig,
@@ -18,7 +23,7 @@ import {
   withMutationLock,
 } from '../global-options.ts';
 import { formatIssueDetail } from '../output.ts';
-import { parseIssueIdArg, resolveClaimUser } from './claim.ts';
+import { resolveClaimUser } from './claim.ts';
 
 export function registerUnclaimCommand(program: Command): void {
   program
@@ -40,76 +45,68 @@ export function registerUnclaimCommand(program: Command): void {
 
         await withMutationLock(globalOpts, async () => {
           const config = await readConfig(dir);
-          try {
-            const found = await findIssueFile(dir, id);
-            if (!found) {
-              console.error(`Error: Issue #${id} not found.`);
-              process.exit(1);
-            }
-            const issue = await readIssue(dir, id);
+          const found = await findIssueFile(dir, id);
+          if (!found) throw issueNotFound(id);
+          const issue = await readIssue(dir, id);
 
-            const decision = decideUnclaim(issue, user, {
-              force: options.force,
-              inClosedDir: found.closed,
-            });
-            if (decision.action === 'not-yours') {
-              console.error(
-                `Error: Issue #${id} is claimed by ${decision.assignee}, not you. Use --force to release it anyway.`,
-              );
-              process.exit(EXIT_ALREADY_CLAIMED);
-            }
-            if (decision.action === 'closed') {
-              console.error(
-                `Error: Issue #${id} is closed (${issue.status}); nothing to release.`,
-              );
-              process.exit(EXIT_ISSUE_CLOSED);
-            }
-            if (decision.action === 'noop') {
-              console.error(
-                options.comment
-                  ? `Issue #${id} is not claimed; nothing changed (comment not added; use "gitrac comment").`
-                  : `Issue #${id} is not claimed; nothing changed.`,
-              );
-              console.log(formatIssueDetail(issue, globalOpts.output));
-              return;
-            }
-
-            issue.assignee = '';
-            if (issue.status === 'in_progress') {
-              issue.status = 'todo';
-            }
-            const now = new Date().toISOString();
-            issue.updated = now;
-            if (options.comment) {
-              issue.comments.push({
-                author: user.name,
-                timestamp: now,
-                body: options.comment,
-              });
-            }
-
-            const filename = await writeIssue(dir, issue);
-            const filesToCommit = [join('.issues', filename)];
-            if (filename !== found.filename) {
-              // The on-disk filename didn't match the title's slug; replace it.
-              await deleteIssueFile(dir, found.filename, false);
-              filesToCommit.push(join('.issues', found.filename));
-            }
-
-            console.log(formatIssueDetail(issue, globalOpts.output));
-
-            await commitAndMaybePush(
-              globalOpts,
-              config,
-              filesToCommit,
-              `${config.git.commitPrefix} unclaim #${id} ${issue.title}`,
+          const decision = decideUnclaim(issue, user, {
+            force: options.force,
+            inClosedDir: found.closed,
+          });
+          if (decision.action === 'not-yours') {
+            throw new GitracError(
+              'already_claimed',
+              `Issue #${id} is claimed by ${decision.assignee}, not you. Use --force to release it anyway.`,
+              { details: { id, assignee: decision.assignee } },
             );
-          } catch (err) {
-            console.error(
-              `Error: ${err instanceof Error ? err.message : String(err)}`,
-            );
-            process.exit(1);
           }
+          if (decision.action === 'closed') {
+            throw new GitracError(
+              'issue_closed',
+              `Issue #${id} is closed (${issue.status}); nothing to release.`,
+              { details: { id, status: issue.status } },
+            );
+          }
+          if (decision.action === 'noop') {
+            console.error(
+              options.comment
+                ? `Issue #${id} is not claimed; nothing changed (comment not added; use "gitrac comment").`
+                : `Issue #${id} is not claimed; nothing changed.`,
+            );
+            console.log(formatIssueDetail(issue, globalOpts.output));
+            return;
+          }
+
+          issue.assignee = '';
+          if (issue.status === 'in_progress') {
+            issue.status = 'todo';
+          }
+          const now = new Date().toISOString();
+          issue.updated = now;
+          if (options.comment) {
+            issue.comments.push({
+              author: user.name,
+              timestamp: now,
+              body: options.comment,
+            });
+          }
+
+          const filename = await writeIssue(dir, issue);
+          const filesToCommit = [join('.issues', filename)];
+          if (filename !== found.filename) {
+            // The on-disk filename didn't match the title's slug; replace it.
+            await deleteIssueFile(dir, found.filename, false);
+            filesToCommit.push(join('.issues', found.filename));
+          }
+
+          console.log(formatIssueDetail(issue, globalOpts.output));
+
+          await commitAndMaybePush(
+            globalOpts,
+            config,
+            filesToCommit,
+            `${config.git.commitPrefix} unclaim #${id} ${issue.title}`,
+          );
         });
       },
     );

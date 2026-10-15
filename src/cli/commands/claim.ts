@@ -9,6 +9,11 @@ import {
 } from '../../core/claim.ts';
 import { findAssigneeByEmail } from '../../core/config.ts';
 import {
+  GitracError,
+  issueNotFound,
+  parseIssueIdArg,
+} from '../../core/errors.ts';
+import {
   deleteIssueFile,
   findIssueFile,
   readConfig,
@@ -23,16 +28,6 @@ import {
   withMutationLock,
 } from '../global-options.ts';
 import { formatIssueDetail } from '../output.ts';
-
-/** Parse an issue ID argument, exiting 1 if it isn't a number. */
-export function parseIssueIdArg(idStr: string): number {
-  const id = Number.parseInt(idStr, 10);
-  if (Number.isNaN(id)) {
-    console.error('Error: Invalid issue ID.');
-    process.exit(1);
-  }
-  return id;
-}
 
 /**
  * Resolve the current user: `--author` (name only) or git `user.name` /
@@ -78,99 +73,91 @@ export function registerClaimCommand(program: Command): void {
 
         await withMutationLock(globalOpts, async () => {
           const config = await readConfig(dir);
-          try {
-            const found = await findIssueFile(dir, id);
-            if (!found) {
-              console.error(`Error: Issue #${id} not found.`);
-              process.exit(1);
-            }
-            const wasClosed = found.closed;
-            const oldFilename = found.filename;
+          const found = await findIssueFile(dir, id);
+          if (!found) throw issueNotFound(id);
+          const wasClosed = found.closed;
+          const oldFilename = found.filename;
 
-            const issue = await readIssue(dir, id);
+          const issue = await readIssue(dir, id);
 
-            // The exclusivity check must happen under the lock, on the
-            // freshly-read issue, so two concurrent claims can't both win.
-            const decision = decideClaim(issue, user, {
-              force: options.force,
-              inClosedDir: wasClosed,
-            });
-            if (decision.action === 'already-claimed') {
-              console.error(
-                `Error: Issue #${id} is already claimed by ${decision.assignee} (in_progress). Use --force to take it over.`,
-              );
-              process.exit(EXIT_ALREADY_CLAIMED);
-            }
-            if (decision.action === 'closed') {
-              console.error(
-                `Error: Issue #${id} is closed (${issue.status}). Use "gitrac reopen ${id}" first, or claim --force to reopen and claim it.`,
-              );
-              process.exit(EXIT_ISSUE_CLOSED);
-            }
-            if (decision.action === 'noop') {
-              console.error(
-                options.comment
-                  ? `Issue #${id} is already claimed by you; nothing changed (comment not added; use "gitrac comment").`
-                  : `Issue #${id} is already claimed by you; nothing changed.`,
-              );
-              console.log(formatIssueDetail(issue, globalOpts.output));
-              return;
-            }
-
-            // Use email as the canonical identifier if available, else fall back to name
-            issue.assignee = claimAssignee(user);
-            issue.status = 'in_progress';
-
-            // Add user to config.assignees if not already present (by email)
-            let configChanged = false;
-            if (
-              user.email &&
-              !findAssigneeByEmail(config.assignees, user.email)
-            ) {
-              config.assignees.push({ name: user.name, email: user.email });
-              await writeConfig(dir, config);
-              configChanged = true;
-            }
-            const now = new Date().toISOString();
-            issue.updated = now;
-
-            if (options.comment) {
-              issue.comments.push({
-                author: user.name,
-                timestamp: now,
-                body: options.comment,
-              });
-            }
-
-            // Claiming always sets in_progress (not a closed status), so write to open dir
-            const filename = await writeIssue(dir, issue);
-
-            // If issue was in closed dir, clean up the old file
-            if (wasClosed) {
-              await deleteIssueFile(dir, oldFilename, true);
-            }
-
-            console.log(formatIssueDetail(issue, globalOpts.output));
-
-            const filesToCommit = [join('.issues', filename)];
-            if (wasClosed) {
-              filesToCommit.push(join('.issues', 'closed', oldFilename));
-            }
-            if (configChanged) {
-              filesToCommit.push(join('.issues', 'config.yaml'));
-            }
-            await commitAndMaybePush(
-              globalOpts,
-              config,
-              filesToCommit,
-              `${config.git.commitPrefix} claim #${id} ${issue.title}`,
+          // The exclusivity check must happen under the lock, on the
+          // freshly-read issue, so two concurrent claims can't both win.
+          const decision = decideClaim(issue, user, {
+            force: options.force,
+            inClosedDir: wasClosed,
+          });
+          if (decision.action === 'already-claimed') {
+            throw new GitracError(
+              'already_claimed',
+              `Issue #${id} is already claimed by ${decision.assignee} (in_progress). Use --force to take it over.`,
+              { details: { id, assignee: decision.assignee } },
             );
-          } catch (err) {
-            console.error(
-              `Error: ${err instanceof Error ? err.message : String(err)}`,
-            );
-            process.exit(1);
           }
+          if (decision.action === 'closed') {
+            throw new GitracError(
+              'issue_closed',
+              `Issue #${id} is closed (${issue.status}). Use "gitrac reopen ${id}" first, or claim --force to reopen and claim it.`,
+              { details: { id, status: issue.status } },
+            );
+          }
+          if (decision.action === 'noop') {
+            console.error(
+              options.comment
+                ? `Issue #${id} is already claimed by you; nothing changed (comment not added; use "gitrac comment").`
+                : `Issue #${id} is already claimed by you; nothing changed.`,
+            );
+            console.log(formatIssueDetail(issue, globalOpts.output));
+            return;
+          }
+
+          // Use email as the canonical identifier if available, else fall back to name
+          issue.assignee = claimAssignee(user);
+          issue.status = 'in_progress';
+
+          // Add user to config.assignees if not already present (by email)
+          let configChanged = false;
+          if (
+            user.email &&
+            !findAssigneeByEmail(config.assignees, user.email)
+          ) {
+            config.assignees.push({ name: user.name, email: user.email });
+            await writeConfig(dir, config);
+            configChanged = true;
+          }
+          const now = new Date().toISOString();
+          issue.updated = now;
+
+          if (options.comment) {
+            issue.comments.push({
+              author: user.name,
+              timestamp: now,
+              body: options.comment,
+            });
+          }
+
+          // Claiming always sets in_progress (not a closed status), so write to open dir
+          const filename = await writeIssue(dir, issue);
+
+          // If issue was in closed dir, clean up the old file
+          if (wasClosed) {
+            await deleteIssueFile(dir, oldFilename, true);
+          }
+
+          console.log(formatIssueDetail(issue, globalOpts.output));
+
+          const filesToCommit = [join('.issues', filename)];
+          if (wasClosed) {
+            filesToCommit.push(join('.issues', 'closed', oldFilename));
+          }
+          if (configChanged) {
+            filesToCommit.push(join('.issues', 'config.yaml'));
+          }
+          await commitAndMaybePush(
+            globalOpts,
+            config,
+            filesToCommit,
+            `${config.git.commitPrefix} claim #${id} ${issue.title}`,
+          );
         });
       },
     );

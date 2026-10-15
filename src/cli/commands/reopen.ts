@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import { parseIssueIdArg } from '../../core/errors.ts';
 import { issueFilename } from '../../core/slug.ts';
 import {
   moveToReopen,
@@ -22,11 +23,7 @@ export function registerReopenCommand(program: Command): void {
       const globalOpts = await resolveProjectOptions(program);
       const { dir } = globalOpts;
 
-      const id = Number.parseInt(idStr, 10);
-      if (Number.isNaN(id)) {
-        console.error('Error: Invalid issue ID.');
-        process.exit(1);
-      }
+      const id = parseIssueIdArg(idStr);
 
       // Resolve author for comments
       let author = globalOpts.author;
@@ -42,42 +39,35 @@ export function registerReopenCommand(program: Command): void {
 
       await withMutationLock(globalOpts, async () => {
         const config = await readConfig(dir);
-        try {
-          // Move from closed to open first
-          await moveToReopen(dir, id);
+        // Move from closed to open first
+        await moveToReopen(dir, id);
 
-          // Read, update status, write
-          const issue = await readIssue(dir, id);
-          issue.status = 'backlog';
-          const now = new Date().toISOString();
-          issue.updated = now;
+        // Read, update status, write
+        const issue = await readIssue(dir, id);
+        issue.status = 'backlog';
+        const now = new Date().toISOString();
+        issue.updated = now;
 
-          if (options.comment) {
-            issue.comments.push({
-              author,
-              timestamp: now,
-              body: options.comment,
-            });
-          }
-
-          await writeIssue(dir, issue);
-
-          const format = globalOpts.output;
-          console.log(formatIssueDetail(issue, format));
-
-          const filename = issueFilename(issue.id, issue.title);
-          await commitAndMaybePush(
-            globalOpts,
-            config,
-            [`.issues/${filename}`, `.issues/closed/${filename}`],
-            `${config.git.commitPrefix} reopen #${id} ${issue.title}`,
-          );
-        } catch (err) {
-          console.error(
-            `Error: ${err instanceof Error ? err.message : String(err)}`,
-          );
-          process.exit(1);
+        if (options.comment) {
+          issue.comments.push({
+            author,
+            timestamp: now,
+            body: options.comment,
+          });
         }
+
+        await writeIssue(dir, issue);
+
+        const format = globalOpts.output;
+        console.log(formatIssueDetail(issue, format));
+
+        const filename = issueFilename(issue.id, issue.title);
+        await commitAndMaybePush(
+          globalOpts,
+          config,
+          [`.issues/${filename}`, `.issues/closed/${filename}`],
+          `${config.git.commitPrefix} reopen #${id} ${issue.title}`,
+        );
       });
     });
 }

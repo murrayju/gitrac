@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import { invalidInput } from '../core/errors.ts';
 
 /**
  * Read all of stdin as UTF-8 text. When `onlyIfPiped` is set and stdin is a
@@ -21,7 +22,7 @@ export async function readStdin(
 /**
  * Read text from a file path, or from stdin when `path` is `-`. Relative paths
  * are resolved against the current working directory (not `--dir`).
- * Throws an Error with a user-facing message if the file can't be read.
+ * Throws an `invalid_input` error if the file can't be read.
  */
 export async function readTextSource(
   path: string,
@@ -31,13 +32,13 @@ export async function readTextSource(
   const abs = resolve(process.cwd(), path);
   const file = Bun.file(abs);
   if (!(await file.exists())) {
-    throw new Error(`${flag}: file not found: ${path}`);
+    throw invalidInput(`${flag}: file not found: ${path}`);
   }
   try {
     return await file.text();
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    throw new Error(`${flag}: cannot read ${path}: ${reason}`);
+    throw invalidInput(`${flag}: cannot read ${path}: ${reason}`);
   }
 }
 
@@ -46,7 +47,8 @@ export async function readTextSource(
  * or via a file option (e.g. `--description-file <path|->`). Returns
  * `undefined` when neither was given. Giving both is an error. The result is
  * trimmed, matching how descriptions and comment bodies round-trip through
- * the issue file.
+ * the issue file. Throws `invalid_input` on bad input. Call this outside
+ * `withMutationLock` (it may block reading stdin).
  */
 export async function resolveTextOption(opts: {
   inline: string | undefined;
@@ -56,26 +58,11 @@ export async function resolveTextOption(opts: {
 }): Promise<string | undefined> {
   const { inline, file, inlineFlag, fileFlag } = opts;
   if (inline !== undefined && file !== undefined) {
-    throw new Error(`Use either ${inlineFlag} or ${fileFlag}, not both.`);
+    throw invalidInput(`Use either ${inlineFlag} or ${fileFlag}, not both.`);
   }
   if (file !== undefined) {
     return (await readTextSource(file, fileFlag)).trim();
   }
   if (inline !== undefined) return inline.trim();
   return undefined;
-}
-
-/**
- * {@link resolveTextOption}, but prints the error and exits 1 on failure.
- * Call this outside `withMutationLock` (it may block reading stdin).
- */
-export async function resolveTextOptionOrExit(
-  opts: Parameters<typeof resolveTextOption>[0],
-): Promise<string | undefined> {
-  try {
-    return await resolveTextOption(opts);
-  } catch (err) {
-    console.error(`Error: ${err instanceof Error ? err.message : err}`);
-    process.exit(1);
-  }
 }

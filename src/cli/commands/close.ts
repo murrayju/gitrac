@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import { parseIssueIdArg } from '../../core/errors.ts';
 import { issueFilename } from '../../core/slug.ts';
 import {
   moveToClose,
@@ -27,11 +28,7 @@ export function registerCloseCommand(program: Command): void {
         const globalOpts = await resolveProjectOptions(program);
         const { dir } = globalOpts;
 
-        const id = Number.parseInt(idStr, 10);
-        if (Number.isNaN(id)) {
-          console.error('Error: Invalid issue ID.');
-          process.exit(1);
-        }
+        const id = parseIssueIdArg(idStr);
 
         // Resolve author for comments
         let author = globalOpts.author;
@@ -47,43 +44,36 @@ export function registerCloseCommand(program: Command): void {
 
         await withMutationLock(globalOpts, async () => {
           const config = await readConfig(dir);
-          try {
-            const issue = await readIssue(dir, id);
-            const status = options.cancelled ? 'cancelled' : 'done';
-            issue.status = status;
-            const now = new Date().toISOString();
-            issue.updated = now;
+          const issue = await readIssue(dir, id);
+          const status = options.cancelled ? 'cancelled' : 'done';
+          issue.status = status;
+          const now = new Date().toISOString();
+          issue.updated = now;
 
-            if (options.comment) {
-              issue.comments.push({
-                author,
-                timestamp: now,
-                body: options.comment,
-              });
-            }
-
-            // Write the updated issue (still in open dir)
-            await writeIssue(dir, issue);
-
-            // Move to closed directory
-            await moveToClose(dir, id);
-
-            const format = globalOpts.output;
-            console.log(formatIssueDetail(issue, format));
-
-            const filename = issueFilename(issue.id, issue.title);
-            await commitAndMaybePush(
-              globalOpts,
-              config,
-              [`.issues/${filename}`, `.issues/closed/${filename}`],
-              `${config.git.commitPrefix} close #${id} ${issue.title}`,
-            );
-          } catch (err) {
-            console.error(
-              `Error: ${err instanceof Error ? err.message : String(err)}`,
-            );
-            process.exit(1);
+          if (options.comment) {
+            issue.comments.push({
+              author,
+              timestamp: now,
+              body: options.comment,
+            });
           }
+
+          // Write the updated issue (still in open dir)
+          await writeIssue(dir, issue);
+
+          // Move to closed directory
+          await moveToClose(dir, id);
+
+          const format = globalOpts.output;
+          console.log(formatIssueDetail(issue, format));
+
+          const filename = issueFilename(issue.id, issue.title);
+          await commitAndMaybePush(
+            globalOpts,
+            config,
+            [`.issues/${filename}`, `.issues/closed/${filename}`],
+            `${config.git.commitPrefix} close #${id} ${issue.title}`,
+          );
         });
       },
     );

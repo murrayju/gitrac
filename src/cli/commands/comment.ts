@@ -1,6 +1,11 @@
 import { join } from 'node:path';
 import type { Command } from 'commander';
 import {
+  invalidInput,
+  issueNotFound,
+  parseIssueIdArg,
+} from '../../core/errors.ts';
+import {
   findIssueFile,
   readConfig,
   readIssue,
@@ -12,7 +17,7 @@ import {
   withMutationLock,
 } from '../global-options.ts';
 import { formatIssueDetail } from '../output.ts';
-import { readStdin, resolveTextOptionOrExit } from '../text-input.ts';
+import { readStdin, resolveTextOption } from '../text-input.ts';
 
 interface Opts {
   bodyFile?: string;
@@ -33,13 +38,9 @@ export function registerCommentCommand(program: Command): void {
       const globalOpts = await resolveProjectOptions(program);
       const { dir } = globalOpts;
 
-      const id = Number.parseInt(idStr, 10);
-      if (Number.isNaN(id)) {
-        console.error('Error: Invalid issue ID.');
-        process.exit(1);
-      }
+      const id = parseIssueIdArg(idStr);
 
-      let commentBody = await resolveTextOptionOrExit({
+      let commentBody = await resolveTextOption({
         inline: body,
         file: o.bodyFile,
         inlineFlag: 'a body argument',
@@ -50,8 +51,7 @@ export function registerCommentCommand(program: Command): void {
         commentBody = (await readStdin({ onlyIfPiped: true })).trim();
       }
       if (!commentBody) {
-        console.error('Error: Comment body is required.');
-        process.exit(1);
+        throw invalidInput('Comment body is required.');
       }
 
       // Get author name
@@ -69,10 +69,7 @@ export function registerCommentCommand(program: Command): void {
       await withMutationLock(globalOpts, async () => {
         const config = await readConfig(dir);
         const found = await findIssueFile(dir, id);
-        if (!found) {
-          console.error(`Error: Issue #${id} not found.`);
-          process.exit(1);
-        }
+        if (!found) throw issueNotFound(id);
         const isClosed = found.closed;
 
         const issue = await readIssue(dir, id);
