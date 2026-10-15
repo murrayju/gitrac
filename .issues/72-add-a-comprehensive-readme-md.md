@@ -1,14 +1,14 @@
 ---
 id: 72
 title: Add a comprehensive README.md
-status: todo
+status: in_progress
 priority: high
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - docs
 created: '2026-10-15T15:55:34.594Z'
 createdBy: Justin Murray
-updated: '2026-10-15T15:55:34.594Z'
+updated: '2026-10-15T15:55:35.465Z'
 ---
 
 The project has no README. Add one covering:
