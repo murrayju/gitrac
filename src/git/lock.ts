@@ -10,7 +10,11 @@ export const REPO_LOCK_NAME = 'gitrac.lock';
 /** Cache of resolved git common dirs (non-git fallbacks are not cached). */
 const commonDirCache = new Map<string, string>();
 
-async function gitCommonDir(dir: string): Promise<string | null> {
+/**
+ * Absolute path of the git common dir (shared by all worktrees) for `dir`, or
+ * null outside a git repo.
+ */
+export async function gitCommonDir(dir: string): Promise<string | null> {
   const cached = commonDirCache.get(dir);
   if (cached) return cached;
   try {

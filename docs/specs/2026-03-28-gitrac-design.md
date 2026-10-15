@@ -40,7 +40,6 @@ gitrac is a CLI tool and web UI for managing project issues as markdown files in
 
 ```yaml
 version: 1
-nextId: 4
 statuses: [backlog, todo, in_progress, done, cancelled]
 labels: [bug, feature, enhancement, docs, chore]
 priorities: [urgent, high, medium, low, none]
@@ -53,9 +52,9 @@ git:
   defaultBranch: main
 ```
 
-`statuses`, `labels`, and `priorities` are the source of truth — the CLI/UI validate against these. Users can customize by editing config. Config is validated on load with fail-fast behavior and clear error messages for invalid/missing fields. Like issue frontmatter, `config.yaml` is parsed with the YAML core schema (js-yaml 4, a pinned direct dependency): `!!js/*`, `!!timestamp`, `!!binary`, `!!set`/`!!omap` tags are rejected, so a config from an untrusted clone/PR can only ever yield plain strings, numbers, booleans, nulls, lists and maps, and date-like values (e.g. `defaultBranch: 2026-03-28`) stay strings.
+`statuses`, `labels`, and `priorities` are the source of truth — the CLI/UI validate against these. Users can customize by editing config. Config is validated on load with fail-fast behavior and clear error messages for invalid/missing fields. A `nextId:` key written by older gitrac versions is still accepted (it must be a number) and read as a lower bound for new IDs, but gitrac never writes, bumps or adds it any more — see [Issue ID Scheme](#issue-id-scheme). Like issue frontmatter, `config.yaml` is parsed with the YAML core schema (js-yaml 4, a pinned direct dependency): `!!js/*`, `!!timestamp`, `!!binary`, `!!set`/`!!omap` tags are rejected, so a config from an untrusted clone/PR can only ever yield plain strings, numbers, booleans, nulls, lists and maps, and date-like values (e.g. `defaultBranch: 2026-03-28`) stay strings.
 
-**Write validation:** Every create/update path (CLI `create`/`edit`, `POST`/`PATCH /api/issues`) validates its input with `validateIssueFields` (`src/core/validate.ts`) before writing anything: `status` and `priority` must be in the configured lists, `title` must be a non-empty string, `labels` an array of non-empty strings, `assignee`/`description` strings. Titles and labels are trimmed and labels de-duplicated. Invalid input is rejected as a whole — the CLI prints each error and exits 2 (`invalid_input`), the API returns 400 `{ error, errors[] }` — and no file (not even `nextId`) changes. Unknown labels are not an error: both the CLI and the web register them in `config.labels` with an auto-assigned color, committed alongside the issue.
+**Write validation:** Every create/update path (CLI `create`/`edit`, `POST`/`PATCH /api/issues`) validates its input with `validateIssueFields` (`src/core/validate.ts`) before writing anything: `status` and `priority` must be in the configured lists, `title` must be a non-empty string, `labels` an array of non-empty strings, `assignee`/`description` strings. Titles and labels are trimmed and labels de-duplicated. Invalid input is rejected as a whole — the CLI prints each error and exits 2 (`invalid_input`), the API returns 400 `{ error, errors[] }` — and no file changes and no ID is allocated. Unknown labels are not an error: both the CLI and the web register them in `config.labels` with an auto-assigned color, committed alongside the issue.
 
 ### Issue File Format
 
@@ -118,7 +117,16 @@ Found that the timeout defaults to 30s instead of 300s.
 
 ### Issue ID Scheme
 
-Auto-incrementing integers. `nextId` in `config.yaml` is the counter. Allocation takes `max(nextId, highest existing issue file ID + 1)` across `.issues/` and `.issues/closed/`, so a stale counter (e.g. after a merge) never yields a duplicate ID within a checkout. Allocation, writing the file, bumping the counter and committing all happen under the repo lock (see [Concurrency](#concurrency)), so parallel local creates can't collide. Races across clones/branches are resolved by git (failed push -> rebase -> reassign ID if needed).
+Sequential integers, allocated without touching `config.yaml` so parallel branches and worktrees don't conflict on a shared counter. Under the repo lock (see [Concurrency](#concurrency)), `allocateIssueId` (`src/git/ids.ts`) hands out one past the highest of:
+
+1. the **high-water mark** in `$(git rev-parse --git-common-dir)/gitrac/next-id` (holds the next free ID; shared by all worktrees of the repository, never committed). It means an ID is never reused locally, even if its issue file was deleted or lives only in another worktree's uncommitted changes;
+2. the issue files in the working tree (`.issues/` and `.issues/closed/`);
+3. the issue files on **every ref** — local branches, remote-tracking branches, tags and `HEAD` — so an issue created on a branch that isn't checked out (or one fetched from a remote) is respected. This costs three git processes regardless of the number of refs (`for-each-ref`, then `cat-file --batch-check` / `--batch` on the deduplicated `.issues` trees);
+4. the legacy `nextId` in `config.yaml`, if present.
+
+The high-water mark is then bumped. Creating an issue therefore only writes (and commits) the issue file, plus `config.yaml` when it registers new labels. A legacy `nextId` is left in place rather than stripped — it is harmless once frozen (no one bumps it, so it can't conflict) and removing it could lower the floor for clones that still rely on it; delete it by hand if you like. Outside a git repo only sources 2 and 4 apply.
+
+**Limitation:** work in another clone that hasn't been fetched yet can still get the same ID (e.g. two machines both create #12 before either pushes). Fetch before creating to minimize this; resolving such collisions on merge is left to the merge driver (#53).
 
 ### File Lookup
 

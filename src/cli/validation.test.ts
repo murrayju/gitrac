@@ -77,7 +77,7 @@ describe('create validation', () => {
     expect(res.code).toBe(EXIT_INVALID_INPUT);
     expect(res.stderr).toMatch(pattern);
     expect(res.stderr).not.toMatch(/^\s+at /m);
-    // No issue file, no nextId bump, no commit
+    // No issue file, no ID allocated, no commit
     expect(await snapshot()).toEqual(before);
   });
 

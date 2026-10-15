@@ -116,7 +116,7 @@ describe('POST /api/issues validation', () => {
     const data = (await res.json()) as { error: string; errors: string[] };
     expect(data.error).toMatch(/Invalid|required/);
     expect(data.errors.length).toBeGreaterThan(0);
-    // No issue written and nextId not bumped
+    // No issue written and no ID allocated
     expect(await snapshot()).toEqual(before);
   });
 

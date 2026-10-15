@@ -299,7 +299,7 @@ describe('serializeConfig', () => {
     const config = createDefaultConfig();
     const yaml = serializeConfig(config);
     expect(yaml).toContain('version: 1');
-    expect(yaml).toContain('nextId: 1');
+    expect(yaml).not.toContain('nextId');
     expect(yaml).toContain('defaultStatus: backlog');
     expect(yaml).toContain('defaultPriority: medium');
     expect(yaml).toContain('autoCommit: true');
@@ -311,7 +311,7 @@ describe('createDefaultConfig', () => {
   test('returns a valid config with default values', () => {
     const config = createDefaultConfig();
     expect(config.version).toBe(1);
-    expect(config.nextId).toBe(1);
+    expect(config.nextId).toBeUndefined();
     expect(config.statuses).toEqual([
       'backlog',
       'todo',
@@ -367,6 +367,16 @@ describe('validateConfig', () => {
 
   test('returns false for missing fields', () => {
     expect(validateConfig({ version: 1 })).toBe(false);
+  });
+
+  test('legacy nextId is optional but must be a number if present', () => {
+    const config = createDefaultConfig();
+    expect('nextId' in config).toBe(false);
+    expect(validateConfig({ ...config, nextId: 7 })).toBe(true);
+    expect(validateConfig({ ...config, nextId: '7' })).toBe(false);
+    expect(parseConfig(VALID_YAML.replace('nextId: 5\n', '')).nextId).toBe(
+      undefined,
+    );
   });
 
   test('returns false for invalid status values', () => {

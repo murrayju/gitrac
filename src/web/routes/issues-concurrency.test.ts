@@ -66,6 +66,12 @@ async function commitCount(): Promise<number> {
   return (await simpleGit(dir).log()).total;
 }
 
+/** The shared next-ID high-water mark in the git common dir (#54). */
+async function highWater(): Promise<number> {
+  const text = await Bun.file(join(dir, '.git', 'gitrac', 'next-id')).text();
+  return Number.parseInt(text, 10);
+}
+
 describe('concurrent web mutations', () => {
   test(`${N} concurrent POST /issues produce ${N} distinct IDs and ${N} commits`, async () => {
     const before = await commitCount();
@@ -82,7 +88,8 @@ describe('concurrent web mutations', () => {
       Array.from({ length: N }, (_, i) => i + 1),
     );
     expect(await commitCount()).toBe(before + N);
-    expect((await readConfig(dir)).nextId).toBe(N + 1);
+    expect(await highWater()).toBe(N + 1);
+    expect((await readConfig(dir)).nextId).toBeUndefined();
     expect((await simpleGit(dir).status()).files).toEqual([]);
   }, 60_000);
 
@@ -143,7 +150,8 @@ describe('concurrent web mutations', () => {
     const ids = new Set(files.map((f) => Number.parseInt(f, 10)));
     expect(files.length).toBe(N);
     expect(ids.size).toBe(N);
-    expect((await readConfig(dir)).nextId).toBe(N + 1);
+    expect(await highWater()).toBe(N + 1);
+    expect((await readConfig(dir)).nextId).toBeUndefined();
     expect((await simpleGit(dir).status()).files).toEqual([]);
   }, 60_000);
 });

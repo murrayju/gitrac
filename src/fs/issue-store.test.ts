@@ -7,7 +7,6 @@ import { GitracError } from '../core/errors.ts';
 import { serializeIssue } from '../core/issue.ts';
 import type { Issue } from '../core/types.ts';
 import {
-  allocateNextId,
   deleteIssueFile,
   findIssueFile,
   initIssuesDir,
@@ -58,7 +57,8 @@ describe('initIssuesDir', () => {
       'utf-8',
     );
     expect(configYaml).toContain('version:');
-    expect(configYaml).toContain('nextId:');
+    // IDs are allocated outside config.yaml (#54)
+    expect(configYaml).not.toContain('nextId');
   });
 
   test('creates closed subdirectory', async () => {
@@ -88,11 +88,11 @@ describe('readConfig / writeConfig', () => {
     await initIssuesDir(dir);
     const config = await readConfig(dir);
     expect(config.version).toBe(1);
-    expect(config.nextId).toBe(1);
+    expect(config.nextId).toBeUndefined();
     expect(config.statuses).toContain('backlog');
   });
 
-  test('writes and reads back config', async () => {
+  test('writes and reads back config, preserving a legacy nextId', async () => {
     await initIssuesDir(dir);
     const config = createDefaultConfig();
     config.nextId = 42;
@@ -332,55 +332,6 @@ describe('moveToReopen', () => {
   test('throws if issue not found in closed', async () => {
     await initIssuesDir(dir);
     expect(moveToReopen(dir, 999)).rejects.toThrow();
-  });
-});
-
-describe('allocateNextId', () => {
-  test('returns 1 for fresh project and increments', async () => {
-    await initIssuesDir(dir);
-    const id1 = await allocateNextId(dir);
-    expect(id1).toBe(1);
-    const config = await readConfig(dir);
-    expect(config.nextId).toBe(2);
-  });
-
-  test('increments sequentially', async () => {
-    await initIssuesDir(dir);
-    const id1 = await allocateNextId(dir);
-    const id2 = await allocateNextId(dir);
-    const id3 = await allocateNextId(dir);
-    expect(id1).toBe(1);
-    expect(id2).toBe(2);
-    expect(id3).toBe(3);
-  });
-
-  test('skips IDs already used by open issue files when nextId is stale', async () => {
-    await initIssuesDir(dir);
-    await writeIssue(dir, makeIssue({ id: 1, title: 'One' }));
-    await writeIssue(dir, makeIssue({ id: 5, title: 'Five' }));
-    // config.nextId is still 1 (e.g. stale after a merge)
-    expect((await readConfig(dir)).nextId).toBe(1);
-
-    const id = await allocateNextId(dir);
-    expect(id).toBe(6);
-    expect((await readConfig(dir)).nextId).toBe(7);
-  });
-
-  test('skips IDs already used by closed issue files', async () => {
-    await initIssuesDir(dir);
-    await writeIssue(dir, makeIssue({ id: 3, title: 'Done' }), {
-      closed: true,
-    });
-    expect(await allocateNextId(dir)).toBe(4);
-  });
-
-  test('keeps nextId when it is ahead of existing files', async () => {
-    await initIssuesDir(dir);
-    await writeIssue(dir, makeIssue({ id: 2, title: 'Two' }));
-    const config = await readConfig(dir);
-    config.nextId = 10;
-    await writeConfig(dir, config);
-    expect(await allocateNextId(dir)).toBe(10);
   });
 });
 

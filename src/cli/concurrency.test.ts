@@ -49,6 +49,12 @@ async function commitCount(): Promise<number> {
   return (await simpleGit(dir).log()).total;
 }
 
+/** The shared next-ID high-water mark in the git common dir (#54). */
+async function highWater(): Promise<number> {
+  const text = await Bun.file(join(dir, '.git', 'gitrac', 'next-id')).text();
+  return Number.parseInt(text, 10);
+}
+
 function expectAllSucceeded(results: { code: number; stderr: string }[]): void {
   expect(results.map((r) => r.stderr.trim())).toEqual(Array(N).fill(''));
   expect(results.map((r) => r.code)).toEqual(Array(N).fill(0));
@@ -81,8 +87,9 @@ describe('parallel CLI processes', () => {
 
     expect(await commitCount()).toBe(before + N);
     expect((await listIssueFiles(dir)).length).toBe(N);
-    expect((await readConfig(dir)).nextId).toBe(N + 1);
-    // Every commit captured its own issue + the counter: nothing left over
+    expect(await highWater()).toBe(N + 1);
+    expect((await readConfig(dir)).nextId).toBeUndefined();
+    // Every commit captured its own issue: nothing left over
     const status = await simpleGit(dir).status();
     expect(status.files).toEqual([]);
 
@@ -116,7 +123,8 @@ describe('parallel CLI processes', () => {
     expect(ids.size).toBe(N);
     expect(await commitCount()).toBe(before);
     expect((await listIssueFiles(dir)).length).toBe(N);
-    expect((await readConfig(dir)).nextId).toBe(N + 1);
+    expect(await highWater()).toBe(N + 1);
+    expect((await readConfig(dir)).nextId).toBeUndefined();
   }, 60_000);
 
   test(`${N} parallel comments on one issue are all kept`, async () => {
@@ -161,7 +169,8 @@ describe('concurrent commands in one process', () => {
       );
       expect(await commitCount()).toBe(before + N);
       expect((await listIssueFiles(dir)).length).toBe(N);
-      expect((await readConfig(dir)).nextId).toBe(N + 1);
+      expect(await highWater()).toBe(N + 1);
+      expect((await readConfig(dir)).nextId).toBeUndefined();
       expect((await simpleGit(dir).status()).files).toEqual([]);
     } finally {
       logSpy.mockRestore();

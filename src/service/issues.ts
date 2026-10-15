@@ -8,11 +8,11 @@ import type { Config, Issue, Status } from '../core/types.ts';
 import { isClosedStatus } from '../core/types.ts';
 import { validateIssue, validateIssueFields } from '../core/validate.ts';
 import {
-  allocateNextId,
   registerLabels,
   relocateIssue,
   writeIssue,
 } from '../fs/issue-store.ts';
+import { allocateIssueId } from '../git/ids.ts';
 import { withRepoLock } from '../git/lock.ts';
 import {
   assetPaths,
@@ -114,8 +114,8 @@ export async function createIssue(
 ): Promise<IssueChange> {
   return withRepoLock(ctx.dir, async () => {
     const config = await loadConfig(ctx);
-    // Validate everything before touching disk (allocating the ID bumps
-    // nextId in config.yaml).
+    // Validate everything before touching disk (allocating the ID bumps the
+    // shared high-water mark).
     const values = validFields(fields, config, { requireTitle: true });
     const createdBy = await resolveAuthor(ctx, options.author);
     if (createdBy === null) throw new ValidationError([INVALID_AUTHOR]);
@@ -139,7 +139,7 @@ export async function createIssue(
     const check = validateIssue({ ...issue, id: 1 }, config);
     if (!check.valid) throw new ValidationError(check.errors);
 
-    const id = await allocateNextId(ctx.dir);
+    const id = await allocateIssueId(ctx.dir);
     issue.id = id;
 
     const filename = await writeIssue(ctx.dir, issue);
@@ -149,9 +149,11 @@ export async function createIssue(
     return finish(ctx, config, {
       operation: 'create',
       issue,
+      // config.yaml only changes (and is committed) when new labels were
+      // registered; the ID counter no longer lives there.
       paths: [
         issuePath(filename, false),
-        CONFIG_PATH,
+        ...(updated ? [CONFIG_PATH] : []),
         ...assetPaths(ctx, issue),
       ],
       message: commitMessage(config, `create #${id} ${issue.title}`),

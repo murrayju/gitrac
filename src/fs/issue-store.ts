@@ -303,33 +303,3 @@ export async function initIssuesDir(
   const config = createDefaultConfig();
   await writeConfig(dir, config);
 }
-
-/**
- * Allocate the next issue ID: reads config, returns the next free ID,
- * and writes back the incremented counter.
- *
- * The ID is never lower than one past the highest ID already used by an
- * issue file (open or closed), so a stale `nextId` (e.g. after a merge) can
- * never produce a duplicate.
- *
- * This is a read-modify-write of `config.yaml`: callers must hold the repo
- * lock (see `withRepoLock` in `src/git/lock.ts`) across allocation, writing
- * the issue file, and committing.
- */
-export async function allocateNextId(dir: string): Promise<number> {
-  const [config, files] = await Promise.all([
-    readConfig(dir),
-    listAllIssueFiles(dir),
-  ]);
-  let maxExisting = 0;
-  for (const f of files) {
-    const fileId = parseIssueId(f);
-    if (fileId !== null && fileId > maxExisting) {
-      maxExisting = fileId;
-    }
-  }
-  const id = Math.max(config.nextId, maxExisting + 1);
-  config.nextId = id + 1;
-  await writeConfig(dir, config);
-  return id;
-}

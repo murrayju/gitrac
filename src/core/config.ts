@@ -122,7 +122,6 @@ export function createDefaultConfig(): Config {
   const defaultLabelNames = ['bug', 'feature', 'enhancement', 'docs', 'chore'];
   return {
     version: 1,
-    nextId: 1,
     statuses: ['backlog', 'todo', 'in_progress', 'done', 'cancelled'],
     labels: ensureLabelColors(defaultLabelNames, {}),
     assignees: [],
@@ -144,7 +143,8 @@ export function validateConfig(value: unknown): value is Config {
   const obj = value as Record<string, unknown>;
 
   if (typeof obj.version !== 'number') return false;
-  if (typeof obj.nextId !== 'number') return false;
+  // Legacy ID counter: optional, but must be a number if present.
+  if (obj.nextId !== undefined && typeof obj.nextId !== 'number') return false;
   if (!Array.isArray(obj.statuses)) return false;
   if (!Array.isArray(obj.priorities)) return false;
   if (typeof obj.defaultStatus !== 'string') return false;

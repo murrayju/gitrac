@@ -130,9 +130,30 @@ describe('createIssue', () => {
     const config = await readConfig(fx.dir);
     config.statuses = ['todo', 'done'];
     await writeConfig(fx.dir, config);
+    const before = await snapshot();
     const err = await rejection(createIssue(fx.context(), { title: 'A' }));
     expect((err as ValidationError).errors[0]).toContain('Invalid status');
-    expect((await readConfig(fx.dir)).nextId).toBe(1);
+    expect(await snapshot()).toEqual(before);
+  });
+
+  test('does not touch config.yaml unless new labels are registered (#54)', async () => {
+    const configPath = join(fx.dir, '.issues', 'config.yaml');
+    const before = await Bun.file(configPath).text();
+    const result = await createIssue(fx.context(), {
+      title: 'A',
+      labels: ['bug'],
+    });
+    expect(result.paths).toEqual([join('.issues', '1-a.md')]);
+    expect(fx.commits[0]?.files).toEqual([join('.issues', '1-a.md')]);
+    expect(await Bun.file(configPath).text()).toBe(before);
+  });
+
+  test('a legacy nextId in config.yaml is a lower bound and is left alone', async () => {
+    const config = await readConfig(fx.dir);
+    config.nextId = 10;
+    await writeConfig(fx.dir, config);
+    expect((await createIssue(fx.context(), { title: 'A' })).issue.id).toBe(10);
+    expect((await readConfig(fx.dir)).nextId).toBe(10);
   });
 
   test('noCommit and git.autoCommit: false write without committing', async () => {
@@ -165,7 +186,6 @@ describe('createIssue', () => {
     );
     const ids = results.map((r) => r.issue.id).sort((a, b) => a - b);
     expect(ids).toEqual([1, 2, 3, 4, 5, 6]);
-    expect((await readConfig(fx.dir)).nextId).toBe(7);
   });
 });
 

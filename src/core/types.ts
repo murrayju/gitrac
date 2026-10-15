@@ -53,7 +53,12 @@ export interface GitConfig {
 
 export interface Config {
   version: number;
-  nextId: number;
+  /**
+   * Legacy ID counter. Older gitrac versions bumped it on every create; it's
+   * now only read (as a lower bound for new IDs, see `allocateIssueId` in
+   * `src/git/ids.ts`) and never written or added to new configs.
+   */
+  nextId?: number;
   statuses: Status[];
   labels: Record<string, string>;
   assignees: Assignee[];
