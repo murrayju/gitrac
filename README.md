@@ -76,7 +76,7 @@ cd gitrac
 install -m 755 bin/gitrac ~/.local/bin/gitrac
 ```
 
-To run straight from the source tree without compiling, call the `./gitrac` wrapper after `./bun install`, e.g. `/path/to/gitrac/gitrac ls`. It works from any directory. The web UI needs a one-time `./bun run vite build --config vite.config.ts`; without it, only the API is served.
+To run straight from the source tree without compiling, call the `./gitrac` wrapper after `./bun install`, e.g. `/path/to/gitrac/gitrac ls`. It works from any directory, and through a symlink too, so you can put it on your PATH with `ln -s "$PWD/gitrac" ~/.local/bin/gitrac`. The web UI needs a one-time `./bun run vite build --config vite.config.ts`; without it, only the API is served.
 
 ### Requirements
 

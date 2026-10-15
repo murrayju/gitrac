@@ -1,6 +1,19 @@
 #!/bin/bash
 
-# Resolve paths relative to this script so `../gitrac` works from any
-# subdirectory (gitrac itself locates the project root via git).
-scriptDir="$(cd "$(dirname "$0")" && pwd)"
+# Resolve paths relative to this script's real location so `../gitrac` works
+# from any subdirectory (gitrac itself locates the project root via git), and
+# a symlink to it (e.g. `ln -s ~/src/gitrac/gitrac ~/.local/bin/gitrac`) finds
+# `bun` and `index.ts` in the source tree, not beside the link. Follow the
+# link chain with plain `readlink` (no GNU `readlink -f`, so it works on macOS).
+source="${BASH_SOURCE[0]}"
+while [ -L "$source" ]; do
+    linkDir="$(cd -P "$(dirname "$source")" && pwd)"
+    source="$(readlink "$source")"
+    # A relative link target is relative to the link's own directory.
+    case "$source" in
+        /*) ;;
+        *) source="$linkDir/$source" ;;
+    esac
+done
+scriptDir="$(cd -P "$(dirname "$source")" && pwd)"
 exec "$scriptDir/bun" run "$scriptDir/index.ts" "$@"
