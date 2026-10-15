@@ -1,2 +1,3 @@
 # Local gitrac files (web UI drafts); never commit these.
 drafts/
+.*.tmp
