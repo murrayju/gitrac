@@ -7,6 +7,10 @@ import { registerDeleteCommand } from './commands/delete.ts';
 import { registerEditCommand } from './commands/edit.ts';
 import { registerInitCommand } from './commands/init.ts';
 import { registerListCommand } from './commands/list.ts';
+import {
+  registerInstallMergeDriverCommand,
+  registerMergeDriverCommand,
+} from './commands/merge-driver.ts';
 import { registerReopenCommand } from './commands/reopen.ts';
 import {
   registerServeCommand,
@@ -65,6 +69,8 @@ export function createProgram(): Command {
   registerClaimCommand(program);
   registerUnclaimCommand(program);
   registerDeleteCommand(program);
+  registerInstallMergeDriverCommand(program);
+  registerMergeDriverCommand(program);
 
   return program;
 }

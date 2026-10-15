@@ -20,7 +20,8 @@ export type Operation =
   | 'claim'
   | 'unclaim'
   | 'label-colors'
-  | 'assignees';
+  | 'assignees'
+  | 'merge-driver';
 
 /**
  * Differences between the CLI and the web API that predate the service layer.

@@ -30,6 +30,7 @@ gitrac is a CLI tool and web UI for managing project issues as markdown files in
 ```
 .issues/
   config.yaml                    # Project configuration
+  .gitattributes                 # Routes issue files + config.yaml to the gitrac merge driver
   1-fix-login-timeout.md         # Open issue
   2-add-dark-mode.md             # Open issue
   closed/
@@ -126,7 +127,7 @@ Sequential integers, allocated without touching `config.yaml` so parallel branch
 
 The high-water mark is then bumped. Creating an issue therefore only writes (and commits) the issue file, plus `config.yaml` when it registers new labels. A legacy `nextId` is left in place rather than stripped — it is harmless once frozen (no one bumps it, so it can't conflict) and removing it could lower the floor for clones that still rely on it; delete it by hand if you like. Outside a git repo only sources 2 and 4 apply.
 
-**Limitation:** work in another clone that hasn't been fetched yet can still get the same ID (e.g. two machines both create #12 before either pushes). Fetch before creating to minimize this; resolving such collisions on merge is left to the merge driver (#53).
+**Limitation:** work in another clone that hasn't been fetched yet can still get the same ID (e.g. two machines both create #12 before either pushes). Fetch before creating to minimize this. Such a collision is not a merge conflict (the files have different names, e.g. `12-a.md` and `12-b.md`), so the merge driver doesn't see it; it surfaces on the next read as `duplicate_issue` (see [File Lookup](#file-lookup)) and must be fixed by hand: give one of the copies a new ID (rename the file and change its `id:`) and update references to it.
 
 ### File Lookup
 
@@ -158,7 +159,7 @@ src/
 
 **Git layer** — all git operations. Commit, amend-until-pushed, push, pull, rebase, conflict resolution for issue files. Tracks "amendable" commit state. Uses simple-git or shells out to git.
 
-**Service layer** — one function per mutation (`createIssue`, `updateIssue`, `addComment`, `editComment`, `deleteComment`, `closeIssue`, `reopenIssue`, `deleteIssue`, `claimIssue`, `unclaimIssue`, `initProject`, `updateLabelColors`, `updateAssignees`). Each takes an explicit context — project root, identity, a config loader, commit options (`noCommit`, `push`) and a commit strategy (the CLI makes plain commits; the web plugs in the amend-until-pushed `AmendTracker`) — and returns the resulting issue/config plus the changed paths. It owns the repo lock, input validation, the close/reopen and claim rules, label registration, moving files between `.issues/` and `.issues/closed/`, the commit file set (incl. referenced assets) and commit messages. Errors are `GitracError`s. The few remaining CLI-vs-web differences (commit-message wording, which files are committed, error precedence for reopen) are explicit `SurfacePolicy` switches.
+**Service layer** — one function per mutation (`createIssue`, `updateIssue`, `addComment`, `editComment`, `deleteComment`, `closeIssue`, `reopenIssue`, `deleteIssue`, `claimIssue`, `unclaimIssue`, `initProject`, `updateLabelColors`, `updateAssignees`, `installMergeDriver`). Each takes an explicit context — project root, identity, a config loader, commit options (`noCommit`, `push`) and a commit strategy (the CLI makes plain commits; the web plugs in the amend-until-pushed `AmendTracker`) — and returns the resulting issue/config plus the changed paths. It owns the repo lock, input validation, the close/reopen and claim rules, label registration, moving files between `.issues/` and `.issues/closed/`, the commit file set (incl. referenced assets) and commit messages. Errors are `GitracError`s. The few remaining CLI-vs-web differences (commit-message wording, which files are committed, error precedence for reopen) are explicit `SurfacePolicy` switches.
 
 **CLI layer** — thin command adapters using Commander.js. Reads args/flags/stdin, calls the service, formats output; errors become exit codes.
 
@@ -174,7 +175,7 @@ src/
 |---------|---------|------------|
 | `gitrac` | | Start web UI (default; alias for `gitrac serve`). Accepts `--port <port>` and `--host <host>`. |
 | `gitrac serve` | | Start web UI. `-p, --port <port>` (default: 3000), `--host <host>` (default: `127.0.0.1`). |
-| `gitrac init` | | Initialize `.issues/` in current repo. Errors if already exists (use `--force` to reinitialize). Errors if not in a git repo. |
+| `gitrac init` | | Initialize `.issues/` in current repo and install the merge driver (see [Conflict Resolution](#conflict-resolution)). Errors if already exists (use `--force` to reinitialize). Errors if not in a git repo. |
 | `gitrac create` | `new`, `add` | Create a new issue (interactive or via flags) |
 | `gitrac list` | `ls` | List issues with filters (`--status`, `--priority`, `--label`, `--assignee`, `--mine`, `--search`, `--sort`; see [List Filters](#list-filters)). Default: open issues, sorted by ID ascending. |
 | `gitrac show <id>` | `view` | Show full issue detail |
@@ -185,6 +186,8 @@ src/
 | `gitrac claim <id>` | | Assign to self + set status to `in_progress`. Exclusive: see [Claiming](#claiming). |
 | `gitrac delete <id>` | `rm` | Delete an issue (open or closed): removes its file plus any `.issues/assets/` files no other issue or draft references, and commits the removal (`issue: delete #N <title>`). See [Deleting](#deleting). |
 | `gitrac unclaim <id>` | `release` | Give an issue back: clear `assignee`, and set `in_progress` back to `todo`. See [Claiming](#claiming). |
+| `gitrac install-merge-driver` | | Install the git merge driver: write `.issues/.gitattributes` (committed if changed) and `merge.gitrac.*` in the local git config. `--command <cmd>` sets what git runs. Idempotent; run once per clone. See [Conflict Resolution](#conflict-resolution). |
+| `gitrac merge-driver <base> <ours> <theirs> [path]` | | The merge driver itself (run by git as `%O %A %B %P`, `--marker-size %L`). Writes the result to `<ours>`; exits 0 if clean, 1 if conflicts remain. |
 
 ### Global Flags
 
@@ -365,11 +368,23 @@ Implementation: `withLock` (`src/fs/lock.ts`, generic) and `withRepoLock` (`src/
 
 ### Conflict Resolution
 
-Issue files have predictable structure, enabling smarter-than-default merge:
+Issue files have predictable structure, enabling smarter-than-default merge. gitrac ships a [custom git merge driver](https://git-scm.com/docs/gitattributes#_defining_a_custom_merge_driver), so this applies to every `git merge`, `git pull` (merge or rebase), `git rebase`, `cherry-pick`, etc.
 
-1. **Frontmatter:** Per-field last-writer-wins (not whole-block replacement)
-2. **Description:** Standard merge; flag for manual resolution if truly conflicting
-3. **Comments:** Append-only — keep both sides, sort by timestamp
+**Setup.** `gitrac init` and `gitrac install-merge-driver` write `.issues/.gitattributes` (`*.md merge=gitrac`, `config.yaml merge=gitrac`; patterns relative to `.issues/`, so `closed/` is included) and commit it, and set `merge.gitrac.name` / `merge.gitrac.driver` (`<cmd> merge-driver --marker-size %L %O %A %B %P`) in the repository's local git config — shared by all its worktrees, but not by other clones: git config isn't versioned, so each clone runs `gitrac install-merge-driver` once. A clone without the config falls back to git's normal text merge (an undefined driver is ignored). `<cmd>` defaults to `gitrac` when that is the binary on `PATH`, else the running binary's absolute path, `./gitrac` when running from source in the gitrac repo itself (git runs drivers at the work-tree root), or `<bun> <index.ts>`; override with `--command`, and re-run it if the binary moves.
+
+**Issue files** (`.issues/**/*.md`, `mergeIssueFiles` in `src/git/conflict.ts`):
+
+1. **Frontmatter:** per field. A field changed on one side takes that change; a field both sides changed differently goes to the side whose `updated` is later (ties: ours) — per-field last-writer-wins, not whole-block replacement. `labels` merges as a set (additions and removals from both sides). `updated` is the later of the two.
+2. **Description:** unchanged on a side → the other side's; changed on both → line-based three-way merge (`git merge-file`). If that conflicts, the file is still written with merged frontmatter and comments, the conflict markers are left inside the description, and the driver exits 1 so git reports the conflict for manual resolution.
+3. **Comments:** keyed by author + timestamp. Additions from both sides are kept; a comment deleted on one side stays deleted unless the other side edited it; an edit on one side wins (both: ours). Sorted by timestamp.
+
+**config.yaml** (`mergeConfigFiles`): legacy `nextId` = max of both; `labels` = union (a color changed on one side wins, both: ours; a label added on their side whose color clashes with another label gets a fresh color; removals stick); `assignees` = union deduplicated by email (case-insensitive), ours' order first; `git.*` per key, and every other key three-way as a whole value, ours on conflict.
+
+**Robustness.** If any version can't be parsed strictly (no frontmatter, invalid id or YAML, leftover conflict markers, different issue IDs, invalid config) or the merged issue wouldn't read back identically, the driver does exactly what git's default driver does — a line merge with ordinary conflict markers (`git merge-file`), exit 1 on conflict — and prints a note to stderr; it never writes a half-merged file. Files are rewritten in gitrac's canonical format (unknown frontmatter keys are dropped, as on any gitrac write).
+
+**Renames.** A title change renames the file (`<id>-<slug>.md`), and closing/reopening moves it between `.issues/` and `.issues/closed/`. Git's rename detection pairs the old and new paths and the driver merges their contents, so a rename (or close) on one side and edits on the other merge cleanly into the renamed file. If **both** sides renamed it differently (both changed the title), git reports a rename/rename conflict and leaves both files, each with the merged content; keep the one matching the merged title (`git rm` the other, `git add` the keeper). Until then gitrac reports `duplicate_issue` for that ID. If the merged frontmatter doesn't match the directory git kept (e.g. one side closed the issue, the other later set an open status), the next gitrac write to the issue moves it to the right place.
+
+**Duplicate IDs** from separate clones (`12-a.md` vs `12-b.md`) aren't a content conflict and are not handled by the driver; see [Issue ID Scheme](#issue-id-scheme).
 
 ### Branch Warning
 

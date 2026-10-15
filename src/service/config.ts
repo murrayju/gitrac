@@ -10,6 +10,7 @@ import {
   loadConfig,
   type ServiceContext,
 } from './context.ts';
+import { setUpMergeDriver } from './merge-driver.ts';
 
 /** The result of a config change. */
 export interface ConfigChange {
@@ -23,15 +24,18 @@ export interface ConfigChange {
 
 /**
  * Create `.issues/` with a default config (`force` overwrites an existing
- * one; otherwise that is `already_initialized`) and commit it.
+ * one; otherwise that is `already_initialized`), install the git merge driver
+ * (`.issues/.gitattributes` + local git config; `mergeDriverCommand`
+ * overrides the command it runs) and commit.
  */
 export async function initProject(
   ctx: ServiceContext,
-  options: { force?: boolean } = {},
+  options: { force?: boolean; mergeDriverCommand?: string } = {},
 ): Promise<ConfigChange> {
   return withRepoLock(ctx.dir, async () => {
     await initIssuesDir(ctx.dir, { force: options.force });
-    const paths = [CONFIG_PATH];
+    const driver = await setUpMergeDriver(ctx.dir, options.mergeDriverCommand);
+    const paths = [CONFIG_PATH, ...driver.paths];
     // Freshly created, so read it back for the commit settings.
     const config = await loadConfig(ctx);
     const commit = await commitChange(ctx, config, {

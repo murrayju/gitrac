@@ -26,10 +26,16 @@ async function rejection(promise: Promise<unknown>): Promise<GitracError> {
 }
 
 describe('initProject', () => {
-  test('creates .issues/ and commits config.yaml', async () => {
+  test('creates .issues/ and commits config.yaml + .gitattributes', async () => {
     await rm(join(fx.dir, '.issues'), { recursive: true });
     const result = await initProject(fx.context());
-    expect(result.paths).toEqual([join('.issues', 'config.yaml')]);
+    expect(result.paths).toEqual([
+      join('.issues', 'config.yaml'),
+      join('.issues', '.gitattributes'),
+    ]);
+    expect(
+      await Bun.file(join(fx.dir, '.issues', '.gitattributes')).text(),
+    ).toContain('*.md merge=gitrac');
     expect(result.commit).toBe('abc123');
     expect(fx.events).toEqual(['written:init', 'commit:init']);
     expect(fx.commits[0]).toMatchObject({

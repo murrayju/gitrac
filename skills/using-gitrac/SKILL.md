@@ -69,6 +69,7 @@ When installed as a binary, replace `./bun index.ts` with `gitrac` in all exampl
 | `gitrac comment <id> "text"` | Add a comment (or `--body-file <path\|->`) |
 | `gitrac edit <id> -s todo` | Update status |
 | `gitrac edit <id> -d "text"` | Replace the description (or `--description-file <path\|->`) |
+| `gitrac install-merge-driver` | Once per clone: issue-aware `git merge`/`rebase` for `.issues/` (`init` does it too) |
 | `gitrac ls -o json` | Machine-readable output |
 | `gitrac ls --mine` | Issues assigned to you |
 | `gitrac ls --priority urgent,high --label bug` | Filters take comma-separated values (any of); `--status all` includes closed |
@@ -143,6 +144,15 @@ gitrac ls              # issue should no longer appear
 gitrac show <id>       # should show status: done, in .issues/closed/
 ```
 
+## Merging Branches
+
+With the gitrac merge driver installed (`gitrac init` installs it; in an existing clone run `gitrac install-merge-driver` once — the git config part isn't versioned), git merges issue files field by field instead of line by line: comments from both branches are kept, a field changed on one side wins, a field changed on both goes to the side updated last, labels merge as a set, and `config.yaml` labels/assignees are unioned. A rename (title change) or close on one branch plus edits on the other merges into the renamed file. Only these need you:
+
+- **Both branches edited the same lines of a description:** the merge stops with conflict markers inside the description (frontmatter and comments are already merged). Edit them out, `git add`, continue.
+- **Both branches changed the title:** git reports a rename/rename conflict and leaves two files with the same merged content. Keep the one matching the title, `git rm` the other.
+- **A file the driver can't parse** (hand-broken YAML, leftover markers): you get git's normal conflict markers for the whole file.
+- **Same ID created in two clones** (`12-a.md` and `12-b.md`): not a merge conflict; gitrac then fails with `duplicate_issue` (exit 3). Renumber one copy by hand (rename the file and its `id:`).
+
 ## Reading Issues Directly
 
 Issues are plain markdown. You can read them without the CLI:
@@ -184,7 +194,7 @@ stdout only ever holds the result. Errors and warnings (e.g. "not on the default
 | 0 | | Success |
 | 1 | `error`, `invalid_config` | Unexpected error, or unparseable `.issues/config.yaml` |
 | 2 | `invalid_input`, `usage`, `confirmation_required` | Bad ID / field value / flag / missing argument, or `delete` without `--yes` (stdin not a terminal) — nothing was written |
-| 3 | `already_claimed`, `already_initialized`, `invalid_state`, `duplicate_issue` | Conflict: claimed by someone else, already initialized, closing a closed / reopening an open issue, or several files on disk for one issue ID (`files` lists them — merge them by hand and delete all but one) |
+| 3 | `already_claimed`, `already_initialized`, `invalid_state`, `duplicate_issue` | Conflict: claimed by someone else, already initialized, closing a closed / reopening an open issue, or several files on disk for one issue ID (`files` lists them — merge them by hand and delete all but one, or renumber one if they are different issues) |
 | 4 | `issue_closed` | `claim`/`unclaim` on a closed issue |
 | 5 | `not_found` | No such issue |
 | 6 | `lock_timeout` | Another gitrac process held the repo lock too long — retry |
