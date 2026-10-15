@@ -182,7 +182,7 @@ Issues are plain markdown. You can read them without the CLI:
 .issues/closed/<id>-<slug>.md  # closed issues
 ```
 
-Format: YAML frontmatter (id, title, status, priority, assignee, labels, optional `parent` / `blockedBy`, dates) followed by a markdown description, then optionally a `---` separator and comments. Each comment starts with `### author — timestamp`. Only a `---` immediately followed (after blank lines) by a comment header is the separator; other horizontal rules in the description are preserved.
+Format: YAML frontmatter (id, title, status, priority, assignee, labels, optional `parent` / `blockedBy`, dates; any other keys you add, like `estimate:`, are kept verbatim after these and shown read-only as `extra` in `-o json`) followed by a markdown description, then optionally a `---` separator and comments. Each comment starts with `### author — timestamp`. Only a `---` immediately followed (after blank lines) by a comment header is the separator; other horizontal rules in the description are preserved.
 
 When reading comment bodies, headings are escaped (`\## Heading` means `## Heading`). A comment-header-like line right after a `---` in a description is likewise escaped (`\### a — b`).
 

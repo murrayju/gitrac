@@ -521,6 +521,80 @@ describe('merging dependency fields', () => {
   });
 });
 
+/** Regression tests for #84: unknown frontmatter keys merge per key. */
+describe('merging unknown frontmatter keys', () => {
+  /** An issue file with `extra` (raw YAML lines) after the known keys. */
+  const withExtra = (extra: string, overrides: Partial<Issue> = {}) =>
+    issueFile(overrides).replace(/^(updated: .*)$/m, `$1\n${extra}`);
+  /** The frontmatter lines after `updated:`. */
+  const extraOf = (content: string) =>
+    (/^updated: .*\n([\s\S]*?)^---$/m.exec(content)?.[1] ?? '').replace(
+      /\n$/,
+      '',
+    );
+  const OURS = '2025-01-02T00:00:00Z';
+  const THEIRS = '2025-01-03T00:00:00Z';
+
+  test('one-sided adds, changes and removals merge, verbatim', async () => {
+    const base = withExtra('a: 1\nb: two\nc: [x]');
+    const ours = withExtra('a: "one"   # changed\nb: two', {
+      priority: 'high',
+      updated: OURS,
+    });
+    const theirs = withExtra('a: 1\nb: two\nc: [x]\nd: {k: v}', {
+      updated: THEIRS,
+    });
+    const result = await mergeIssueFiles(base, ours, theirs);
+    expect(result.conflict).toBe(false);
+    expect(extraOf(result.content)).toBe(
+      'a: "one"   # changed\nb: two\nd: {k: v}',
+    );
+    expect(parseIssue(result.content)).toMatchObject({
+      priority: 'high',
+      updated: THEIRS,
+      extra: { a: 'one', b: 'two', d: { k: 'v' } },
+    });
+  });
+
+  test('a key changed on both sides goes to the later update', async () => {
+    const base = withExtra('estimate: 1');
+    const ours = withExtra('estimate: 2', { updated: OURS });
+    const theirs = withExtra('estimate: 3  # theirs', { updated: THEIRS });
+    expect(extraOf((await mergeIssueFiles(base, ours, theirs)).content)).toBe(
+      'estimate: 3  # theirs',
+    );
+    const older = withExtra('estimate: 3', { updated: '2024-12-31T00:00:00Z' });
+    expect(extraOf((await mergeIssueFiles(base, ours, older)).content)).toBe(
+      'estimate: 2',
+    );
+  });
+
+  test('removed on one side but changed on the other: the change is kept', async () => {
+    const base = withExtra('sprint: 4\nkeep: yes');
+    const ours = withExtra('keep: yes', { updated: THEIRS });
+    const theirs = withExtra('sprint: 5\nkeep: yes', { updated: OURS });
+    expect(extraOf((await mergeIssueFiles(base, ours, theirs)).content)).toBe(
+      'keep: yes\nsprint: 5',
+    );
+  });
+
+  test('keys added on both sides without a base are unioned', async () => {
+    const ours = withExtra('x: 1\nshared: ours', { updated: OURS });
+    const theirs = withExtra('shared: theirs\ny: 2', { updated: THEIRS });
+    const result = await mergeIssueFiles('', ours, theirs);
+    expect(extraOf(result.content)).toBe('x: 1\nshared: theirs\ny: 2');
+  });
+
+  test('no extra on either side: none in the result', async () => {
+    const merged = mergeIssueFrontmatter(
+      makeFrontmatter({ title: 'A' }),
+      makeFrontmatter({ priority: 'high' }),
+      makeFrontmatter(),
+    );
+    expect('extra' in merged).toBe(false);
+  });
+});
+
 describe('mergeConfigFiles', () => {
   const baseConfig: Config = {
     ...createDefaultConfig(),

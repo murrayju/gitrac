@@ -4,11 +4,17 @@ import {
   serializeConfig,
   validateConfig,
 } from '../core/config.ts';
-import { dependencyFields, parseIssue, serializeIssue } from '../core/issue.ts';
+import {
+  dependencyFields,
+  parseIssue,
+  pickExtraFields,
+  serializeIssue,
+} from '../core/issue.ts';
 import type {
   Assignee,
   Comment,
   Config,
+  ExtraFields,
   Issue,
   IssueFrontmatter,
 } from '../core/types.ts';
@@ -102,6 +108,45 @@ function mergeSet<T extends string | number>(
 }
 
 /**
+ * Three-way merge of the unknown frontmatter keys ({@link Issue.extra}), per
+ * key: a key added, changed or removed on one side takes that change; both
+ * changed it differently: the `newer` side's value; removed on one side but
+ * changed on the other: the change is kept. Ours' key order first, then keys
+ * only theirs has. Values keep their source text ({@link pickExtraFields}).
+ */
+function mergeExtra(
+  base: ExtraFields | null,
+  ours: ExtraFields,
+  theirs: ExtraFields,
+  newer: 'ours' | 'theirs',
+): ExtraFields | undefined {
+  const picks: [string, ExtraFields][] = [];
+  for (const key of new Set([...Object.keys(ours), ...Object.keys(theirs)])) {
+    const inOurs = Object.hasOwn(ours, key);
+    const inTheirs = Object.hasOwn(theirs, key);
+    const inBase = base !== null && Object.hasOwn(base, key);
+    const baseValue = inBase ? base[key] : undefined;
+    if (inOurs && inTheirs) {
+      const o = ours[key];
+      const t = theirs[key];
+      if (same(o, t) || (inBase && same(t, baseValue))) {
+        picks.push([key, ours]);
+      } else if (inBase && same(o, baseValue)) {
+        picks.push([key, theirs]);
+      } else {
+        picks.push([key, newer === 'ours' ? ours : theirs]);
+      }
+    } else {
+      const side = inOurs ? ours : theirs;
+      // Removed on the other side: drop it unless this side changed it.
+      if (inBase && same(side[key], baseValue)) continue;
+      picks.push([key, side]);
+    }
+  }
+  return pickExtraFields(picks);
+}
+
+/**
  * Per-field three-way merge for issue frontmatter:
  *
  * - A field changed on one side only takes that side's value.
@@ -112,6 +157,7 @@ function mergeSet<T extends string | number>(
  *   are kept, items removed on either side are dropped. `parent` is an
  *   ordinary field.
  * - `updated` is the later of the two.
+ * - Unknown keys (`extra`) merge per key, the same way ({@link mergeExtra}).
  *
  * `base` is null when both sides added the file independently.
  */
@@ -128,7 +174,7 @@ export function mergeIssueFrontmatter(
   ): IssueFrontmatter[K] =>
     pick3(base?.[key], hasBase, ours[key], theirs[key], newer);
 
-  return {
+  const merged: IssueFrontmatter = {
     id: field('id'),
     title: field('title'),
     status: field('status'),
@@ -148,6 +194,13 @@ export function mergeIssueFrontmatter(
     createdBy: field('createdBy'),
     updated: newer === 'theirs' ? theirs.updated : ours.updated,
   };
+  const extra = mergeExtra(
+    base ? (base.extra ?? {}) : null,
+    ours.extra ?? {},
+    theirs.extra ?? {},
+    newer,
+  );
+  return extra ? { ...merged, extra } : merged;
 }
 
 const commentKey = (c: Comment): string => `${c.author}|${c.timestamp}`;
@@ -236,6 +289,7 @@ function frontmatterOf(issue: Issue): IssueFrontmatter {
     created: issue.created,
     createdBy: issue.createdBy,
     updated: issue.updated,
+    ...(issue.extra ? { extra: issue.extra } : {}),
   };
 }
 

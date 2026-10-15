@@ -9,7 +9,13 @@ import {
 } from './comments.ts';
 import { GitracError } from './errors.ts';
 import { scanFences } from './fences.ts';
-import type { Issue, IssueFrontmatter, Priority, Status } from './types.ts';
+import type {
+  ExtraFields,
+  Issue,
+  IssueFrontmatter,
+  Priority,
+  Status,
+} from './types.ts';
 
 /**
  * gray-matter options used when parsing issue files.
@@ -30,6 +36,168 @@ const MATTER_OPTIONS = {
       (yaml.load(input, { schema: yaml.CORE_SCHEMA }) ?? {}) as object,
   },
 };
+
+/** The frontmatter keys gitrac knows; everything else goes to `extra`. */
+const KNOWN_KEYS: ReadonlySet<string> = new Set([
+  'id',
+  'title',
+  'status',
+  'priority',
+  'assignee',
+  'labels',
+  'parent',
+  'blockedBy',
+  'created',
+  'createdBy',
+  'updated',
+]);
+
+/** The YAML text an unknown key was read from, and the value it parsed to. */
+interface ExtraSource {
+  text: string;
+  value: unknown;
+}
+
+/**
+ * The source text of each key of an `extra` object (in file order), so an
+ * unchanged unknown key is written back exactly as it was read — quoting,
+ * flow style, comments and all — rather than re-dumped. Keyed by the
+ * `extra` object itself, so it follows the issue through every in-place
+ * mutation and `{ ...issue }` copy without showing up in JSON output.
+ */
+const extraSources = new WeakMap<object, Map<string, ExtraSource>>();
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** An own-property lookup (safe for keys like `__proto__`). */
+const ownValue = (record: object, key: string): unknown =>
+  Object.getOwnPropertyDescriptor(record, key)?.value;
+
+/**
+ * Split raw frontmatter YAML into one text block per top-level key: a line
+ * starting in column 0 (not a comment or a `- ` sequence entry) starts a
+ * key; comment lines just before it belong to it; blank lines at the edges
+ * are dropped.
+ */
+function topLevelBlocks(raw: string): string[] {
+  const blocks: string[][] = [];
+  let pending: string[] = [];
+  for (const line of raw.split(/\r?\n/)) {
+    if (line.trim() === '' || line.startsWith('#')) {
+      pending.push(line);
+    } else if (/^(?![\s#]|-(?:\s|$))/.test(line)) {
+      blocks.push([...pending, line]);
+      pending = [];
+    } else {
+      blocks.at(-1)?.push(...pending, line);
+      pending = [];
+    }
+  }
+  blocks.at(-1)?.push(...pending);
+  return blocks.map((lines) => lines.join('\n').trim());
+}
+
+/**
+ * The source text of every unknown key of the frontmatter `data` parsed from
+ * `raw`, in file order — or null if `raw` can't be split into independent
+ * per-key blocks that each parse to exactly the key's value (anchors and
+ * aliases across keys, multi-line flow values in column 0, ...). Then the
+ * values are re-dumped on write instead.
+ */
+function extraSourcesOf(
+  raw: string,
+  data: Record<string, unknown>,
+): Map<string, ExtraSource> | null {
+  const sources = new Map<string, ExtraSource>();
+  const seen = new Set<string>();
+  for (const text of topLevelBlocks(raw)) {
+    let parsed: unknown;
+    try {
+      parsed = yaml.load(text, { schema: yaml.CORE_SCHEMA });
+    } catch {
+      return null;
+    }
+    if (!isPlainObject(parsed)) return null;
+    const keys = Object.keys(parsed);
+    const key = keys[0];
+    if (keys.length !== 1 || key === undefined || seen.has(key)) return null;
+    const value = ownValue(parsed, key);
+    if (!Object.hasOwn(data, key)) return null;
+    if (!Bun.deepEquals(value, ownValue(data, key), true)) return null;
+    seen.add(key);
+    if (!KNOWN_KEYS.has(key)) sources.set(key, { text, value });
+  }
+  return seen.size === Object.keys(data).length ? sources : null;
+}
+
+/**
+ * The unknown keys of the frontmatter `data` (parsed from `raw`), in file
+ * order, or undefined if there are none.
+ */
+function extraFieldsOf(
+  raw: string,
+  data: Record<string, unknown>,
+): ExtraFields | undefined {
+  const keys = Object.keys(data).filter((key) => !KNOWN_KEYS.has(key));
+  if (keys.length === 0) return undefined;
+  const sources = extraSourcesOf(raw, data);
+  const ordered = sources ? [...sources.keys()] : keys;
+  const extra: ExtraFields = Object.fromEntries(
+    ordered.map((key) => [key, ownValue(data, key)]),
+  );
+  if (sources) extraSources.set(extra, sources);
+  return extra;
+}
+
+/**
+ * Build an `extra` object from `[key, from]` picks — each key's value taken
+ * from the `extra` object `from` — keeping the source text of the picked
+ * keys, so they are still written back verbatim. Used by the merge driver.
+ * Returns undefined when there are no picks.
+ */
+export function pickExtraFields(
+  picks: ReadonlyArray<readonly [key: string, from: ExtraFields]>,
+): ExtraFields | undefined {
+  if (picks.length === 0) return undefined;
+  const sources = new Map<string, ExtraSource>();
+  const extra: ExtraFields = Object.fromEntries(
+    picks.map(([key, from]) => {
+      const source = extraSources.get(from)?.get(key);
+      if (source) sources.set(key, source);
+      return [key, ownValue(from, key)];
+    }),
+  );
+  extraSources.set(extra, sources);
+  return extra;
+}
+
+/**
+ * YAML for the unknown keys (no trailing newline; '' if none). A key whose
+ * value is unchanged since it was read is written as its source text;
+ * anything else is dumped. Keys are in file order (also for integer-like keys,
+ * which JS objects enumerate first), then any new ones.
+ */
+function serializeExtra(extra: ExtraFields | undefined): string {
+  if (!extra) return '';
+  const sources = extraSources.get(extra);
+  const keys = new Set([
+    ...[...(sources?.keys() ?? [])].filter((key) => Object.hasOwn(extra, key)),
+    ...Object.keys(extra),
+  ]);
+  const blocks: string[] = [];
+  for (const key of keys) {
+    const value = ownValue(extra, key);
+    if (value === undefined) continue;
+    const source = sources?.get(key);
+    blocks.push(
+      source && Bun.deepEquals(source.value, value, true)
+        ? source.text
+        : yaml.dump(Object.fromEntries([[key, value]])).replace(/\n$/, ''),
+    );
+  }
+  return blocks.join('\n');
+}
 
 /**
  * Coerce an arbitrary YAML value to a string ('' for null/undefined).
@@ -121,8 +289,13 @@ export function dependencyFields(
  * descriptions that would otherwise be ambiguous are written.
  */
 export function parseIssue(markdown: string): Issue {
-  const { data, content } = matter(markdown, MATTER_OPTIONS);
-  const fm = (data ?? {}) as Record<string, unknown>;
+  const {
+    data,
+    content,
+    matter: rawFrontmatter,
+  } = matter(markdown, MATTER_OPTIONS);
+  const fm = (isPlainObject(data) ? data : {}) as Record<string, unknown>;
+  const extra = extraFieldsOf(rawFrontmatter ?? '', fm);
 
   // gray-matter already strips the frontmatter, so `content` starts after
   // the closing ---.
@@ -145,6 +318,7 @@ export function parseIssue(markdown: string): Issue {
     created: toStringField(fm.created),
     createdBy: toStringField(fm.createdBy),
     updated: toStringField(fm.updated),
+    ...(extra ? { extra } : {}),
     description,
     comments,
   };
@@ -221,7 +395,11 @@ export function serializeIssue(issue: Issue): string {
 
   // gray-matter stringify adds the frontmatter delimiters
   const result = matter.stringify(`\n${body}\n`, frontmatter);
-  return result;
+  // Unknown keys go after the known ones, before the closing delimiter.
+  const extra = serializeExtra(issue.extra);
+  if (!extra) return result;
+  const end = result.indexOf('\n---\n', 3);
+  return `${result.slice(0, end)}\n${extra}${result.slice(end)}`;
 }
 
 const SEPARATOR = '---';

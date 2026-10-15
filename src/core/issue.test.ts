@@ -654,3 +654,136 @@ Body
     );
   });
 });
+
+/** Regression tests for #84: unknown frontmatter keys are preserved. */
+describe('unknown frontmatter keys', () => {
+  const KNOWN = `---
+id: 7
+title: Task
+status: todo
+priority: medium
+assignee: ''
+labels: []
+created: '2025-01-01T00:00:00Z'
+createdBy: tester
+updated: '2025-01-01T00:00:00Z'
+`;
+  const BODY = '---\n\nBody\n';
+  const EXTRA = `# planning
+sprint: 2026-03-28
+estimate: 3   # points
+externalId: "GH-12"
+meta: {source: jira, tags: [a, b]}
+empty:
+notes: |
+  line one
+  line two
+'quoted key': yes
+`;
+  const RAW = `${KNOWN}${EXTRA}${BODY}`;
+
+  test('round-trip byte-for-byte after the known keys', () => {
+    expect(serializeIssue(parseIssue(RAW))).toBe(RAW);
+  });
+
+  test('are exposed as `extra` (parsed with the core schema), in file order', () => {
+    const issue = parseIssue(RAW);
+    expect(issue.extra).toEqual({
+      sprint: '2026-03-28',
+      estimate: 3,
+      externalId: 'GH-12',
+      meta: { source: 'jira', tags: ['a', 'b'] },
+      empty: null,
+      notes: 'line one\nline two\n',
+      'quoted key': 'yes',
+    });
+    expect(Object.keys(issue.extra ?? {})).toEqual([
+      'sprint',
+      'estimate',
+      'externalId',
+      'meta',
+      'empty',
+      'notes',
+      'quoted key',
+    ]);
+  });
+
+  test('are absent when the file has none', () => {
+    expect('extra' in parseIssue(`${KNOWN}${BODY}`)).toBe(false);
+  });
+
+  test('interleaved with known keys: moved after them, order kept', () => {
+    const raw = KNOWN.replace(
+      "assignee: ''\n",
+      "assignee: ''\nzeta: 1\n# about alpha\nalpha: [x]\n",
+    ).replace('createdBy: tester\n', 'createdBy: tester\nmid: two words\n');
+    const out = serializeIssue(parseIssue(`${raw}${BODY}`));
+    expect(out).toBe(
+      `${KNOWN}zeta: 1\n# about alpha\nalpha: [x]\nmid: two words\n${BODY}`,
+    );
+    // ...and that is a fixed point.
+    expect(serializeIssue(parseIssue(out))).toBe(out);
+  });
+
+  test('survive changes to known fields and copies of the issue', () => {
+    const issue = parseIssue(RAW);
+    issue.status = 'done';
+    issue.labels = ['bug'];
+    issue.parent = 3;
+    issue.comments.push({ author: 'a', timestamp: '2025-01-02', body: 'hi' });
+    const out = serializeIssue({ ...issue, title: 'Renamed' });
+    expect(out).toContain(`updated: '2025-01-01T00:00:00Z'\n${EXTRA}---\n`);
+    expect(parseIssue(out)).toMatchObject({
+      title: 'Renamed',
+      status: 'done',
+      extra: issue.extra,
+    });
+  });
+
+  test('a changed value is re-dumped; the others stay verbatim', () => {
+    const issue = parseIssue(RAW);
+    (issue.extra as Record<string, unknown>).estimate = 5;
+    const out = serializeIssue(issue);
+    expect(out).toBe(RAW.replace('estimate: 3   # points', 'estimate: 5'));
+    expect(parseIssue(out).extra?.estimate).toBe(5);
+  });
+
+  test('extra without source text (built by hand or cloned) is dumped safely', () => {
+    const issue = parseIssue(`${KNOWN}${BODY}`);
+    const extra = { due: '2026-04-01', count: 2, list: ['a b'], nul: null };
+    const out = serializeIssue({ ...issue, extra: structuredClone(extra) });
+    expect(out).toBe(
+      `${KNOWN}due: '2026-04-01'\ncount: 2\nlist:\n  - a b\nnul: null\n${BODY}`,
+    );
+    expect(parseIssue(out).extra).toEqual(extra);
+  });
+
+  test('anchors / aliases across keys fall back to dumping the values', () => {
+    const raw = `${KNOWN}base: &b {x: 1}\ncopy: *b\n${BODY}`;
+    const issue = parseIssue(raw);
+    expect(issue.extra).toEqual({ base: { x: 1 }, copy: { x: 1 } });
+    const out = serializeIssue(issue);
+    expect(parseIssue(out).extra).toEqual(issue.extra);
+    expect(serializeIssue(parseIssue(out))).toBe(out);
+  });
+
+  test('integer-like keys keep their file order', () => {
+    const raw = `${KNOWN}zz: 1\n'10': ten\n2: two\n${BODY}`;
+    expect(serializeIssue(parseIssue(raw))).toBe(raw);
+  });
+
+  test('a __proto__ key is kept as data, not as a prototype', () => {
+    const raw = `${KNOWN}__proto__: {polluted: true}\n${BODY}`;
+    const issue = parseIssue(raw);
+    expect(Object.hasOwn(issue.extra ?? {}, '__proto__')).toBe(true);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(serializeIssue(issue)).toBe(raw);
+  });
+
+  test('known keys never land in extra', () => {
+    const issue = parseIssue(RAW.replace('id: 7', "id: '7'"));
+    for (const key of ['id', 'title', 'labels', 'updated', 'parent']) {
+      expect(Object.hasOwn(issue.extra ?? {}, key)).toBe(false);
+    }
+  });
+});

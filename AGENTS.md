@@ -153,6 +153,8 @@ Description goes here (full markdown supported).
 Comment body here. Headings in comments are escaped with `\#`.
 ```
 
+Unknown frontmatter keys (hand-added `estimate:`, `externalId:`, ...) are preserved verbatim after the known ones on every write and merge, and exposed read-only as `Issue.extra` (`-o json`, API). Don't build or copy issue frontmatter field by field without carrying `extra` along (`src/core/issue.ts`).
+
 ## Working on Issues
 
 1. Run `./gitrac ls` (or `./gitrac ready`) to see open issues

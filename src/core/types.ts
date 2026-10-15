@@ -58,9 +58,20 @@ export interface Issue {
   created: string; // ISO 8601
   createdBy: string;
   updated: string; // ISO 8601
+  /**
+   * Frontmatter keys gitrac doesn't know (e.g. `estimate:`, `externalId:`
+   * added by hand or another tool), by key in file order, with their parsed
+   * (YAML core schema) values. Absent when there are none. Read-only: gitrac
+   * preserves them verbatim on every write (after the known keys) and merges
+   * them per key, but no CLI/web input sets them. See {@link ExtraFields}.
+   */
+  extra?: ExtraFields;
   description: string; // raw markdown
   comments: Comment[];
 }
+
+/** Unknown frontmatter keys of an issue ({@link Issue.extra}). */
+export type ExtraFields = Record<string, unknown>;
 
 export interface IssueFrontmatter {
   id: number;
@@ -74,6 +85,7 @@ export interface IssueFrontmatter {
   created: string;
   createdBy: string;
   updated: string;
+  extra?: ExtraFields;
 }
 
 export interface Assignee {

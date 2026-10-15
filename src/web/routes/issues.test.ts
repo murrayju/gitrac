@@ -981,3 +981,41 @@ describe('POST /api/issues/:id/comments — closed issue handling', () => {
     expect(closedFiles).toHaveLength(1);
   });
 });
+
+/** Regression tests for #84: unknown frontmatter keys over the API. */
+describe('unknown frontmatter keys', () => {
+  const EXTRA =
+    'sprint: 2026-03-28\nestimate: 3   # points\nexternalId: "GH-12"';
+
+  beforeEach(async () => {
+    const content = serializeIssue(makeIssue({ id: 1, title: 'Task' }));
+    await writeFile(
+      join(dir, '.issues', '1-task.md'),
+      content.replace(/^(updated: .*)$/m, `$1\n${EXTRA}`),
+    );
+  });
+
+  test('are exposed under `extra` and survive a PATCH verbatim', async () => {
+    const get = (await (await req('/issues/1')).json()) as Issue;
+    expect(get.extra).toEqual({
+      sprint: '2026-03-28',
+      estimate: 3,
+      externalId: 'GH-12',
+    });
+    const list = (await (await req('/issues')).json()) as Issue[];
+    expect(list[0]?.extra).toEqual(get.extra);
+
+    const res = await req('/issues/1', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      // `extra` is not editable: it is ignored.
+      body: JSON.stringify({ title: 'Renamed', extra: { estimate: 9 } }),
+    });
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as Issue;
+    expect(data.title).toBe('Renamed');
+    expect(data.extra).toEqual(get.extra);
+    const file = await Bun.file(join(dir, '.issues', '1-renamed.md')).text();
+    expect(file).toContain(`\n${EXTRA}\n---\n`);
+  });
+});
