@@ -1,14 +1,14 @@
 ---
 id: 51
 title: CLI and web route logic is duplicated
-status: todo
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - chore
 created: '2026-10-14T21:43:46.806Z'
 createdBy: Justin Murray
-updated: '2026-10-14T21:43:46.806Z'
+updated: '2026-10-15T00:43:49.402Z'
 ---
 
 Every CLI command and web route re-implements: find issue, read, mutate, compute old/new paths across `.issues/` and `closed/`, write, delete old file, collect paths, commit, push. The duplication is the root cause of several inconsistencies (reopen status, which files are committed, validation, author resolution).
