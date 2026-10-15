@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import simpleGit from 'simple-git';
-import { AmendTracker } from './amend-tracker.ts';
+import { AmendTracker, amendedMessage } from './amend-tracker.ts';
 
 let dir: string;
 
@@ -21,6 +21,36 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
+});
+
+describe('amendedMessage', () => {
+  test('keeps the first message and marks folded-in edits', () => {
+    expect(amendedMessage('create #5 Foo\n', 'update #5 Foo')).toBe(
+      'create #5 Foo (+ edits)',
+    );
+  });
+
+  test('does not stack the suffix', () => {
+    expect(amendedMessage('create #5 Foo (+ edits)', 'comment on #5 Foo')).toBe(
+      'create #5 Foo (+ edits)',
+    );
+  });
+
+  test('identical message is left unchanged', () => {
+    expect(amendedMessage('update #5 Foo', 'update #5 Foo')).toBe(
+      'update #5 Foo',
+    );
+  });
+
+  test('suffix goes on the subject line; body is kept', () => {
+    expect(amendedMessage('create #5 Foo\n\nbody\n', 'update #5 Foo')).toBe(
+      'create #5 Foo (+ edits)\n\nbody',
+    );
+  });
+
+  test('falls back to the new message if the existing one is empty', () => {
+    expect(amendedMessage('', 'update #5 Foo')).toBe('update #5 Foo');
+  });
 });
 
 describe('AmendTracker', () => {
@@ -187,7 +217,8 @@ describe('AmendTracker', () => {
 
       const log = await git.log();
       expect(log.total).toBe(2); // initial + amended (not 3)
-      expect(log.latest?.message).toBe('update issue');
+      // Keeps the first operation's message (regression #49)
+      expect(log.latest?.message).toBe('add issue (+ edits)');
     });
 
     test('third call still amends for same issue', async () => {
@@ -205,7 +236,44 @@ describe('AmendTracker', () => {
 
       const log = await git.log();
       expect(log.total).toBe(2); // initial + one amended commit
-      expect(log.latest?.message).toBe('another comment');
+      // Suffix is added once, not once per amend
+      expect(log.latest?.message).toBe('comment on issue (+ edits)');
+    });
+
+    test('amend after record() keeps the recorded commit message (regression #49)', async () => {
+      const tracker = new AmendTracker();
+      const git = simpleGit(dir);
+
+      await Bun.write(join(dir, 'issue.md'), '# Issue v1');
+      await git.add('issue.md');
+      await git.commit('gitrac: create #1 Issue');
+      tracker.record(1, (await git.revparse(['HEAD'])).trim());
+
+      await Bun.write(join(dir, 'issue.md'), '# Issue v2');
+      await tracker.commitOrAmend(
+        dir,
+        1,
+        ['issue.md'],
+        'gitrac: update #1 Issue',
+      );
+
+      const log = await git.log();
+      expect(log.total).toBe(2);
+      expect(log.latest?.message).toBe('gitrac: create #1 Issue (+ edits)');
+    });
+
+    test('same message on amend is kept without a suffix', async () => {
+      const tracker = new AmendTracker();
+      const git = simpleGit(dir);
+
+      await Bun.write(join(dir, 'issue.md'), '# Issue v1');
+      await tracker.commitOrAmend(dir, 1, ['issue.md'], 'update #1 Issue');
+      await Bun.write(join(dir, 'issue.md'), '# Issue v2');
+      await tracker.commitOrAmend(dir, 1, ['issue.md'], 'update #1 Issue');
+
+      const log = await git.log();
+      expect(log.total).toBe(2);
+      expect(log.latest?.message).toBe('update #1 Issue');
     });
 
     test('call for different issue creates a new commit', async () => {

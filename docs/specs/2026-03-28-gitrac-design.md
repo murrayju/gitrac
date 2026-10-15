@@ -295,6 +295,7 @@ issue: claim #3 (murrayju)
    - No other commit has been made since (by CLI, another tool, or manual git)
 3. If either condition fails -> new commit instead
 4. If an amend leaves the commit with no net change vs. its parent (every file it touches is one of the issue files gitrac just committed, and only the frontmatter `updated:` timestamp differs), the commit is dropped. The drop uses `git reset --soft HEAD~1` and then restores only those issue files (index + working tree) to the parent's version — it never uses `reset --hard`, so unrelated staged/unstaged work is preserved.
+5. An amended commit keeps the first operation's message so history still shows what happened (e.g. `create #5 Fix login`); when a later operation with a different message is folded in, the subject gets a single ` (+ edits)` suffix (`create #5 Fix login (+ edits)`).
 
 **Implementation:** After committing, store the commit hash and issue ID in server memory. Before amending, verify `git log -1 --format=%H` matches the stored hash and the branch is ahead of remote. This has a narrow TOCTOU window that is acceptable for a single-user tool; if amend fails, fall back to a new commit.
 

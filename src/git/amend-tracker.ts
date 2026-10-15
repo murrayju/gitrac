@@ -6,6 +6,28 @@ import { withRepoLock } from './lock.ts';
 import { commitIssueChange, commitPaths } from './operations.ts';
 import { hasRemote } from './status.ts';
 
+/** Suffix appended to an amended commit's subject to mark folded-in edits. */
+export const AMEND_SUFFIX = ' (+ edits)';
+
+/**
+ * Build the message for an amended commit. The amended commit keeps the
+ * message of the first operation it recorded (e.g. `create #5 title`), so
+ * history still shows what originally happened; if a later operation with a
+ * different message is folded in, the subject gets a single ` (+ edits)`
+ * suffix. Any body lines of the existing message are kept as-is.
+ */
+export function amendedMessage(existing: string, incoming: string): string {
+  const current = existing.trim();
+  if (!current) return incoming;
+  const newline = current.indexOf('\n');
+  const subject = newline === -1 ? current : current.slice(0, newline);
+  const body = newline === -1 ? '' : current.slice(newline);
+  if (subject.endsWith(AMEND_SUFFIX) || subject === incoming.trim()) {
+    return current;
+  }
+  return `${subject}${AMEND_SUFFIX}${body}`;
+}
+
 /**
  * Tracks whether a commit can be amended (for web UI batch edits).
  * Stores the issue ID and commit hash of the last operation.
@@ -145,7 +167,8 @@ export class AmendTracker {
   /**
    * Commit or amend based on whether the last commit for this issue
    * is still the HEAD and hasn't been pushed. This is the standard
-   * pattern all web routes should use.
+   * pattern all web routes should use. When amending, the commit keeps its
+   * original message (see `amendedMessage`) rather than taking `message`.
    */
   async commitOrAmend(
     dir: string,
@@ -168,7 +191,14 @@ export class AmendTracker {
   ): Promise<void> {
     const canAmendResult = await this.canAmend(dir, issueId);
     if (canAmendResult) {
-      const hash = await this.amend(dir, files, message);
+      const headMessage = await simpleGit(dir)
+        .raw(['log', '-1', '--format=%B', 'HEAD'])
+        .catch(() => '');
+      const hash = await this.amend(
+        dir,
+        files,
+        amendedMessage(headMessage, message),
+      );
       const dropped = await this.dropIfNoOp(dir, files);
       if (!dropped) {
         this.record(issueId, hash);
