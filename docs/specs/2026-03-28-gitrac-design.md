@@ -156,7 +156,7 @@ Found that the timeout defaults to 30s instead of 300s.
 - In the description, a comment-header-like line that directly follows a `---` line (outside code fences) is escaped with a leading backslash so it cannot be mistaken for the separator. All other description content is written verbatim.
 - Escaping is reversible: a line that already starts with backslashes gets one more, and the parser removes exactly one.
 - Fenced code blocks may use ```` ``` ```` or `~~~` (3+ characters, optionally indented); a fence closes only with the same character at least as long as the opener. If a description ends inside an unclosed fence and the issue has comments, the serializer closes the fence so it cannot swallow the comments.
-- Cross-references use `#N` syntax (e.g., `#45`)
+- Cross-references use `#N` syntax (e.g., `#45`). The web UI renders them as links to the issue (see "React UI"); the stored markdown is never rewritten
 
 ### Dependencies
 
@@ -556,6 +556,8 @@ Any other `/api` or `/api/*` request (any method) is a **404** `{ "error": "Not 
 **List View:** Sortable/filterable table with columns: ID, Title, Status, Priority, Assignee, Labels, Updated. Colored status/priority badges. An issue claimed in another worktree or on another branch gets a badge after its title (`claimed by Bob in wt-1` / `on origin/agent-1`, in the active status's colors; the full location on hover). Click row to open detail view. Inline status/assignee quick-edit.
 
 **Detail View:** Tiptap WYSIWYG editor for description (auto-save on change; external changes are loaded into the editor or flagged as a conflict — see "Concurrency"). Inline metadata editing (dropdowns for status, priority, assignee, labels); below the assignee, an "Elsewhere" badge spells out a claim in another worktree / on another branch (`Claimed by Bob in worktree /path (branch agent-1)`). Below the metadata, a read-only dependencies panel lists the parent, sub-issues, blockers and the issues this one blocks (linked, with status; closed/missing ones struck through; refreshed on every change); links are edited with `gitrac link` / `unlink` or the API. Comments rendered below with author/timestamp. Tiptap "add comment" editor at bottom. "Delete issue" at the bottom of the sidebar asks for confirmation, deletes with `If-Match` (a 409 shows the latest version instead), then returns to the list. All changes trigger commit (with amend-until-pushed logic).
+
+**Issue references:** `#N` in descriptions and comments (read-only views and editors alike) renders as a link to `/issues/N`, with the issue's title on hover when the UI has already loaded it (the list, the open issue, its linked issues). It's render-only — ProseMirror decorations (`src/web/ui/lib/issue-link-plugin.ts`), so the saved markdown is unchanged. A reference must be word-bounded (not `abc#3`, `##3`, `&#38;`, `#3a`, `#3.5`, `#3-setup`) and not in inline code, a code block, a link, or a bare URL (`https://x/page#3`); rules in `src/web/ui/lib/issue-refs.ts`. Clicking navigates in-app in read-only views and the description editor; in composers (new comment, comment edit, new issue) it opens a new tab so the draft isn't lost.
 
 **Visual Style:** Dark theme by default (with light theme option). Status colors: a status's configured `color`, else backlog=gray, todo=blue, in_progress=yellow, done=green, cancelled=red, gray for other statuses (priority dots likewise). Clean sans-serif typography, minimal chrome.
 

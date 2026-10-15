@@ -10,6 +10,7 @@ import { ConflictError, deleteComment, updateComment } from '../api.ts';
 import { ImageUpload } from '../lib/image-upload-plugin.ts';
 import { getEditorMarkdown } from '../lib/markdown.ts';
 import { relativeTime } from '../lib/time.ts';
+import { useIssueLinks } from '../lib/use-issue-links.ts';
 import { MarkdownContent } from './MarkdownContent.tsx';
 
 const AVATAR_COLORS = [
@@ -124,6 +125,7 @@ function InlineCommentEditor({
     },
   });
 
+  const issueLinks = useIssueLinks({ inApp: false });
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -136,6 +138,7 @@ function InlineCommentEditor({
         transformCopiedText: true,
       }),
       SubmitShortcut,
+      issueLinks,
     ],
     content: initialBody,
     editorProps: {

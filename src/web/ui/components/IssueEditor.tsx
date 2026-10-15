@@ -13,6 +13,7 @@ import {
 import { Markdown } from 'tiptap-markdown';
 import { ImageUpload } from '../lib/image-upload-plugin.ts';
 import { getEditorMarkdown } from '../lib/markdown.ts';
+import { useIssueLinks } from '../lib/use-issue-links.ts';
 
 export interface IssueEditorHandle {
   insertImage: (url: string, alt: string) => void;
@@ -36,6 +37,11 @@ export const IssueEditor = forwardRef<
     placeholder?: string;
     editable?: boolean;
     borderless?: boolean;
+    /**
+     * Clicking a `#N` reference navigates in-app (default: opens a new tab,
+     * so a composer doesn't lose its text).
+     */
+    issueLinksInApp?: boolean;
   }
 >(function IssueEditor(
   {
@@ -45,6 +51,7 @@ export const IssueEditor = forwardRef<
     placeholder = 'Describe the issue...',
     editable = true,
     borderless = false,
+    issueLinksInApp = false,
   },
   ref,
 ) {
@@ -64,6 +71,7 @@ export const IssueEditor = forwardRef<
     }, 500);
   }, []);
 
+  const issueLinks = useIssueLinks({ inApp: issueLinksInApp });
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -75,6 +83,7 @@ export const IssueEditor = forwardRef<
         transformPastedText: true,
         transformCopiedText: true,
       }),
+      issueLinks,
     ],
     content,
     editable,

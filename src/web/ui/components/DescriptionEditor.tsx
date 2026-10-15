@@ -182,6 +182,7 @@ export function DescriptionEditor({
       <IssueEditor
         ref={editorRef}
         content={description}
+        issueLinksInApp
         onEdit={() => {
           editGenRef.current++;
         }}

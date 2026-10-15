@@ -8,6 +8,7 @@ import { Markdown } from 'tiptap-markdown';
 import { addComment } from '../api.ts';
 import { ImageUpload } from '../lib/image-upload-plugin.ts';
 import { getEditorMarkdown } from '../lib/markdown.ts';
+import { useIssueLinks } from '../lib/use-issue-links.ts';
 import { useIdentityStore } from '../stores/identityStore.ts';
 
 export function CommentEditor({ issueId }: { issueId: number }) {
@@ -27,6 +28,7 @@ export function CommentEditor({ issueId }: { issueId: number }) {
     },
   });
 
+  const issueLinks = useIssueLinks({ inApp: false });
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -39,6 +41,7 @@ export function CommentEditor({ issueId }: { issueId: number }) {
         transformCopiedText: true,
       }),
       SubmitShortcut,
+      issueLinks,
     ],
     content: '',
     editorProps: {

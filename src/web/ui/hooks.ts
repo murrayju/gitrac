@@ -18,6 +18,7 @@ import {
   fetchIssueVersioned,
 } from './api.ts';
 import { issueEvents } from './lib/event-stream.ts';
+import { rememberIssueTitles } from './lib/issue-titles.ts';
 import { elsewhereRefresh } from './lib/refresh-timer.ts';
 import { createSharedQuery } from './lib/shared-query.ts';
 import { type WorkflowView, workflowView } from './lib/workflow.ts';
@@ -61,6 +62,7 @@ export function useIssues(filters?: IssueFilters): {
     setLoading(true);
     fetchIssues(parsed)
       .then((data) => {
+        rememberIssueTitles(data);
         setIssues(data);
         setError(null);
       })
@@ -106,6 +108,7 @@ export function useIssue(id: number): {
       .then(({ data, version }) => {
         if (seq < appliedRef.current) return;
         appliedRef.current = seq;
+        rememberIssueTitles([data]);
         setState({ issue: data, version });
         setError(null);
       })
@@ -117,6 +120,7 @@ export function useIssue(id: number): {
 
   const applyIssue = useCallback((issue: ApiIssue, version: string | null) => {
     appliedRef.current = ++seqRef.current;
+    rememberIssueTitles([issue]);
     setState({ issue, version });
     setError(null);
   }, []);
@@ -148,7 +152,15 @@ export function useIssueDependencies(id: number): {
     const seq = ++seqRef.current;
     fetchIssueDependencies(id)
       .then((data) => {
-        if (seq === seqRef.current) setDependencies(data);
+        if (seq !== seqRef.current) return;
+        const { parent, children, blockedBy, blocks } = data;
+        rememberIssueTitles([
+          ...(parent ? [parent] : []),
+          ...children,
+          ...blockedBy,
+          ...blocks,
+        ]);
+        setDependencies(data);
       })
       .catch(() => {
         // Shown as "no links"; the issue view reports load errors.
