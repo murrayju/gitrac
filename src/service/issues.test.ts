@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { readdir, rename, writeFile } from 'node:fs/promises';
+import { readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { GitracError } from '../core/errors.ts';
 import { serializeIssue } from '../core/issue.ts';
@@ -180,6 +180,37 @@ describe('createIssue', () => {
       { title: 'A' },
     );
     expect(issue.priority).toBe('high');
+  });
+
+  test('a closed status is written into and committed from closed/ (#67)', async () => {
+    const result = await createIssue(fx.context(), {
+      title: 'Already done',
+      status: 'done',
+    });
+    expect(result.issue).toMatchObject({ id: 1, status: 'done' });
+    expect(result.paths).toEqual([
+      join('.issues', 'closed', '1-already-done.md'),
+    ]);
+    expect(fx.commits[0]?.files).toEqual(result.paths);
+    expect(await findIssueFile(fx.dir, 1)).toEqual({
+      filename: '1-already-done.md',
+      closed: true,
+    });
+    expect(await listAllIssueFiles(fx.dir)).toEqual(['1-already-done.md']);
+
+    // An open status still goes into .issues/.
+    const open = await createIssue(fx.context(), { title: 'B' });
+    expect(open.paths).toEqual([join('.issues', '2-b.md')]);
+  });
+
+  test('creates closed/ if it is missing (e.g. a fresh clone) (#67)', async () => {
+    await rm(join(fx.dir, '.issues', 'closed'), { recursive: true });
+    const result = await createIssue(fx.context(), {
+      title: 'A',
+      status: 'cancelled',
+    });
+    expect(result.paths).toEqual([join('.issues', 'closed', '1-a.md')]);
+    expect((await findIssueFile(fx.dir, 1))?.closed).toBe(true);
   });
 
   test('parallel creates in one process get distinct IDs (repo lock)', async () => {

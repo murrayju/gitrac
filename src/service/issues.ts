@@ -116,7 +116,8 @@ async function finish(
 /**
  * Create an issue from untrusted `fields` (title required). `author`
  * overrides the context's identity as `createdBy`. Unknown labels are
- * registered in config.yaml.
+ * registered in config.yaml. An issue with a closed status is written to
+ * `.issues/closed/`.
  */
 export async function createIssue(
   ctx: ServiceContext,
@@ -153,7 +154,10 @@ export async function createIssue(
     const id = await allocateIssueId(ctx.dir);
     issue.id = id;
 
-    const filename = await writeIssue(ctx.dir, issue);
+    // An issue created with a closed status goes straight into
+    // .issues/closed/, like one closed later.
+    const closed = isClosedStatus(config, issue.status);
+    const filename = await writeIssue(ctx.dir, issue, { closed });
     // Unknown labels get a color in config.yaml.
     const updated = await registerLabels(ctx.dir, issue.labels);
 
@@ -163,7 +167,7 @@ export async function createIssue(
       // config.yaml only changes (and is committed) when new labels were
       // registered; the ID counter no longer lives there.
       paths: [
-        issuePath(filename, false),
+        issuePath(filename, closed),
         ...(updated ? [CONFIG_PATH] : []),
         ...assetPaths(issue),
       ],

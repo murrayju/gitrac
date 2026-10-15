@@ -131,6 +131,27 @@ describe('commit messages match the CLI', () => {
   });
 });
 
+describe('POST /api/issues with a closed status (#67)', () => {
+  test('writes and commits the issue in .issues/closed/', async () => {
+    const res = await send('POST', '/issues', {
+      title: 'Done already',
+      status: 'done',
+    });
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as Issue).status).toBe('done');
+    expect(
+      await Bun.file(join(dir, '.issues', '1-done-already.md')).exists(),
+    ).toBe(false);
+    const git = simpleGit(dir);
+    expect((await git.log()).latest?.message).toBe(
+      `${prefix} create #1 Done already`,
+    );
+    const files = await git.raw(['show', '--name-only', '--format=', 'HEAD']);
+    expect(files.trim()).toBe('.issues/closed/1-done-already.md');
+    expect((await git.status()).isClean()).toBe(true);
+  });
+});
+
 describe('autoPush', () => {
   let remote: string;
 

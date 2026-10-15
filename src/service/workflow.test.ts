@@ -111,6 +111,18 @@ describe('custom statuses and priorities (#57)', () => {
     expect(await snapshot()).toEqual(before);
   });
 
+  test('create with a configured closed status writes into closed/ (#67)', async () => {
+    const done = await createIssue(fx.context(), {
+      title: 'A',
+      status: 'wontfix',
+    });
+    expect(done.paths).toEqual([join('.issues', 'closed', '1-a.md')]);
+    expect(await where(1)).toBe('closed');
+    // A non-closed custom status stays open.
+    await createIssue(fx.context(), { title: 'B', status: 'review' });
+    expect(await where(2)).toBe('open');
+  });
+
   test('claim sets the active status; unclaim moves it to the unclaim status', async () => {
     await writeIssue(fx.dir, makeIssue({ id: 1, status: 'open' }));
     const claimed = await claimIssue(fx.context(), 1);

@@ -218,3 +218,23 @@ describe('reopen', () => {
     expect(await listClosedIssueFiles(dir)).toEqual([]);
   });
 });
+
+describe('create with a closed status (#67)', () => {
+  test('writes and commits the new issue in .issues/closed/', async () => {
+    const res = await cli('create', '-t', 'Done already', '-s', 'done');
+    expect(res.code).toBe(0);
+    expect(await listIssueFiles(dir)).toEqual(['1-some-work.md']);
+    expect(await listClosedIssueFiles(dir)).toEqual(['2-done-already.md']);
+    const git = simpleGit(dir);
+    const files = await git.raw(['show', '--name-only', '--format=', 'HEAD']);
+    expect(files.trim()).toBe('.issues/closed/2-done-already.md');
+    expect((await git.status()).isClean()).toBe(true);
+    // It is closed, so reopen (not close) applies.
+    expect((await cli('close', '2')).code).toBe(EXIT_CONFLICT);
+    expect((await cli('reopen', '2')).code).toBe(0);
+    expect((await listIssueFiles(dir)).sort()).toEqual([
+      '1-some-work.md',
+      '2-done-already.md',
+    ]);
+  });
+});

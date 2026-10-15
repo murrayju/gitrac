@@ -187,7 +187,7 @@ The high-water mark is then bumped. Creating an issue therefore only writes (and
 
 Issues are looked up by ID prefix match on the filename (`{id}-*.md`). Renaming a title changes the slug portion of the filename but the ID prefix remains the canonical identifier. Lookup searches both `.issues/` and `.issues/closed/`.
 
-Every write of an existing issue (edit, comment, comment edit/delete, close, reopen, claim, unclaim, link, unlink) writes it under the filename its current title gives, in the directory its state requires; if that differs from the file it was read from (title edited by hand, older slug rules, moved between `.issues/` and `.issues/closed/`), the old file is renamed onto the new path and both paths are committed, so an issue is always exactly one file.
+Every write of an existing issue (edit, comment, comment edit/delete, close, reopen, claim, unclaim, link, unlink) writes it under the filename its current title gives, in the directory its state requires; if that differs from the file it was read from (title edited by hand, older slug rules, moved between `.issues/` and `.issues/closed/`), the old file is renamed onto the new path and both paths are committed, so an issue is always exactly one file. A new issue is likewise written in the directory its status requires (`.issues/closed/` for a closed status); `.issues/closed/` is created on demand, since git doesn't keep the empty directory in a clone.
 
 If more than one file has the same ID (across both directories), lookup fails with `duplicate_issue` (exit **3**; HTTP **409** `{ error, code: "duplicate_issue", files }`) listing the repo-relative paths, rather than picking one. Nothing is written; merge the copies by hand and delete all but one.
 
@@ -230,7 +230,7 @@ src/
 | `gitrac` | | Start web UI (default; alias for `gitrac serve`). Accepts `--port <port>` and `--host <host>`. |
 | `gitrac serve` | | Start web UI. `-p, --port <port>` (default: 3000), `--host <host>` (default: `127.0.0.1`). |
 | `gitrac init` | | Initialize `.issues/` in current repo and install the merge driver (see [Conflict Resolution](#conflict-resolution)). Errors if already exists (use `--force` to reinitialize). Errors if not in a git repo. |
-| `gitrac create` | `new`, `add` | Create a new issue (interactive or via flags) |
+| `gitrac create` | `new`, `add` | Create a new issue (interactive or via flags); one created with a closed status (`-s done`, or `POST /api/issues`) is written straight into `.issues/closed/` |
 | `gitrac list` | `ls` | List issues with filters (`--status`, `--priority`, `--label`, `--assignee`, `--mine`, `--search`, `--sort`; see [List Filters](#list-filters)). Default: open issues, sorted by ID ascending. |
 | `gitrac show <id>` | `view` | Show full issue detail |
 | `gitrac edit <id>` | | Edit issue fields (title, status, priority, assignee, labels, description). See [Text Input](#text-input). |

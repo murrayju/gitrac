@@ -198,6 +198,8 @@ export async function writeIssue(
   const filename = issueFilename(issue.id, issue.title);
   const content = serializeIssue(issue);
   const base = opts?.closed ? closedDir(dir) : issuesDir(dir);
+  // git doesn't track empty directories: closed/ may be missing in a clone.
+  await mkdir(base, { recursive: true });
   await writeFile(join(base, filename), content);
   return filename;
 }
