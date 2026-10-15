@@ -1,14 +1,14 @@
 ---
 id: 67
 title: create with a closed status writes the issue into .issues/ instead of closed/
-status: todo
+status: in_progress
 priority: low
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-15T13:15:02.879Z'
 createdBy: Justin Murray
-updated: '2026-10-15T13:15:02.879Z'
+updated: '2026-10-15T13:15:17.006Z'
 ---
 
 `gitrac create -t x -s done` (and `POST /api/issues` with a closed `status`) writes the new file into `.issues/` rather than `.issues/closed/`, leaving a half-closed issue (closed status, open directory).
