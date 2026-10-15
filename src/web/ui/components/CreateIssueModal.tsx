@@ -4,7 +4,7 @@ import { resolveAssigneeName } from '../../../core/config.ts';
 import type { Priority, Status } from '../../../core/types.ts';
 import { DEFAULT_STATUS } from '../../../core/workflow.ts';
 import type { Draft } from '../api.ts';
-import { createIssue, deleteDraft, saveDraft, uploadAsset } from '../api.ts';
+import { createIssue, deleteDraft, saveDraft } from '../api.ts';
 import { useConfig, useWorkflow } from '../hooks.ts';
 import { useIdentityStore } from '../stores/identityStore.ts';
 import { AssigneePicker } from './AssigneePicker.tsx';
@@ -216,14 +216,10 @@ export function CreateIssueModal({
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    try {
-      const result = await uploadAsset(file);
-      editorRef.current?.insertImage(result.url, file.name);
-    } catch {
-      // Silently ignore upload failures for now
-    }
     // Reset input so the same file can be re-selected
     e.target.value = '';
+    // Failures are shown next to the editor.
+    await editorRef.current?.uploadImage(file);
   }
 
   const labelsTrigger =

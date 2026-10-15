@@ -12,6 +12,7 @@ import { getEditorMarkdown } from '../lib/markdown.ts';
 import { relativeTime } from '../lib/time.ts';
 import { useIssueLinks } from '../lib/use-issue-links.ts';
 import { MarkdownContent } from './MarkdownContent.tsx';
+import { UploadError, useUploadError } from './UploadError.tsx';
 
 const AVATAR_COLORS = [
   'bg-blue-600',
@@ -126,11 +127,12 @@ function InlineCommentEditor({
   });
 
   const issueLinks = useIssueLinks({ inApp: false });
+  const uploadError = useUploadError();
   const editor = useEditor({
     extensions: [
       StarterKit,
       Image.configure({ inline: false, allowBase64: false }),
-      ImageUpload,
+      ImageUpload.configure(uploadError.handlers),
       Placeholder.configure({ placeholder: 'Edit comment...' }),
       Markdown.configure({
         html: false,
@@ -168,6 +170,7 @@ function InlineCommentEditor({
       <div className="rounded border border-gray-200 bg-gray-50/50 dark:border-gray-800 dark:bg-gray-900/50">
         <EditorContent editor={editor} />
       </div>
+      <UploadError error={uploadError.error} onDismiss={uploadError.dismiss} />
       <div className="flex gap-2 justify-end mt-2">
         <button
           type="button"

@@ -2,15 +2,31 @@ import { Extension } from '@tiptap/core';
 import { Plugin } from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
 import { uploadAsset } from '../api.ts';
+import { uploadErrorMessage } from './upload-error.ts';
+
+export interface ImageUploadOptions {
+  /**
+   * Called with a user-facing message when an upload fails (unsupported
+   * type, too large, network/server error). Nothing is inserted then.
+   */
+  onError?: (message: string) => void;
+  /** Called when an upload starts, e.g. to clear a previous error. */
+  onStart?: () => void;
+}
 
 /**
  * Tiptap extension that handles image paste and drag/drop.
  * Uploads images to the backend and inserts them as image nodes.
  */
-export const ImageUpload = Extension.create({
+export const ImageUpload = Extension.create<ImageUploadOptions>({
   name: 'imageUpload',
 
+  addOptions() {
+    return { onError: undefined, onStart: undefined };
+  },
+
   addProseMirrorPlugins() {
+    const options = this.options;
     return [
       new Plugin({
         props: {
@@ -23,7 +39,7 @@ export const ImageUpload = Extension.create({
                 event.preventDefault();
                 const file = item.getAsFile();
                 if (file) {
-                  handleImageUpload(view, file);
+                  void uploadImage(view, file, { ...options });
                 }
                 return true;
               }
@@ -49,7 +65,7 @@ export const ImageUpload = Extension.create({
             });
 
             for (const file of imageFiles) {
-              handleImageUpload(view, file, pos?.pos);
+              void uploadImage(view, file, { ...options, insertPos: pos?.pos });
             }
             return true;
           },
@@ -59,26 +75,40 @@ export const ImageUpload = Extension.create({
   },
 });
 
-async function handleImageUpload(
+/**
+ * Upload `file` and, once it succeeds, insert it as an image node at
+ * `insertPos` (default: the selection). Nothing is inserted until the upload
+ * succeeds, so a failure leaves the document untouched and is reported via
+ * `onError` (or the console, without one). Resolves to whether it inserted.
+ */
+export async function uploadImage(
   view: EditorView,
   file: File,
-  insertPos?: number,
-): Promise<void> {
+  {
+    insertPos,
+    onError,
+    onStart,
+  }: ImageUploadOptions & { insertPos?: number } = {},
+): Promise<boolean> {
+  onStart?.();
+  let url: string;
   try {
-    const result = await uploadAsset(file);
-    const { schema } = view.state;
-    const imageNode = schema.nodes.image;
-    if (!imageNode) return;
-
-    const node = imageNode.create({
-      src: result.url,
-      alt: file.name,
-    });
-
-    const pos = insertPos ?? view.state.selection.anchor;
-    const tr = view.state.tr.insert(pos, node);
-    view.dispatch(tr);
+    url = (await uploadAsset(file)).url;
   } catch (err) {
-    console.error('Image upload failed:', err);
+    const message = uploadErrorMessage(err, file.name);
+    if (onError) onError(message);
+    else console.error(message, err);
+    return false;
   }
+  if (view.isDestroyed) return false;
+
+  const imageNode = view.state.schema.nodes.image;
+  if (!imageNode) return false;
+  const node = imageNode.create({ src: url, alt: file.name });
+
+  // The document may have changed during the upload: keep the position in range.
+  const size = view.state.doc.content.size;
+  const pos = Math.min(insertPos ?? view.state.selection.anchor, size);
+  view.dispatch(view.state.tr.insert(pos, node));
+  return true;
 }

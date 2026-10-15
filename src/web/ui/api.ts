@@ -338,6 +338,11 @@ export async function deleteDraft(filename: string): Promise<void> {
   });
 }
 
+/**
+ * Upload an image asset. Rejects with an `ApiError` (carrying the server's
+ * `{"error": ...}` body) on a non-2xx response, or a `TypeError` if the
+ * request failed to reach the server; see `uploadErrorMessage`.
+ */
 export async function uploadAsset(file: File): Promise<AssetUploadResult> {
   const form = new FormData();
   form.append('file', file);
@@ -346,8 +351,8 @@ export async function uploadAsset(file: File): Promise<AssetUploadResult> {
     body: form,
   });
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Upload failed ${res.status}: ${body}`);
+    const body = await res.text().catch(() => '');
+    throw new ApiError(res.status, body);
   }
   return res.json() as Promise<AssetUploadResult>;
 }

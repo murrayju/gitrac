@@ -10,6 +10,7 @@ import { ImageUpload } from '../lib/image-upload-plugin.ts';
 import { getEditorMarkdown } from '../lib/markdown.ts';
 import { useIssueLinks } from '../lib/use-issue-links.ts';
 import { useIdentityStore } from '../stores/identityStore.ts';
+import { UploadError, useUploadError } from './UploadError.tsx';
 
 export function CommentEditor({ issueId }: { issueId: number }) {
   const [submitting, setSubmitting] = useState(false);
@@ -29,11 +30,12 @@ export function CommentEditor({ issueId }: { issueId: number }) {
   });
 
   const issueLinks = useIssueLinks({ inApp: false });
+  const uploadError = useUploadError();
   const editor = useEditor({
     extensions: [
       StarterKit,
       Image.configure({ inline: false, allowBase64: false }),
-      ImageUpload,
+      ImageUpload.configure(uploadError.handlers),
       Placeholder.configure({ placeholder: 'Add a comment...' }),
       Markdown.configure({
         html: false,
@@ -73,6 +75,7 @@ export function CommentEditor({ issueId }: { issueId: number }) {
       <div className="rounded border border-gray-200 bg-gray-50/50 dark:border-gray-800 dark:bg-gray-900/50">
         <EditorContent editor={editor} />
       </div>
+      <UploadError error={uploadError.error} onDismiss={uploadError.dismiss} />
       <div className="flex justify-end mt-2">
         <button
           type="button"

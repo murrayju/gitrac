@@ -11,12 +11,18 @@ import {
   useRef,
 } from 'react';
 import { Markdown } from 'tiptap-markdown';
-import { ImageUpload } from '../lib/image-upload-plugin.ts';
+import { ImageUpload, uploadImage } from '../lib/image-upload-plugin.ts';
 import { getEditorMarkdown } from '../lib/markdown.ts';
 import { useIssueLinks } from '../lib/use-issue-links.ts';
+import { UploadError, useUploadError } from './UploadError.tsx';
 
 export interface IssueEditorHandle {
   insertImage: (url: string, alt: string) => void;
+  /**
+   * Upload `file` and insert it at the selection; a failure is shown next to
+   * the editor (as for pasted/dropped images) and nothing is inserted.
+   */
+  uploadImage: (file: File) => Promise<void>;
   /**
    * Replace the content with `markdown` without firing `onChange`/`onEdit`,
    * and drop any pending (debounced) `onChange` for the old content.
@@ -72,11 +78,12 @@ export const IssueEditor = forwardRef<
   }, []);
 
   const issueLinks = useIssueLinks({ inApp: issueLinksInApp });
+  const uploadError = useUploadError();
   const editor = useEditor({
     extensions: [
       StarterKit,
       Image.configure({ inline: false, allowBase64: false }),
-      ImageUpload,
+      ImageUpload.configure(uploadError.handlers),
       Placeholder.configure({ placeholder }),
       Markdown.configure({
         html: false,
@@ -104,6 +111,11 @@ export const IssueEditor = forwardRef<
           editor.chain().focus().setImage({ src: url, alt }).run();
         }
       },
+      async uploadImage(file: File) {
+        if (!editor) return;
+        editor.commands.focus();
+        await uploadImage(editor.view, file, uploadError.handlers);
+      },
       setContent(markdown: string) {
         if (debounceRef.current) {
           clearTimeout(debounceRef.current);
@@ -115,7 +127,7 @@ export const IssueEditor = forwardRef<
         return editor ? getEditorMarkdown(editor) : '';
       },
     }),
-    [editor],
+    [editor, uploadError.handlers],
   );
 
   // Update editable state
@@ -137,8 +149,16 @@ export const IssueEditor = forwardRef<
     : 'rounded border border-gray-200 bg-gray-50/50 dark:border-gray-800 dark:bg-gray-900/50';
 
   return (
-    <div className={wrapperClasses}>
-      <EditorContent editor={editor} />
+    <div>
+      <div className={wrapperClasses}>
+        <EditorContent editor={editor} />
+      </div>
+      <div className={borderless ? 'px-4' : ''}>
+        <UploadError
+          error={uploadError.error}
+          onDismiss={uploadError.dismiss}
+        />
+      </div>
     </div>
   );
 });
