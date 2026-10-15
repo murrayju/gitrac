@@ -162,7 +162,7 @@ Root cause: `getSessionTimeout()` reads a renamed env var.
 - **Frontmatter** holds the metadata. `parent` and `blockedBy` are optional and only written when set.
 - **Description** is full markdown, headings and horizontal rules included.
 - **Comments** follow a `---` separator. Each one starts with `### author — timestamp`. Headings inside comment bodies are escaped (`\## ...`) so they can't be mistaken for a new comment.
-- Files gitrac writes round-trip exactly. Hand edits are fine, though the CLI is the safer path. When gitrac rewrites a hand-edited file it normalizes it: dates get quoted, and unknown frontmatter keys are currently dropped.
+- Files gitrac writes round-trip exactly. Hand edits are fine, though the CLI is the safer path. Custom frontmatter keys (`estimate:`, `externalId:` and so on) are kept verbatim through every write and merge, and exposed read-only as `extra` in JSON output and the API. Known fields are normalized on write (for example, dates get quoted).
 
 ### Git integration
 
@@ -209,7 +209,7 @@ gitrac serve --host 0.0.0.0  # expose on your network (no authentication!)
 
 ![Issue detail view](docs/images/issue-detail.png)
 
-- WYSIWYG markdown editing (Tiptap) with autosave. Pasted images go to `.issues/assets/` and are committed with the issue.
+- WYSIWYG markdown editing (Tiptap) with autosave, including GFM tables. `#N` references become links. Pasted images go to `.issues/assets/` and are committed with the issue; rejected uploads (SVG, over 10 MiB) show an inline error.
 - **Live updates.** Changes in this worktree (CLI, agents, `git pull`) show up immediately over server-sent events. Claims made in other worktrees or on other branches appear within about 20 seconds. If you're editing when someone else changes the description, you get a "keep mine / load theirs" prompt instead of a silent overwrite.
 - Filters, sorting, keyboard shortcuts (press `?`), an "Acting as" identity picker, and dependency and claim panels:
 
