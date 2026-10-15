@@ -262,6 +262,32 @@ describe('findIssueFile', () => {
 });
 
 describe('relocateIssue', () => {
+  test('creates .issues/closed/ when it does not exist (#71)', async () => {
+    await initIssuesDir(dir);
+    await rm(join(dir, '.issues', 'closed'), { recursive: true });
+    await writeIssue(dir, makeIssue({ id: 1, title: 'Fresh clone' }));
+    const paths = await relocateIssue(
+      dir,
+      makeIssue({ id: 1, title: 'Fresh clone', status: 'done' }),
+      { filename: '1-fresh-clone.md', closed: false },
+      { closed: true },
+    );
+    expect(paths).toEqual([
+      join('.issues', 'closed', '1-fresh-clone.md'),
+      join('.issues', '1-fresh-clone.md'),
+    ]);
+    expect(await listClosedIssueFiles(dir)).toEqual(['1-fresh-clone.md']);
+    expect(await listIssueFiles(dir)).toEqual([]);
+  });
+
+  test('moveToClose creates .issues/closed/ when it does not exist (#71)', async () => {
+    await initIssuesDir(dir);
+    await rm(join(dir, '.issues', 'closed'), { recursive: true });
+    await writeIssue(dir, makeIssue({ id: 2, title: 'Legacy move' }));
+    await moveToClose(dir, 2);
+    expect(await listClosedIssueFiles(dir)).toEqual(['2-legacy-move.md']);
+  });
+
   test('rewrites in place when the path is unchanged', async () => {
     await initIssuesDir(dir);
     await writeIssue(dir, makeIssue({ id: 1, title: 'Keep' }));

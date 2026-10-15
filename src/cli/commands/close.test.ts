@@ -77,6 +77,34 @@ afterEach(async () => {
 });
 
 describe('close', () => {
+  test('closes in a fresh clone that has no .issues/closed/ (#71)', async () => {
+    // git doesn't track empty dirs: a clone of a repo without closed issues
+    // has no .issues/closed/.
+    const clone = await mkdtemp(join(tmpdir(), 'gitrac-close-clone-'));
+    try {
+      await simpleGit().clone(dir, clone);
+      const git = simpleGit(clone);
+      await git.addConfig('user.email', 'test@test.com');
+      await git.addConfig('user.name', 'Test');
+      await git.addConfig('commit.gpgsign', 'false');
+      const original = dir;
+      dir = clone;
+      try {
+        expect(await listClosedIssueFiles(clone)).toEqual([]);
+        const res = await cli('close', '1');
+        expect(res.stderr).toBe('');
+        expect(res.code).toBe(0);
+        expect(await listClosedIssueFiles(clone)).toEqual(['1-some-work.md']);
+        expect(await listIssueFiles(clone)).toEqual([]);
+        expect((await git.status()).isClean()).toBe(true);
+      } finally {
+        dir = original;
+      }
+    } finally {
+      await rm(clone, { recursive: true, force: true });
+    }
+  });
+
   test('closes an open issue into .issues/closed/', async () => {
     const res = await cli('close', '1');
     expect(res.code).toBe(0);

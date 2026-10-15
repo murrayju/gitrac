@@ -262,6 +262,11 @@ export async function relocateIssue(
     return [newPath];
   }
   await writeFile(join(dir, oldPath), serializeIssue(issue));
+  // The target dir may not exist (git doesn't track empty dirs, so a fresh
+  // clone/worktree without closed issues has no .issues/closed/).
+  await mkdir(join(dir, to.closed ? '.issues/closed' : '.issues'), {
+    recursive: true,
+  });
   await rename(join(dir, oldPath), join(dir, newPath));
   return [newPath, oldPath];
 }
@@ -279,6 +284,7 @@ export async function moveToClose(dir: string, id: number): Promise<void> {
       details: { id },
     });
   }
+  await mkdir(closedDir(dir), { recursive: true });
   await rename(
     join(issuesDir(dir), found.filename),
     join(closedDir(dir), found.filename),
