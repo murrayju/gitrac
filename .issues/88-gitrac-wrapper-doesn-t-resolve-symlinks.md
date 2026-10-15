@@ -1,14 +1,14 @@
 ---
 id: 88
 title: ./gitrac wrapper doesn't resolve symlinks
-status: todo
+status: in_progress
 priority: low
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-15T16:07:10.988Z'
 createdBy: Justin Murray
-updated: '2026-10-15T16:07:10.988Z'
+updated: '2026-10-15T17:51:41.684Z'
 ---
 
 The `./gitrac` source wrapper resolves `bun` and `index.ts` relative to `dirname "$0"`. If you symlink it onto your PATH (`ln -s ~/src/gitrac/gitrac ~/.local/bin/gitrac`), it looks for `~/.local/bin/bun` and fails.
