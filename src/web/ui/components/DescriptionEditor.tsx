@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Issue } from '../../../core/types.ts';
 import { ConflictError, updateIssueVersioned } from '../api.ts';
-import { type DocVersion, reconcileIncoming } from '../lib/description-sync.ts';
+import {
+  type DocVersion,
+  needsSave,
+  reconcileIncoming,
+} from '../lib/description-sync.ts';
 import { IssueEditor, type IssueEditorHandle } from './IssueEditor.tsx';
 import { MarkdownContent } from './MarkdownContent.tsx';
 
@@ -31,6 +35,8 @@ export function DescriptionEditor({
   const editorRef = useRef<IssueEditorHandle>(null);
   // Server state the editor content is based on
   const baseRef = useRef<DocVersion>({ version, text: description });
+  // Server text last loaded into the editor (at mount, or replacing it)
+  const loadedTextRef = useRef(description);
   // Unsaved edits = edits made after the last successfully saved one
   const editGenRef = useRef(0);
   const savedGenRef = useRef(0);
@@ -54,8 +60,20 @@ export function DescriptionEditor({
         pendingRef.current = markdown;
         return;
       }
-      savingRef.current = true;
       const gen = editGenRef.current;
+      // Nothing to save if it's the markdown we're based on (#90): e.g. the
+      // empty paragraph Tiptap appends when a final code block is clicked.
+      if (
+        !needsSave(markdown, baseRef.current, {
+          text: loadedTextRef.current,
+          markdown: editorRef.current?.loadedMarkdown() ?? null,
+        })
+      ) {
+        savedGenRef.current = gen;
+        setSaveError(null);
+        return;
+      }
+      savingRef.current = true;
       try {
         const { data, version: newVersion } = await updateIssueVersioned(
           issueId,
@@ -108,6 +126,7 @@ export function DescriptionEditor({
     }
     baseRef.current = incoming;
     if (action === 'replace') {
+      loadedTextRef.current = incoming.text;
       editorRef.current?.setContent(incoming.text);
     }
     if (conflictRef.current) {
@@ -123,6 +142,7 @@ export function DescriptionEditor({
     const theirs = conflictRef.current;
     if (!theirs) return;
     baseRef.current = theirs;
+    loadedTextRef.current = theirs.text;
     editorRef.current?.setContent(theirs.text);
     savedGenRef.current = editGenRef.current;
     pendingRef.current = null;

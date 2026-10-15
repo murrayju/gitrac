@@ -73,7 +73,7 @@ When installed as a binary, replace `./bun index.ts` with `gitrac` in all exampl
 | `gitrac create -t "title" --description-file desc.md` | Create with a markdown description (`-` = stdin; or `-d "text"`) |
 | `gitrac comment <id> "text"` | Add a comment (or `--body-file <path\|->`) |
 | `gitrac edit <id> -s todo` | Update status |
-| `gitrac edit <id> -d "text"` | Replace the description (or `--description-file <path\|->`) |
+| `gitrac edit <id> -d "text"` | Replace the description (or `--description-file <path\|->`). Values equal to the current ones are a no-op (exit 0, no write/commit, note on stderr); no flags at all is exit 2 |
 | `gitrac install-merge-driver` | Once per clone: issue-aware `git merge`/`rebase` for `.issues/` (`init` does it too); also commits `.issues/.gitignore` (ignores web UI `drafts/`) if missing |
 | `gitrac ls -o json` | Machine-readable output |
 | `gitrac ls --mine` | Issues assigned to you |

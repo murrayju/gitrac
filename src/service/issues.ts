@@ -1,3 +1,4 @@
+import { sameDescription } from '../core/description.ts';
 import { GitracError, invalidInput } from '../core/errors.ts';
 import {
   assertCanClose,
@@ -178,17 +179,33 @@ export async function createIssue(
 }
 
 /**
+ * The result of {@link updateIssue}. `changed: false` when every given field
+ * already had that value (and no comment was added): nothing was written or
+ * committed (`paths: []`, `updated` not bumped) and `issue` is the issue as
+ * stored.
+ */
+export type UpdateResult = IssueChange & { changed: boolean };
+
+const sameList = (a: string[], b: string[]): boolean =>
+  a.length === b.length && a.every((value, i) => value === b[i]);
+
+/**
  * Update an issue's fields (title, status, priority, assignee, labels,
  * description) from untrusted `fields`; absent fields are left alone. Moves
  * the file between `.issues/` and `.issues/closed/` (or renames it) as the
  * status/title require. `comment` adds a comment by the context's identity.
+ *
+ * A no-op — every given field equal to the stored one (a description after
+ * {@link sameDescription}: only leading/trailing whitespace differs), and no
+ * (non-blank) comment — writes nothing, doesn't bump `updated`, doesn't
+ * commit, and returns `changed: false`. The precondition still applies.
  */
 export async function updateIssue(
   ctx: ServiceContext,
   id: number,
   fields: unknown,
   options: ExistingIssueOptions & { comment?: string } = {},
-): Promise<IssueChange> {
+): Promise<UpdateResult> {
   return withRepoLock(ctx.dir, async () => {
     const config = await loadConfig(ctx);
     // Input errors take precedence over issue errors (missing, If-Match...).
@@ -197,12 +214,39 @@ export async function updateIssue(
     const stored = await loadStoredIssue(ctx.dir, id, options.precondition);
     const { issue } = stored;
 
-    if (title !== undefined) issue.title = title;
-    if (status !== undefined) issue.status = status;
-    if (priority !== undefined) issue.priority = priority;
-    if (assignee !== undefined) issue.assignee = assignee;
-    if (labels !== undefined) issue.labels = labels;
-    if (description !== undefined) issue.description = description;
+    let changed = false;
+    if (title !== undefined && title !== issue.title) {
+      issue.title = title;
+      changed = true;
+    }
+    if (status !== undefined && status !== issue.status) {
+      issue.status = status;
+      changed = true;
+    }
+    if (priority !== undefined && priority !== issue.priority) {
+      issue.priority = priority;
+      changed = true;
+    }
+    if (assignee !== undefined && assignee !== issue.assignee) {
+      issue.assignee = assignee;
+      changed = true;
+    }
+    if (labels !== undefined && !sameList(labels, issue.labels)) {
+      issue.labels = labels;
+      changed = true;
+    }
+    // Keep the stored text when only surrounding whitespace differs (e.g.
+    // the empty paragraph the web editor appends after a final code block).
+    if (
+      description !== undefined &&
+      !sameDescription(description, issue.description)
+    ) {
+      issue.description = description;
+      changed = true;
+    }
+    if (!changed && !options.comment?.trim()) {
+      return { changed: false, issue, paths: [], config, commit: null };
+    }
     const now = new Date().toISOString();
     issue.updated = now;
     await appendComment(ctx, issue, options.comment, now);
@@ -216,7 +260,7 @@ export async function updateIssue(
     // registered.
     const updated = await registerLabels(ctx.dir, issue.labels);
 
-    return finish(ctx, config, {
+    const result = await finish(ctx, config, {
       operation: 'update',
       issue,
       paths: [
@@ -228,6 +272,7 @@ export async function updateIssue(
       message: commitMessage(config, `edit #${id} ${issue.title}`),
       config: updated ?? undefined,
     });
+    return { ...result, changed: true };
   });
 }
 

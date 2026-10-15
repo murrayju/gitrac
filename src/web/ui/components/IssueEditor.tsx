@@ -30,6 +30,11 @@ export interface IssueEditorHandle {
   setContent: (markdown: string) => void;
   /** Current content serialized as markdown. */
   getMarkdown: () => string;
+  /**
+   * The editor's serialization of the content as last loaded (at mount or
+   * by `setContent`), before any edit; null until the editor exists.
+   */
+  loadedMarkdown: () => string | null;
 }
 
 export const IssueEditor = forwardRef<
@@ -66,6 +71,7 @@ export const IssueEditor = forwardRef<
   onChangeRef.current = onChange;
   const onEditRef = useRef(onEdit);
   onEditRef.current = onEdit;
+  const loadedMarkdownRef = useRef<string | null>(null);
 
   const handleUpdate = useCallback(({ editor }: { editor: Editor }) => {
     onEditRef.current?.();
@@ -94,6 +100,9 @@ export const IssueEditor = forwardRef<
     ],
     content,
     editable,
+    onCreate: ({ editor }) => {
+      loadedMarkdownRef.current = getEditorMarkdown(editor);
+    },
     onUpdate: handleUpdate,
     editorProps: {
       attributes: {
@@ -121,10 +130,15 @@ export const IssueEditor = forwardRef<
           clearTimeout(debounceRef.current);
           debounceRef.current = null;
         }
-        editor?.commands.setContent(markdown, { emitUpdate: false });
+        if (!editor) return;
+        editor.commands.setContent(markdown, { emitUpdate: false });
+        loadedMarkdownRef.current = getEditorMarkdown(editor);
       },
       getMarkdown() {
         return editor ? getEditorMarkdown(editor) : '';
+      },
+      loadedMarkdown() {
+        return loadedMarkdownRef.current;
       },
     }),
     [editor, uploadError.handlers],

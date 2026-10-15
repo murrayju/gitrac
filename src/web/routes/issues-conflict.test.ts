@@ -291,3 +291,41 @@ describe('comment routes with If-Match', () => {
     expect(res.headers.get('ETag')).toBe(await diskETag(id));
   });
 });
+
+describe('a no-op PATCH (#90)', () => {
+  test('writes and commits nothing and returns 200 with the current ETag', async () => {
+    const code = 'Intro\n\n```js\nconst a = 1;\n```';
+    const created = await send('POST', '/issues', {
+      title: 'No-op',
+      description: code,
+    });
+    const issue = (await created.json()) as Issue;
+    const etag = created.headers.get('ETag') as string;
+    const before = await readIssueContent(dir, issue.id);
+    const commits = await commitCount();
+
+    // What the editor sends after a click appends an empty paragraph
+    const res = await send(
+      'PATCH',
+      `/issues/${issue.id}`,
+      { description: `${code}\n\n` },
+      etag,
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('ETag')).toBe(etag);
+    const body = (await res.json()) as Issue;
+    expect(body.description).toBe(code);
+    expect(body.updated).toBe(issue.updated);
+    expect(await readIssueContent(dir, issue.id)).toEqual(before);
+    expect(await commitCount()).toBe(commits);
+
+    // A stale If-Match is still a conflict, even for a no-op
+    const stale = await send(
+      'PATCH',
+      `/issues/${issue.id}`,
+      { description: code },
+      '"stale"',
+    );
+    expect(stale.status).toBe(409);
+  });
+});

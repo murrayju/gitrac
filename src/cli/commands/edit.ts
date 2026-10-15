@@ -1,15 +1,18 @@
 import type { Command } from 'commander';
-import { parseIssueIdArg } from '../../core/errors.ts';
+import { invalidInput, parseIssueIdArg } from '../../core/errors.ts';
 import { parseLabelList } from '../../core/validate.ts';
 import { updateIssue } from '../../service/issues.ts';
 import { resolveProjectOptions } from '../global-options.ts';
+import { formatIssueDetail } from '../output.ts';
 import { cliServiceContext, printWrittenIssue } from '../service-context.ts';
 import { resolveTextOption } from '../text-input.ts';
 
 export function registerEditCommand(program: Command): void {
   program
     .command('edit <id>')
-    .description('Edit an issue')
+    .description(
+      'Edit an issue. Values equal to the current ones (a description differing only in surrounding whitespace) are a no-op: nothing is written or committed.',
+    )
     .option('-t, --title <title>', 'New title')
     .option('-s, --status <status>', 'New status')
     .option('-p, --priority <priority>', 'New priority')
@@ -38,6 +41,21 @@ export function registerEditCommand(program: Command): void {
         const globalOpts = await resolveProjectOptions(program);
 
         const id = parseIssueIdArg(idStr);
+        const given = [
+          options.title,
+          options.status,
+          options.priority,
+          options.assignee,
+          options.labels,
+          options.description,
+          options.descriptionFile,
+          options.comment,
+        ];
+        if (given.every((value) => value === undefined)) {
+          throw invalidInput(
+            'Nothing to edit: give at least one of --title, --status, --priority, --assignee, --labels, --description, --description-file, --comment',
+          );
+        }
 
         // Read the description (possibly from stdin) before taking the lock.
         const newDescription = await resolveTextOption({
@@ -47,7 +65,7 @@ export function registerEditCommand(program: Command): void {
           fileFlag: '--description-file',
         });
 
-        await updateIssue(
+        const result = await updateIssue(
           cliServiceContext(globalOpts, printWrittenIssue(globalOpts)),
           id,
           {
@@ -63,6 +81,12 @@ export function registerEditCommand(program: Command): void {
           },
           { comment: options.comment },
         );
+        if (!result.changed) {
+          console.error(
+            `Issue #${id} already has these values; nothing changed.`,
+          );
+          console.log(formatIssueDetail(result.issue, globalOpts.output));
+        }
       },
     );
 }

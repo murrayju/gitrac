@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { reconcileIncoming } from './description-sync.ts';
+import { needsSave, reconcileIncoming } from './description-sync.ts';
 
 const base = { version: '"v1"', text: 'original' };
 
@@ -31,5 +31,39 @@ describe('reconcileIncoming', () => {
   test('external description change with unsaved edits is a conflict', () => {
     const incoming = { version: '"v2"', text: 'changed by CLI' };
     expect(reconcileIncoming(base, incoming, true)).toBe('conflict');
+  });
+});
+
+describe('needsSave (#90)', () => {
+  const code = 'Intro\n\n```js\nconst a = 1;\n```';
+  const based = { version: '"v1"', text: code };
+
+  test('the base markdown, give or take surrounding whitespace, is not saved', () => {
+    expect(needsSave(code, based, null)).toBe(false);
+    expect(needsSave(`${code}\n\n`, based, null)).toBe(false);
+    expect(
+      needsSave(`\n${code}\n`, based, { text: code, markdown: code }),
+    ).toBe(false);
+  });
+
+  test('a real edit is saved, including whitespace inside the text', () => {
+    expect(needsSave(`${code}\n\nMore`, based, null)).toBe(true);
+    const text = { version: '"v1"', text: 'a\nb' };
+    expect(needsSave('a  \nb', text, null)).toBe(true);
+    expect(needsSave('', based, null)).toBe(true);
+  });
+
+  test("the editor's own serialization of the loaded base is not saved", () => {
+    const stars = { version: '"v1"', text: '* a\n* b' };
+    const loaded = { text: '* a\n* b', markdown: '- a\n- b' };
+    expect(needsSave('- a\n- b', stars, loaded)).toBe(false);
+    expect(needsSave('- a\n- b\n- c', stars, loaded)).toBe(true);
+    // Once the base moved on (a save, an external change), it's a change
+    const moved = { version: '"v2"', text: '* a' };
+    expect(needsSave('- a\n- b', moved, loaded)).toBe(true);
+    // Unknown serialization: compare with the base text only
+    expect(
+      needsSave('- a\n- b', stars, { text: '* a\n* b', markdown: null }),
+    ).toBe(true);
   });
 });

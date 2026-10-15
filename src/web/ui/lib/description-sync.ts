@@ -7,6 +7,8 @@
  * side.
  */
 
+import { sameDescription } from '../../../core/description.ts';
+
 /** A description as stored on the server, at a given issue version (ETag). */
 export interface DocVersion {
   version: string | null;
@@ -37,4 +39,38 @@ export function reconcileIncoming(
     return incoming.version === base.version ? 'none' : 'rebase';
   }
   return dirty ? 'conflict' : 'replace';
+}
+
+/**
+ * What the editor last loaded: the server text it was given (`text`) and
+ * the editor's own serialization of it right after loading (`markdown`),
+ * which can differ in form only (`*` vs `-` bullets, escaping...).
+ */
+export interface LoadedContent {
+  text: string;
+  markdown: string | null;
+}
+
+/**
+ * Whether the editor's `markdown` needs saving on top of `base` (#90). Not
+ * when it is the same markdown as the base description (only surrounding
+ * whitespace differs, e.g. the empty paragraph Tiptap appends after a final
+ * code block when clicked into), nor when it is exactly the editor's own
+ * serialization of the base as loaded (the user changed nothing; saving
+ * would only reformat it).
+ */
+export function needsSave(
+  markdown: string,
+  base: DocVersion,
+  loaded: LoadedContent | null,
+): boolean {
+  if (sameDescription(markdown, base.text)) return false;
+  if (
+    loaded?.markdown != null &&
+    sameDescription(loaded.text, base.text) &&
+    sameDescription(markdown, loaded.markdown)
+  ) {
+    return false;
+  }
+  return true;
 }

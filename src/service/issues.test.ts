@@ -242,6 +242,100 @@ describe('updateIssue', () => {
     });
   });
 
+  test('a no-op writes nothing, keeps `updated`, makes no commit (#90)', async () => {
+    const description = 'Intro\n\n```js\nconst a = 1;\n```';
+    await updateIssue(fx.context(), 1, {
+      description,
+      labels: ['bug'],
+      assignee: 'Ada',
+    });
+    const before = await snapshot();
+    const stored = await readIssue(fx.dir, 1);
+    fx.commits.length = 0;
+    fx.written.length = 0;
+
+    const result = await updateIssue(
+      fx.context(),
+      1,
+      {
+        title: 'Old title',
+        status: stored.status,
+        priority: stored.priority,
+        assignee: ' Ada ',
+        labels: ['bug'],
+        // The empty paragraph the editor appends after a final code block
+        description: `${description}\n\n`,
+      },
+      // A blank comment adds nothing
+      { comment: '  ' },
+    );
+    expect(result.changed).toBe(false);
+    expect(result.paths).toEqual([]);
+    expect(result.commit).toBeNull();
+    expect(result.issue).toEqual(stored);
+    expect(result.issue.updated).toBe(stored.updated);
+    expect(await snapshot()).toEqual(before);
+    expect(fx.commits).toEqual([]);
+    expect(fx.written).toEqual([]);
+
+    // Nothing given at all is a no-op too
+    expect((await updateIssue(fx.context(), 1, {})).changed).toBe(false);
+    expect(await snapshot()).toEqual(before);
+  });
+
+  test('a no-op still honors the precondition', async () => {
+    const err = await rejection(
+      updateIssue(
+        fx.context(),
+        1,
+        { title: 'Old title' },
+        {
+          precondition: () => {
+            throw new Error('stale');
+          },
+        },
+      ),
+    );
+    expect((err as Error).message).toBe('stale');
+  });
+
+  test('whitespace inside the description, label order and a comment are changes', async () => {
+    await updateIssue(fx.context(), 1, {
+      description: 'a\nb',
+      labels: ['x', 'y'],
+    });
+    fx.commits.length = 0;
+    const hardBreak = await updateIssue(fx.context(), 1, {
+      description: 'a  \nb',
+    });
+    expect(hardBreak.changed).toBe(true);
+    expect((await readIssue(fx.dir, 1)).description).toBe('a  \nb');
+    const reordered = await updateIssue(fx.context(), 1, {
+      labels: ['y', 'x'],
+    });
+    expect(reordered.changed).toBe(true);
+    const commented = await updateIssue(
+      fx.context(),
+      1,
+      { title: 'Old title' },
+      { comment: 'note' },
+    );
+    expect(commented.changed).toBe(true);
+    expect(commented.issue.comments).toHaveLength(1);
+    expect(fx.commits).toHaveLength(3);
+  });
+
+  test('a real change keeps a description that only differs in whitespace', async () => {
+    await updateIssue(fx.context(), 1, { description: 'Body' });
+    const result = await updateIssue(fx.context(), 1, {
+      priority: 'high',
+      description: 'Body\n\n',
+    });
+    expect(result.changed).toBe(true);
+    expect(result.issue.description).toBe('Body');
+    expect(result.issue.priority).toBe('high');
+  });
+
   test('a closed status moves the file into closed/', async () => {
     const result = await updateIssue(fx.context(), 1, { status: 'done' });
     expect(result.paths[0]).toBe(join('.issues', 'closed', '1-old-title.md'));
