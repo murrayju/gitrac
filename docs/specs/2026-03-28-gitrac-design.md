@@ -543,6 +543,8 @@ The server has no authentication, so exposure is limited instead (`src/web/secur
 | GET | `/api/events` | SSE stream for live updates: `connected` on (re)connect, `issues-changed` on file changes, `: keep-alive` comments every 5s |
 | POST | `/api/issues/assets` | Upload an image (multipart `file`; no SVG; max 10 MiB) |
 
+Any other `/api` or `/api/*` request (any method) is a **404** `{ "error": "Not found", "code": "not_found" }` — never the SPA's `index.html`.
+
 ### React UI
 
 **Editor:** Tiptap (`@tiptap/react`) — the same editor framework Linear uses (built on ProseMirror). WYSIWYG with no edit/view mode toggle. Auto-saves on change (debounced). Markdown serialization via `tiptap-markdown` for round-tripping to `.md` files.
@@ -565,7 +567,7 @@ Where the server finds the UI (`resolveUiAssets`):
 2. **From source** (`./gitrac`): gitrac's own `dist/ui/` (built by `./bun run vite build --config vite.config.ts`), resolved relative to the gitrac source tree — so it works when serving any other repo.
 3. Otherwise only the API is served (startup prints a warning).
 
-The served project's directory, the cwd and the bun executable's directory are never searched, so a repo with an unrelated `dist/ui/` can't shadow the UI. Files under `/assets/` (Vite's hashed output) are served `Cache-Control: immutable` and a missing one is a 404; any other unknown GET path falls back to `index.html` (SPA routing).
+The served project's directory, the cwd and the bun executable's directory are never searched, so a repo with an unrelated `dist/ui/` can't shadow the UI. Files under `/assets/` (Vite's hashed output) are served `Cache-Control: immutable` and a missing one is a 404; any other unknown GET path outside `/api` falls back to `index.html` (SPA routing).
 
 During development, the Vite dev server proxies API requests to the Bun backend for hot reloading.
 

@@ -118,6 +118,74 @@ describe('SPA fallback', () => {
   });
 });
 
+describe('unknown /api routes', () => {
+  const notFound = { error: 'Not found', code: 'not_found' };
+
+  async function uiApp() {
+    const distUiDir = await makeDistDir({ 'index.html': '<html>SPA</html>' });
+    return createApp(noCommitCtx(), { ui: directoryUiAssets(distUiDir) });
+  }
+
+  test('return a JSON 404 for every method, not index.html', async () => {
+    const app = await uiApp();
+    const paths = [
+      '/api',
+      '/api/',
+      '/api/does-not-exist',
+      '/api/issues/1/nope/deeper',
+    ];
+    for (const path of paths) {
+      for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) {
+        const res = await app.request(`http://localhost${path}`, {
+          method,
+          headers: { 'content-type': 'application/json' },
+          body: method === 'GET' ? undefined : '{}',
+        });
+        expect({ path, method, status: res.status }).toEqual({
+          path,
+          method,
+          status: 404,
+        });
+        expect(res.headers.get('content-type')).toContain('application/json');
+        expect(await res.json()).toEqual(notFound);
+      }
+    }
+  });
+
+  test('also without a UI', async () => {
+    const app = createApp(noCommitCtx(), { ui: null });
+    const res = await app.request('http://localhost/api/does-not-exist');
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual(notFound);
+  });
+
+  test('known API routes, SPA routes and issue assets are unaffected', async () => {
+    await mkdir(join(dir, '.issues', 'assets'), { recursive: true });
+    await writeFile(join(dir, '.issues', 'assets', 'pic.png'), 'PNGDATA');
+    const app = await uiApp();
+
+    expect((await app.request('http://localhost/api/issues')).status).toBe(200);
+    expect((await app.request('http://localhost/api/config')).status).toBe(200);
+
+    for (const path of ['/', '/issues/5', '/apidocs', '/api-not-really']) {
+      const res = await app.request(`http://localhost${path}`);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe('<html>SPA</html>');
+    }
+
+    const asset = await app.request('http://localhost/.issues/assets/pic.png');
+    expect(asset.status).toBe(200);
+    expect(await asset.text()).toBe('PNGDATA');
+  });
+
+  test('a missing issue is still the route-specific 404', async () => {
+    const app = await uiApp();
+    const res = await app.request('http://localhost/api/issues/999');
+    expect(res.status).toBe(404);
+    expect((await res.json()).error).toBe('Issue #999 not found');
+  });
+});
+
 describe('embedded UI', () => {
   afterEach(() => clearEmbeddedUi());
 

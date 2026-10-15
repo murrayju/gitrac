@@ -191,6 +191,11 @@ function serveUi(ui: UiAssets) {
   };
 }
 
+/** JSON 404 for unmatched `/api/*` requests. */
+function apiNotFound(c: Context): Response {
+  return c.json({ error: 'Not found', code: 'not_found' }, 404);
+}
+
 export function createApp(ctx: ServerContext, options: AppOptions = {}): Hono {
   const app = new Hono();
 
@@ -210,6 +215,11 @@ export function createApp(ctx: ServerContext, options: AppOptions = {}): Hono {
   app.route('/api', gitRoutes(ctx));
   app.route('/api', identityRoutes(ctx));
   app.route('/api', eventsRoute(ctx));
+
+  // Anything else under /api is an unknown endpoint: a JSON 404 for every
+  // method, never the SPA's index.html (API clients would get HTML + 200).
+  app.all('/api', apiNotFound);
+  app.all('/api/*', apiNotFound);
 
   // Serve issue assets at their repo path (/.issues/assets/:filename)
   // so markdown image URLs work in both the web UI and on GitHub.
