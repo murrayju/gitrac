@@ -6,16 +6,24 @@ import { join } from 'node:path';
  * never be committed out of git — the web UI's new-issue drafts
  * (`.issues/drafts/*.json`). gitrac's lock, ID high-water mark and temp files
  * live in the git dir (or the OS temp dir), not under `.issues/`, so they
- * need no entry.
+ * need no entry. (Atomic writes of issue files / `config.yaml` briefly use a
+ * hidden `.<name>.<pid>.<uuid>.tmp` sibling, removed on failure; see
+ * `src/fs/atomic-write.ts`.)
  */
 
 /** Repo-relative path of the ignore file. */
 export const ISSUES_GITIGNORE_PATH = join('.issues', '.gitignore');
 
 /** Patterns `.issues/.gitignore` must contain (relative to `.issues/`). */
-export const ISSUES_GITIGNORE_LINES = ['drafts/'] as const;
+/**
+ * - `drafts/`: web UI new-issue drafts.
+ * - `.*.tmp`: temp files from atomic writes (`atomicTempPath`), normally
+ *   renamed away immediately but left behind if a process dies mid-write.
+ */
+export const ISSUES_GITIGNORE_LINES = ['drafts/', '.*.tmp'] as const;
 
-const HEADER = '# Local gitrac files (web UI drafts); never commit these.';
+const HEADER =
+  '# Local gitrac files (web UI drafts, interrupted-write temp files); never commit these.';
 
 /** Compare patterns ignoring an anchoring `/` and a trailing `/`. */
 function normalize(line: string): string {

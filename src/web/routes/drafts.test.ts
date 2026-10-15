@@ -54,11 +54,14 @@ describe('PUT /api/drafts/:filename', () => {
     ).toContain('drafts/');
   });
 
-  test('leaves an existing .issues/.gitignore that covers drafts alone', async () => {
-    await writeFile(join(dir, ISSUES_GITIGNORE_PATH), 'custom\n/drafts\n');
+  test('leaves an existing .issues/.gitignore that already covers everything alone', async () => {
+    await writeFile(
+      join(dir, ISSUES_GITIGNORE_PATH),
+      'custom\n/drafts\n.*.tmp\n',
+    );
     expect((await put('d2.json', { title: 'Draft' })).status).toBe(200);
     expect(await readFile(join(dir, ISSUES_GITIGNORE_PATH), 'utf-8')).toBe(
-      'custom\n/drafts\n',
+      'custom\n/drafts\n.*.tmp\n',
     );
   });
 

@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import simpleGit from 'simple-git';
+import { atomicTempPath } from './atomic-write.ts';
 import { ISSUES_GITIGNORE_PATH, writeIssuesGitignore } from './gitignore.ts';
 
 let dir: string;
@@ -28,12 +29,12 @@ describe('writeIssuesGitignore', () => {
   test('appends to an existing file, keeping its lines', async () => {
     await writeFile(file(), '*.bak');
     expect(await writeIssuesGitignore(dir)).toBe(true);
-    expect(await readFile(file(), 'utf-8')).toBe('*.bak\ndrafts/\n');
+    expect(await readFile(file(), 'utf-8')).toBe('*.bak\ndrafts/\n.*.tmp\n');
   });
 
   test('accepts an equivalent existing pattern', async () => {
     for (const pattern of ['drafts', '/drafts/', '  /drafts  ']) {
-      await writeFile(file(), `${pattern}\n`);
+      await writeFile(file(), `${pattern}\n.*.tmp\n`);
       expect(await writeIssuesGitignore(dir)).toBe(false);
     }
   });
@@ -48,6 +49,10 @@ describe('writeIssuesGitignore', () => {
       join('.issues', 'drafts', 'd.json'),
     ]);
     expect(ignored).toEqual([join('.issues', 'drafts', 'd.json')]);
+    // Leftover atomic-write temp files (#86) are ignored too
+    const tmp = relative(dir, atomicTempPath(join(dir, '.issues', '1-x.md')));
+    await writeFile(join(dir, tmp), 'partial');
+    expect(await git.checkIgnore([tmp])).toEqual([tmp]);
     const status = await git.status();
     expect(status.not_added).toEqual([ISSUES_GITIGNORE_PATH]);
   });

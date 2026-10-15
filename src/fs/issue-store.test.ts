@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createDefaultConfig } from '../core/config.ts';
@@ -107,6 +115,22 @@ describe('readConfig / writeConfig', () => {
     const read = await readConfig(dir);
     expect(read.nextId).toBe(42);
   });
+
+  test('replaces config.yaml atomically, leaving no temp file (#86)', async () => {
+    await initIssuesDir(dir);
+    const path = join(dir, '.issues', 'config.yaml');
+    const before = await stat(path);
+    const config = createDefaultConfig();
+    config.labels = { bug: '#ff0000' };
+    await writeConfig(dir, config);
+    // A new inode: written to a temp file and renamed over, not in place.
+    expect((await stat(path)).ino).not.toBe(before.ino);
+    expect((await readConfig(dir)).labels).toEqual({ bug: '#ff0000' });
+    expect((await readdir(join(dir, '.issues'))).toSorted()).toEqual([
+      'closed',
+      'config.yaml',
+    ]);
+  });
 });
 
 describe('writeIssue / readIssue', () => {
@@ -134,6 +158,41 @@ describe('writeIssue / readIssue', () => {
     const readBack = await readIssue(dir, 2);
     expect(readBack.comments).toHaveLength(1);
     expect(readBack.comments[0]?.author).toBe('alice');
+  });
+
+  test('rewrites an issue atomically, leaving no temp file (#86)', async () => {
+    await initIssuesDir(dir);
+    await writeIssue(dir, makeIssue({ id: 1, title: 'Atomic' }));
+    const path = join(dir, '.issues', '1-atomic.md');
+    const before = await stat(path);
+    await writeIssue(
+      dir,
+      makeIssue({ id: 1, title: 'Atomic', description: 'v2' }),
+    );
+    expect((await stat(path)).ino).not.toBe(before.ino);
+    expect((await readIssue(dir, 1)).description).toBe('v2');
+    expect(await listIssueFiles(dir)).toEqual(['1-atomic.md']);
+    expect((await readdir(join(dir, '.issues'))).toSorted()).toEqual([
+      '1-atomic.md',
+      'closed',
+      'config.yaml',
+    ]);
+  });
+
+  test('a failed write leaves the old file and no temp file (#86)', async () => {
+    await initIssuesDir(dir);
+    // A non-empty directory where the issue file goes: the rename fails.
+    const blocker = join(dir, '.issues', '1-blocked.md');
+    await mkdir(blocker);
+    await writeFile(join(blocker, 'x'), 'x');
+    await expect(
+      writeIssue(dir, makeIssue({ id: 1, title: 'Blocked' })),
+    ).rejects.toThrow();
+    expect((await readdir(join(dir, '.issues'))).toSorted()).toEqual([
+      '1-blocked.md',
+      'closed',
+      'config.yaml',
+    ]);
   });
 });
 
@@ -306,6 +365,35 @@ describe('relocateIssue', () => {
     );
     expect(paths).toEqual([join('.issues', '1-keep.md')]);
     expect((await readIssue(dir, 1)).description).toBe('changed');
+  });
+
+  test('writes atomically in place and when moving, leaving no temp files (#86)', async () => {
+    await initIssuesDir(dir);
+    await writeIssue(dir, makeIssue({ id: 1, title: 'Move me' }));
+    const open = join(dir, '.issues', '1-move-me.md');
+    const ino = (await stat(open)).ino;
+    await relocateIssue(
+      dir,
+      makeIssue({ id: 1, title: 'Move me', description: 'in place' }),
+      { filename: '1-move-me.md', closed: false },
+      { closed: false },
+    );
+    const inPlace = (await stat(open)).ino;
+    expect(inPlace).not.toBe(ino);
+    await relocateIssue(
+      dir,
+      makeIssue({ id: 1, title: 'Moved', description: 'moved' }),
+      { filename: '1-move-me.md', closed: false },
+      { closed: true },
+    );
+    expect((await readIssue(dir, 1)).description).toBe('moved');
+    expect((await readdir(join(dir, '.issues'))).toSorted()).toEqual([
+      'closed',
+      'config.yaml',
+    ]);
+    expect(await readdir(join(dir, '.issues', 'closed'))).toEqual([
+      '1-moved.md',
+    ]);
   });
 
   test('replaces a file whose name no longer matches the title', async () => {

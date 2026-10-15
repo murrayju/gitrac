@@ -1,11 +1,4 @@
-import {
-  mkdir,
-  readdir,
-  readFile,
-  rename,
-  unlink,
-  writeFile,
-} from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   createDefaultConfig,
@@ -17,6 +10,7 @@ import { duplicateIssue, GitracError, issueNotFound } from '../core/errors.ts';
 import { parseIssueFile, serializeIssue } from '../core/issue.ts';
 import { issueFilename, parseIssueId } from '../core/slug.ts';
 import type { Config, Issue } from '../core/types.ts';
+import { atomicWriteFile } from './atomic-write.ts';
 
 function issuesDir(dir: string): string {
   return join(dir, '.issues');
@@ -69,11 +63,12 @@ export async function readConfig(dir: string): Promise<Config> {
 }
 
 /**
- * Serialize and write the config to .issues/config.yaml.
+ * Serialize and write the config to .issues/config.yaml, atomically (temp
+ * file + rename), so unlocked readers never see a half-written config.
  */
 export async function writeConfig(dir: string, config: Config): Promise<void> {
   const yaml = serializeConfig(config);
-  await writeFile(configPath(dir), yaml);
+  await atomicWriteFile(configPath(dir), yaml);
 }
 
 /**
@@ -203,7 +198,8 @@ export async function readIssue(dir: string, id: number): Promise<Issue> {
 /**
  * Write an issue to the correct directory using the correct filename.
  * When `opts.closed` is true, writes to `.issues/closed/` instead of `.issues/`.
- * Returns the filename.
+ * The write is atomic (temp file + rename): readers see the old or the new
+ * file, never a partial one. Returns the filename.
  */
 export async function writeIssue(
   dir: string,
@@ -215,7 +211,7 @@ export async function writeIssue(
   const base = opts?.closed ? closedDir(dir) : issuesDir(dir);
   // git doesn't track empty directories: closed/ may be missing in a clone.
   await mkdir(base, { recursive: true });
-  await writeFile(join(base, filename), content);
+  await atomicWriteFile(join(base, filename), content);
   return filename;
 }
 
@@ -243,8 +239,9 @@ export async function deleteIssueFile(
  * a different path — a different directory, or a filename that no longer
  * matches the title — the old file is renamed onto the new path (after
  * writing the new contents into it), so the issue is exactly one file at
- * every moment and readers never see a duplicate. Every service write of an
- * existing issue goes through here.
+ * every moment and readers never see a duplicate. Each write is atomic
+ * (temp file + rename), so readers never see a partial file either. Every
+ * service write of an existing issue goes through here.
  * Returns the repo-relative paths involved (new path first, then the old one
  * if it differed) for the commit.
  */
@@ -261,7 +258,9 @@ export async function relocateIssue(
     await writeIssue(dir, issue, { closed: to.closed });
     return [newPath];
   }
-  await writeFile(join(dir, oldPath), serializeIssue(issue));
+  // Replace the old file's contents atomically, then move it: writing the
+  // temp file straight to the new path would briefly leave two copies.
+  await atomicWriteFile(join(dir, oldPath), serializeIssue(issue));
   // The target dir may not exist (git doesn't track empty dirs, so a fresh
   // clone/worktree without closed issues has no .issues/closed/).
   await mkdir(join(dir, to.closed ? '.issues/closed' : '.issues'), {
