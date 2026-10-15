@@ -1,14 +1,14 @@
 ---
 id: 87
 title: renumber should record the old ID on the renumbered issue
-status: todo
+status: in_progress
 priority: low
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - enhancement
 created: '2026-10-15T16:07:10.107Z'
 createdBy: Justin Murray
-updated: '2026-10-15T16:07:10.107Z'
+updated: '2026-10-15T18:48:21.489Z'
 ---
 
 After `gitrac renumber`, old `#N` mentions in history and other issues still point at the original ID. Nothing on the moved issue records where it came from.
