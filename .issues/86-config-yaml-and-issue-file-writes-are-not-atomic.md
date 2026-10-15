@@ -1,14 +1,14 @@
 ---
 id: 86
 title: config.yaml and issue file writes are not atomic
-status: todo
+status: in_progress
 priority: low
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-15T16:07:09.213Z'
 createdBy: Justin Murray
-updated: '2026-10-15T16:07:09.213Z'
+updated: '2026-10-15T17:51:39.858Z'
 ---
 
 `writeConfig` and the issue writers use plain `writeFile`. A reader without the lock (web GETs, `ls`) can observe a half-written file, and a crash mid-write corrupts it.
