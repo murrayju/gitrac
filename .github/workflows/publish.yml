@@ -41,8 +41,10 @@ jobs:
             --target=${{ matrix.target }} \
             --outfile=gitrac-${{ matrix.os }}-${{ matrix.arch }}
 
-      - name: Bundle UI assets with binary
-        run: tar czf gitrac-${{ matrix.os }}-${{ matrix.arch }}.tar.gz gitrac-${{ matrix.os }}-${{ matrix.arch }} dist/ui/
+      # The web UI is embedded in the binary; ship just the binary (tarred to
+      # keep the executable bit).
+      - name: Package binary
+        run: tar czf gitrac-${{ matrix.os }}-${{ matrix.arch }}.tar.gz gitrac-${{ matrix.os }}-${{ matrix.arch }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

@@ -422,7 +422,17 @@ The server has no authentication, so exposure is limited instead (`src/web/secur
 
 ### Build
 
-Vite builds the React SPA at publish time. `bun build --compile` produces a single binary with embedded assets. During development, Vite dev server proxies API requests to the Bun backend for hot reloading.
+Vite builds the React SPA at publish time (`dist/ui/`). `scripts/build.ts` then generates an entry (`dist/gitrac-entry.ts`) that imports every `dist/ui` file `with { type: 'file' }` — embedding it in the executable — and registers the URL-path manifest (`registerEmbeddedUi`, `src/web/ui-assets.ts`) before running the CLI; `bun build --compile` turns that into a single self-contained binary, which serves the UI from the embedded files and needs nothing beside it on disk. Releases ship just that binary.
+
+Where the server finds the UI (`resolveUiAssets`):
+
+1. **Compiled binary:** the embedded manifest only.
+2. **From source** (`./gitrac`): gitrac's own `dist/ui/` (built by `./bun run vite build --config vite.config.ts`), resolved relative to the gitrac source tree — so it works when serving any other repo.
+3. Otherwise only the API is served (startup prints a warning).
+
+The served project's directory, the cwd and the bun executable's directory are never searched, so a repo with an unrelated `dist/ui/` can't shadow the UI. Files under `/assets/` (Vite's hashed output) are served `Cache-Control: immutable` and a missing one is a 404; any other unknown GET path falls back to `index.html` (SPA routing).
+
+During development, the Vite dev server proxies API requests to the Bun backend for hot reloading.
 
 ---
 

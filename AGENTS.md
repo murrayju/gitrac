@@ -96,7 +96,7 @@ Tests are colocated with source files (`*.test.ts` next to `*.ts`). Use `bun:tes
 ./bun run scripts/build.ts --minify --sourcemap   # production build
 ```
 
-This builds the React UI with Vite, then compiles the CLI into a standalone binary with `bun build --compile`.
+This builds the React UI with Vite, then compiles the CLI into a standalone binary with `bun build --compile`, embedding every `dist/ui` file (via a generated `dist/gitrac-entry.ts`) so the binary serves the UI from memory with nothing beside it. Running from source, the server serves gitrac's own `dist/ui` (resolved from the source tree, never the served project's dir); see `src/web/ui-assets.ts`.
 
 ## Code Conventions
 

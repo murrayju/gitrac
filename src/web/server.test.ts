@@ -1,13 +1,19 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import simpleGit from 'simple-git';
 import { createDefaultConfig } from '../core/config.ts';
 import { initIssuesDir, writeConfig } from '../fs/issue-store.ts';
 import { AmendTracker } from '../git/amend-tracker.ts';
 import type { ServerContext } from './server.ts';
 import { createApp, displayUrl, startServer } from './server.ts';
+import {
+  clearEmbeddedUi,
+  directoryUiAssets,
+  embeddedUiAssets,
+  registerEmbeddedUi,
+} from './ui-assets.ts';
 import { IssueWatcher } from './watcher.ts';
 
 let dir: string;
@@ -36,16 +42,22 @@ function makeCtx(overrides: Partial<ServerContext> = {}): ServerContext {
   };
 }
 
+async function makeDistDir(files: Record<string, string>): Promise<string> {
+  const distUiDir = join(dir, 'gitrac-dist', 'ui');
+  for (const [name, content] of Object.entries(files)) {
+    await mkdir(dirname(join(distUiDir, name)), { recursive: true });
+    await writeFile(join(distUiDir, name), content);
+  }
+  return distUiDir;
+}
+
 describe('SPA fallback', () => {
   test('serves index.html content for non-API routes', async () => {
-    // Create a fake dist/ui directory with an index.html
-    const distUiDir = join(dir, 'dist', 'ui');
-    await mkdir(distUiDir, { recursive: true });
     const htmlContent =
       '<!DOCTYPE html><html><head><title>gitrac</title></head><body><div id="root"></div></body></html>';
-    await writeFile(join(distUiDir, 'index.html'), htmlContent);
+    const distUiDir = await makeDistDir({ 'index.html': htmlContent });
 
-    const app = createApp(makeCtx());
+    const app = createApp(makeCtx(), { ui: directoryUiAssets(distUiDir) });
     const res = await app.request('http://localhost/issues/5');
 
     expect(res.status).toBe(200);
@@ -56,12 +68,10 @@ describe('SPA fallback', () => {
   });
 
   test('serves index.html for deeply nested SPA routes', async () => {
-    const distUiDir = join(dir, 'dist', 'ui');
-    await mkdir(distUiDir, { recursive: true });
     const htmlContent = '<!DOCTYPE html><html><body>app</body></html>';
-    await writeFile(join(distUiDir, 'index.html'), htmlContent);
+    const distUiDir = await makeDistDir({ 'index.html': htmlContent });
 
-    const app = createApp(makeCtx());
+    const app = createApp(makeCtx(), { ui: directoryUiAssets(distUiDir) });
     const res = await app.request('http://localhost/some/deep/route');
 
     expect(res.status).toBe(200);
@@ -69,19 +79,111 @@ describe('SPA fallback', () => {
     expect(body).toBe(htmlContent);
   });
 
-  test('API routes still work when dist dir exists', async () => {
-    const distUiDir = join(dir, 'dist', 'ui');
-    await mkdir(distUiDir, { recursive: true });
-    await writeFile(join(distUiDir, 'index.html'), '<html></html>');
+  test('API routes still work when a UI is served', async () => {
+    const distUiDir = await makeDistDir({ 'index.html': '<html></html>' });
 
     const config = createDefaultConfig();
     config.git.autoCommit = false;
-    const app = createApp(makeCtx({ config }));
+    const app = createApp(makeCtx({ config }), {
+      ui: directoryUiAssets(distUiDir),
+    });
 
     const res = await app.request('http://localhost/api/issues');
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(Array.isArray(data)).toBe(true);
+  });
+
+  test("never serves the served project's own dist/ui", async () => {
+    // An unrelated app in the repo being served must not be mistaken for
+    // gitrac's UI (the old cwd / project-dir fallback).
+    await mkdir(join(dir, 'dist', 'ui'), { recursive: true });
+    await writeFile(
+      join(dir, 'dist', 'ui', 'index.html'),
+      '<html>NOT-GITRAC</html>',
+    );
+    await writeFile(join(dir, 'dist', 'ui', 'other.js'), 'NOT-GITRAC');
+
+    const app = createApp(makeCtx());
+    for (const path of ['/', '/issues/1', '/other.js']) {
+      const res = await app.request(`http://localhost${path}`);
+      expect(await res.text()).not.toContain('NOT-GITRAC');
+    }
+  });
+
+  test('ui: null serves only the API', async () => {
+    const app = createApp(noCommitCtx(), { ui: null });
+    expect((await app.request('http://localhost/')).status).toBe(404);
+    expect((await app.request('http://localhost/api/issues')).status).toBe(200);
+  });
+});
+
+describe('embedded UI', () => {
+  afterEach(() => clearEmbeddedUi());
+
+  async function embedded(): Promise<Record<string, string>> {
+    const distUiDir = await makeDistDir({
+      'index.html': '<html>EMBEDDED</html>',
+      'assets/index-abc123.js': 'console.log("embedded")',
+      'assets/index-def456.css': 'body{}',
+      'favicon.svg': '<svg/>',
+    });
+    // Stand-ins for the `$bunfs` paths `import ... with { type: 'file' }`
+    // yields in a compiled binary; deliberately unrelated to the URL paths.
+    return {
+      '/index.html': join(distUiDir, 'index.html'),
+      '/assets/index-abc123.js': join(distUiDir, 'assets', 'index-abc123.js'),
+      '/assets/index-def456.css': join(distUiDir, 'assets', 'index-def456.css'),
+      '/favicon.svg': join(distUiDir, 'favicon.svg'),
+    };
+  }
+
+  test('registered manifest is served by default', async () => {
+    registerEmbeddedUi(await embedded());
+    // Even with a project dist/ui present.
+    await mkdir(join(dir, 'dist', 'ui'), { recursive: true });
+    await writeFile(join(dir, 'dist', 'ui', 'index.html'), 'NOT-GITRAC');
+
+    const app = createApp(makeCtx());
+
+    const root = await app.request('http://localhost/');
+    expect(root.status).toBe(200);
+    expect(await root.text()).toBe('<html>EMBEDDED</html>');
+    expect(root.headers.get('content-type')).toContain('text/html');
+    expect(root.headers.get('cache-control')).toBe('no-cache');
+
+    const js = await app.request('http://localhost/assets/index-abc123.js');
+    expect(js.status).toBe(200);
+    expect(await js.text()).toBe('console.log("embedded")');
+    expect(js.headers.get('content-type')).toContain('text/javascript');
+    expect(js.headers.get('cache-control')).toContain('immutable');
+
+    const css = await app.request('http://localhost/assets/index-def456.css');
+    expect(css.headers.get('content-type')).toContain('text/css');
+
+    const svg = await app.request('http://localhost/favicon.svg');
+    expect(svg.headers.get('content-type')).toContain('image/svg+xml');
+
+    const spa = await app.request('http://localhost/issues/7');
+    expect(spa.status).toBe(200);
+    expect(await spa.text()).toBe('<html>EMBEDDED</html>');
+  });
+
+  test('missing hashed asset is a 404, not index.html', async () => {
+    const app = createApp(makeCtx(), {
+      ui: embeddedUiAssets(await embedded()),
+    });
+    const res = await app.request('http://localhost/assets/index-gone.js');
+    expect(res.status).toBe(404);
+  });
+
+  test('HEAD is answered without a body', async () => {
+    const app = createApp(makeCtx(), {
+      ui: embeddedUiAssets(await embedded()),
+    });
+    const res = await app.request('http://localhost/', { method: 'HEAD' });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('');
   });
 });
 

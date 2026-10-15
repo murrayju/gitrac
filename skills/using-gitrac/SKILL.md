@@ -40,7 +40,7 @@ digraph when {
 **From GitHub releases (standalone binary):**
 ```bash
 # Download for your platform from https://github.com/murrayju/gitrac/releases
-# Place the binary on your PATH
+# Extract the single binary (the web UI is embedded) and place it on your PATH
 gitrac --help
 ```
 

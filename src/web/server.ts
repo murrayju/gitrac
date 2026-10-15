@@ -1,7 +1,6 @@
-import { existsSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import type { Context } from 'hono';
 import { Hono } from 'hono';
-import { serveStatic } from 'hono/bun';
+import { getMimeType } from 'hono/utils/mime';
 import type { Config } from '../core/types.ts';
 import { AmendTracker } from '../git/amend-tracker.ts';
 import { IdentityResolver } from '../git/identity.ts';
@@ -20,6 +19,7 @@ import {
   isWildcardHost,
   requestGuard,
 } from './security.ts';
+import { resolveUiAssets, type UiAssets } from './ui-assets.ts';
 import { IssueWatcher } from './watcher.ts';
 
 export interface ServerContext {
@@ -45,6 +45,11 @@ export interface AppOptions {
    * which `Host` headers are accepted; see `requestGuard`.
    */
   host?: string;
+  /**
+   * Built UI to serve. Default: `resolveUiAssets()` — embedded in a compiled
+   * binary, else gitrac's own source-tree dist/ui. `null` = API only.
+   */
+  ui?: UiAssets | null;
 }
 
 export interface RunningServer {
@@ -79,7 +84,8 @@ export async function startServer(options: {
 
   const ctx: ServerContext = { dir, config, amendTracker, watcher, identity };
 
-  const app = createApp(ctx, { host });
+  const ui = resolveUiAssets();
+  const app = createApp(ctx, { host, ui });
 
   // Bind before starting the watcher so a bad --host / busy port fails fast.
   const server = Bun.serve({
@@ -96,6 +102,14 @@ export async function startServer(options: {
   const warning = await getBranchWarning(dir, config);
   if (warning) {
     console.warn(`\n  Warning: ${warning}\n`);
+  }
+
+  if (!ui) {
+    console.warn(
+      '\n  Warning: web UI not built — only the API is served. Run ' +
+        '`./bun run vite build --config vite.config.ts` (or use the Vite dev ' +
+        'server).',
+    );
   }
 
   console.log(
@@ -134,20 +148,41 @@ export function displayUrl(host: string, port: number | undefined): string {
   return `http://${name}:${port}`;
 }
 
-/** Locate the built UI assets directory, checking several candidate paths. */
-function findUiDistDir(projectDir: string): string | null {
-  const candidates = [
-    // Relative to executable (compiled binary)
-    resolve(dirname(process.execPath), 'dist', 'ui'),
-    // Relative to project working directory
-    resolve(projectDir, 'dist', 'ui'),
-  ];
-  for (const dir of candidates) {
-    if (existsSync(join(dir, 'index.html'))) {
-      return dir;
+/** Hashed Vite build output: safe to cache forever. */
+const IMMUTABLE_PREFIX = '/assets/';
+
+/**
+ * Serve the built UI: the file at the request path, else (SPA routing)
+ * index.html. Missing hashed `/assets/*` files are a 404, not HTML.
+ */
+function serveUi(ui: UiAssets) {
+  return async (c: Context): Promise<Response> => {
+    const path = c.req.path === '/' ? '/index.html' : c.req.path;
+    const file = await ui.get(path);
+    if (file) {
+      const immutable = path.startsWith(IMMUTABLE_PREFIX);
+      return new Response(file, {
+        headers: {
+          'content-type':
+            getMimeType(path) ?? (file.type || 'application/octet-stream'),
+          'cache-control': immutable
+            ? 'public, max-age=31536000, immutable'
+            : 'no-cache',
+        },
+      });
     }
-  }
-  return null;
+    if (path.startsWith(IMMUTABLE_PREFIX)) {
+      return c.text('Not Found', 404);
+    }
+    const index = await ui.get('/index.html');
+    if (!index) return c.text('Not Found', 404);
+    return new Response(index, {
+      headers: {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-cache',
+      },
+    });
+  };
 }
 
 export function createApp(ctx: ServerContext, options: AppOptions = {}): Hono {
@@ -174,26 +209,11 @@ export function createApp(ctx: ServerContext, options: AppOptions = {}): Hono {
   // so markdown image URLs work in both the web UI and on GitHub.
   app.get('/.issues/assets/:filename', serveAsset(ctx));
 
-  // Static file serving for built UI assets.
-  // Try multiple locations: relative to executable (compiled binary), then cwd.
-  const distDir = findUiDistDir(ctx.dir);
-  if (distDir) {
-    app.use(
-      '/*',
-      serveStatic({
-        root: distDir,
-        rewriteRequestPath: (path) => path,
-      }),
-    );
-
-    // SPA fallback: serve index.html for non-API routes
-    app.get('*', async (c) => {
-      const indexPath = join(distDir, 'index.html');
-      if (existsSync(indexPath)) {
-        return c.html(await Bun.file(indexPath).text());
-      }
-      return c.text('Not Found', 404);
-    });
+  // Built UI: embedded in the binary, or gitrac's own dist/ui from source.
+  // Never looked up in the served project (it may have an unrelated dist/ui).
+  const ui = options.ui === undefined ? resolveUiAssets() : options.ui;
+  if (ui) {
+    app.get('*', serveUi(ui));
   }
 
   return app;
