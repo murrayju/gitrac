@@ -87,8 +87,8 @@ Open `http://localhost:5173` — Vite proxies API requests to the backend at `12
 ```bash
 ./bun test                         # run all tests
 ./bun test src/core/               # run tests in a specific directory
-./bun run typecheck                # tsc --noEmit
-./bun run lint                     # biome check
+./bun run typecheck                # tsc --noEmit (src/, scripts/, root *.ts)
+./bun run lint                     # biome check (every non-git-ignored file)
 ./bun run check                    # install + typecheck + lint + test
 ```
 
