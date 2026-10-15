@@ -74,7 +74,7 @@ When installed as a binary, replace `./bun index.ts` with `gitrac` in all exampl
 | `gitrac comment <id> "text"` | Add a comment (or `--body-file <path\|->`) |
 | `gitrac edit <id> -s todo` | Update status |
 | `gitrac edit <id> -d "text"` | Replace the description (or `--description-file <path\|->`) |
-| `gitrac install-merge-driver` | Once per clone: issue-aware `git merge`/`rebase` for `.issues/` (`init` does it too) |
+| `gitrac install-merge-driver` | Once per clone: issue-aware `git merge`/`rebase` for `.issues/` (`init` does it too); also commits `.issues/.gitignore` (ignores web UI `drafts/`) if missing |
 | `gitrac ls -o json` | Machine-readable output |
 | `gitrac ls --mine` | Issues assigned to you |
 | `gitrac ls --priority urgent,high --label bug` | Filters take comma-separated values (any of); `--status all` includes closed |

@@ -116,6 +116,7 @@ Every gitrac change commits automatically with a descriptive message (`issue: cr
 .issues/
   config.yaml                          # statuses, priorities, labels, assignees, git settings
   .gitattributes                       # routes issue files through gitrac's merge driver
+  .gitignore                           # ignores drafts/ (unsaved web UI drafts)
   1-login-times-out-under-load.md      # open issues: {id}-{slug}.md
   4-document-the-auth-flow.md
   assets/                              # images pasted in the web UI
@@ -237,7 +238,7 @@ The server binds to `127.0.0.1` by default and rejects cross-origin and DNS-rebi
 | `delete` / `rm <id>` | Delete an issue, any assets only it uses, and links to it (`--yes`, `--dry-run`) |
 | `renumber <id>` | Give one copy of a duplicated ID a fresh ID (`--file`, `--update-refs`) |
 | `serve` | Start the web UI (the default when no command is given) |
-| `install-merge-driver` | Set up issue-aware git merges in a clone |
+| `install-merge-driver` | Set up issue-aware git merges in a clone (also adds `.issues/.gitignore` for drafts if missing) |
 
 **Global flags:**
 - `-o json|yaml`: machine-readable output.

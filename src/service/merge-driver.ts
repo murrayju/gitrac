@@ -1,3 +1,7 @@
+import {
+  ISSUES_GITIGNORE_PATH,
+  writeIssuesGitignore,
+} from '../fs/gitignore.ts';
 import { withRepoLock } from '../git/lock.ts';
 import {
   configureMergeDriver,
@@ -18,7 +22,10 @@ export interface MergeDriverInstall {
   command: string;
   /** True if the local git config was written (false outside a git repo). */
   configured: boolean;
-  /** Repo-relative paths written (`.issues/.gitattributes`, if it changed). */
+  /**
+   * Repo-relative paths written: `.issues/.gitattributes` and (from
+   * {@link installMergeDriver}) `.issues/.gitignore`, each only if it changed.
+   */
   paths: string[];
   /** The new commit's hash, or null if nothing was committed. */
   commit: string | null;
@@ -47,7 +54,9 @@ export async function setUpMergeDriver(
  * Install gitrac's git merge driver: route `.issues/**\/*.md` and
  * `config.yaml` to it in `.issues/.gitattributes` (committed, if it changed)
  * and define `merge.gitrac.driver` in the local git config (not committed;
- * each clone runs this once — `gitrac init` does it too). Idempotent.
+ * each clone runs this once — `gitrac init` does it too). Also ensures
+ * `.issues/.gitignore` ignores web UI drafts (committed, if it changed), so
+ * projects initialized before gitrac wrote that file get it too. Idempotent.
  */
 export async function installMergeDriver(
   ctx: ServiceContext,
@@ -55,16 +64,18 @@ export async function installMergeDriver(
 ): Promise<MergeDriverInstall> {
   return withRepoLock(ctx.dir, async () => {
     const config = await loadConfig(ctx);
+    const ignored = await writeIssuesGitignore(ctx.dir);
     const setUp = await setUpMergeDriver(ctx.dir, options.command);
+    const paths = [...setUp.paths, ...(ignored ? [ISSUES_GITIGNORE_PATH] : [])];
     const commit =
-      setUp.paths.length > 0
+      paths.length > 0
         ? await commitChange(ctx, config, {
             operation: 'merge-driver',
             issue: null,
-            paths: setUp.paths,
+            paths,
             message: commitMessage(config, 'install merge driver'),
           })
         : null;
-    return { ...setUp, commit };
+    return { ...setUp, paths, commit };
   });
 }

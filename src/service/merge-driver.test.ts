@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import simpleGit from 'simple-git';
@@ -9,6 +9,7 @@ import { installMergeDriver } from './merge-driver.ts';
 import { type ServiceFixture, serviceFixture } from './test-helpers.fixture.ts';
 
 const ATTRIBUTES = join('.issues', '.gitattributes');
+const IGNORE = join('.issues', '.gitignore');
 
 describe('installMergeDriver (no git repo)', () => {
   let fx: ServiceFixture;
@@ -17,17 +18,20 @@ describe('installMergeDriver (no git repo)', () => {
   });
   afterEach(() => fx.cleanup());
 
-  test('writes and commits .gitattributes once', async () => {
+  test('writes and commits .gitattributes + .gitignore once', async () => {
     const first = await installMergeDriver(fx.context(), { command: 'gitrac' });
     expect(first).toMatchObject({
       command: 'gitrac',
       configured: false,
-      paths: [ATTRIBUTES],
+      paths: [ATTRIBUTES, IGNORE],
       commit: 'abc123',
     });
+    expect((await Bun.file(join(fx.dir, IGNORE)).text()).split('\n')).toContain(
+      'drafts/',
+    );
     expect(fx.commits[0]).toMatchObject({
       operation: 'merge-driver',
-      files: [ATTRIBUTES],
+      files: [ATTRIBUTES, IGNORE],
       message: 'issue: install merge driver',
     });
 
@@ -40,8 +44,23 @@ describe('installMergeDriver (no git repo)', () => {
     const result = await installMergeDriver(fx.context({ noCommit: true }), {
       command: 'gitrac',
     });
-    expect(result).toMatchObject({ paths: [ATTRIBUTES], commit: null });
+    expect(result).toMatchObject({
+      paths: [ATTRIBUTES, IGNORE],
+      commit: null,
+    });
     expect(fx.commits).toHaveLength(0);
+  });
+
+  test('adds just .gitignore to a project that has the driver already', async () => {
+    await installMergeDriver(fx.context({ noCommit: true }), {
+      command: 'gitrac',
+    });
+    await rm(join(fx.dir, IGNORE));
+    const result = await installMergeDriver(fx.context(), {
+      command: 'gitrac',
+    });
+    expect(result).toMatchObject({ paths: [IGNORE], commit: 'abc123' });
+    expect(fx.commits[0]?.files).toEqual([IGNORE]);
   });
 });
 
@@ -80,5 +99,21 @@ describe('merge driver git config', () => {
     );
     expect(value).toBe('gitrac merge-driver --marker-size %L %O %A %B %P');
     expect(await Bun.file(join(dir, ATTRIBUTES)).exists()).toBe(true);
+  });
+
+  test('init commits .issues/.gitignore, so web UI drafts stay untracked', async () => {
+    const git = simpleGit(dir);
+    await git.addConfig('user.email', 'test@test.com');
+    await git.addConfig('user.name', 'Test');
+    const result = await initProject(context(false), {
+      mergeDriverCommand: 'gitrac',
+    });
+    expect(result.commit).not.toBeNull();
+    const committed = await git.raw(['show', '--name-only', '--format=']);
+    expect(committed.trim().split('\n')).toContain('.issues/.gitignore');
+
+    await mkdir(join(dir, '.issues', 'drafts'));
+    await writeFile(join(dir, '.issues', 'drafts', 'draft-1.json'), '{}');
+    expect((await git.status()).isClean()).toBe(true);
   });
 });

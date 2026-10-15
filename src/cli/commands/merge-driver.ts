@@ -67,7 +67,7 @@ export function registerInstallMergeDriverCommand(program: Command): void {
   program
     .command('install-merge-driver')
     .description(
-      'Set up the gitrac git merge driver: writes .issues/.gitattributes (committed) ' +
+      'Set up the gitrac git merge driver: writes .issues/.gitattributes and .issues/.gitignore (committed) ' +
         `and merge.${MERGE_DRIVER_NAME}.driver in the local git config (once per clone)`,
     )
     .option(
@@ -89,14 +89,15 @@ export function registerInstallMergeDriverCommand(program: Command): void {
         );
         return;
       }
+      const written = result.paths.join(', ');
       console.log(
         result.paths.length > 0
-          ? 'Wrote .issues/.gitattributes.'
-          : '.issues/.gitattributes is up to date.',
+          ? `Wrote ${written}.`
+          : '.issues/.gitattributes and .issues/.gitignore are up to date.',
       );
       console.log(`Set merge.${MERGE_DRIVER_NAME}.driver = ${driver}`);
       if (result.commit) {
-        console.log('Committed .issues/.gitattributes.');
+        console.log(`Committed ${written}.`);
       }
     });
 }

@@ -1,6 +1,7 @@
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Hono } from 'hono';
+import { writeIssuesGitignore } from '../../fs/gitignore.ts';
 import type { ServerContext } from '../server.ts';
 
 export function draftRoutes(ctx: ServerContext): Hono {
@@ -50,6 +51,10 @@ export function draftRoutes(ctx: ServerContext): Hono {
       return c.json({ error: 'Invalid filename' }, 400);
     }
     await ensureDraftsDir(dir);
+    // Drafts are local: make sure git ignores them, even in a project
+    // initialized before `init` wrote `.issues/.gitignore` (left uncommitted;
+    // `install-merge-driver` commits it). Idempotent.
+    await writeIssuesGitignore(dir);
     const body = await c.req.json();
     body.savedAt = new Date().toISOString();
     await Bun.write(

@@ -1,6 +1,10 @@
 import { ensureLabelColors } from '../core/config.ts';
 import { invalidInput } from '../core/errors.ts';
 import type { Assignee, Config } from '../core/types.ts';
+import {
+  ISSUES_GITIGNORE_PATH,
+  writeIssuesGitignore,
+} from '../fs/gitignore.ts';
 import { initIssuesDir, readConfig, writeConfig } from '../fs/issue-store.ts';
 import { withRepoLock } from '../git/lock.ts';
 import {
@@ -24,9 +28,10 @@ export interface ConfigChange {
 
 /**
  * Create `.issues/` with a default config (`force` overwrites an existing
- * one; otherwise that is `already_initialized`), install the git merge driver
- * (`.issues/.gitattributes` + local git config; `mergeDriverCommand`
- * overrides the command it runs) and commit.
+ * one; otherwise that is `already_initialized`) and `.issues/.gitignore`
+ * (web UI drafts), install the git merge driver (`.issues/.gitattributes` +
+ * local git config; `mergeDriverCommand` overrides the command it runs) and
+ * commit.
  */
 export async function initProject(
   ctx: ServiceContext,
@@ -34,8 +39,13 @@ export async function initProject(
 ): Promise<ConfigChange> {
   return withRepoLock(ctx.dir, async () => {
     await initIssuesDir(ctx.dir, { force: options.force });
+    const ignored = await writeIssuesGitignore(ctx.dir);
     const driver = await setUpMergeDriver(ctx.dir, options.mergeDriverCommand);
-    const paths = [CONFIG_PATH, ...driver.paths];
+    const paths = [
+      CONFIG_PATH,
+      ...(ignored ? [ISSUES_GITIGNORE_PATH] : []),
+      ...driver.paths,
+    ];
     // Freshly created, so read it back for the commit settings.
     const config = await loadConfig(ctx);
     const commit = await commitChange(ctx, config, {

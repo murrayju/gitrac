@@ -31,6 +31,7 @@ gitrac is a CLI tool and web UI for managing project issues as markdown files in
 .issues/
   config.yaml                    # Project configuration
   .gitattributes                 # Routes issue files + config.yaml to the gitrac merge driver
+  .gitignore                     # Ignores drafts/ (web UI new-issue drafts, local only)
   1-fix-login-timeout.md         # Open issue
   2-add-dark-mode.md             # Open issue
   closed/
@@ -229,7 +230,7 @@ src/
 |---------|---------|------------|
 | `gitrac` | | Start web UI (default; alias for `gitrac serve`). Accepts `--port <port>` and `--host <host>`. |
 | `gitrac serve` | | Start web UI. `-p, --port <port>` (default: 3000), `--host <host>` (default: `127.0.0.1`). |
-| `gitrac init` | | Initialize `.issues/` in current repo and install the merge driver (see [Conflict Resolution](#conflict-resolution)). Errors if already exists (use `--force` to reinitialize). Errors if not in a git repo. |
+| `gitrac init` | | Initialize `.issues/` in current repo (`config.yaml`, plus `.gitignore` ignoring web UI `drafts/`) and install the merge driver (see [Conflict Resolution](#conflict-resolution)); commits all three. Errors if already exists (use `--force` to reinitialize). Errors if not in a git repo. |
 | `gitrac create` | `new`, `add` | Create a new issue (interactive or via flags); one created with a closed status (`-s done`, or `POST /api/issues`) is written straight into `.issues/closed/` |
 | `gitrac list` | `ls` | List issues with filters (`--status`, `--priority`, `--label`, `--assignee`, `--mine`, `--search`, `--sort`; see [List Filters](#list-filters)). Default: open issues, sorted by ID ascending. |
 | `gitrac show <id>` | `view` | Show full issue detail |
@@ -245,7 +246,7 @@ src/
 | `gitrac unlink <id>` | | Remove dependencies: `-b, --blocked-by <ids>`, `--parent` (clears it). Removing links that aren't there is a no-op. |
 | `gitrac ready` | | List ready issues (see [Dependencies](#dependencies)): open, unassigned or yours, no open blockers; sorted by priority, then ID. Filters `--status` (open statuses; default all of them), `--priority`, `--label`, `--mine`, `--search`, `--sort` as in [List Filters](#list-filters). |
 | `gitrac next` | | Show the top ready issue that isn't already in the active status (`in_progress`); `--claim` claims it atomically (`-c` adds a comment). Same filters as `ready`. Exit **5** (`no_ready_issues`) if there is none. |
-| `gitrac install-merge-driver` | | Install the git merge driver: write `.issues/.gitattributes` (committed if changed) and `merge.gitrac.*` in the local git config. `--command <cmd>` sets what git runs. Idempotent; run once per clone. See [Conflict Resolution](#conflict-resolution). |
+| `gitrac install-merge-driver` | | Install the git merge driver: write `.issues/.gitattributes` and ensure `.issues/.gitignore` ignores `drafts/` (each committed if changed, so projects initialized before `init` wrote `.gitignore` get it) and `merge.gitrac.*` in the local git config. `--command <cmd>` sets what git runs. Idempotent; run once per clone. See [Conflict Resolution](#conflict-resolution). |
 | `gitrac merge-driver <base> <ours> <theirs> [path]` | | The merge driver itself (run by git as `%O %A %B %P`, `--marker-size %L`). Writes the result to `<ours>`; exits 0 if clean, 1 if conflicts remain. |
 
 ### Global Flags
@@ -452,7 +453,7 @@ Every mutation — CLI command or web API request — runs its whole read-modify
 - **Stale locks:** a lock is broken if its holder is on the same host and its PID is dead, or if its mtime is older than 60s. Holders refresh the mtime every 15s, so a long push is never mistaken for an abandoned lock. Breaking happens under a secondary `gitrac.lock.break` lock and re-verifies the lock contents, so a freshly acquired lock is never removed. A process that calls `process.exit()` while holding the lock removes it on exit.
 - **Re-entrant:** nested acquisitions in the same async context are no-ops; low-level git helpers (`commitPaths`, `commitOrAmend`, push/pull) take the lock themselves as a safety net.
 - Outside a git repo (tests, plain directories) the lock lives in the OS temp dir, keyed by directory.
-- Asset uploads and drafts don't take the lock: uploads write new uniquely-named files and drafts are untracked.
+- Asset uploads and drafts don't take the lock: uploads write new uniquely-named files and drafts are untracked. `.issues/.gitignore` (written by `init` and `install-merge-driver`, and — uncommitted — by the first draft save if it is missing or lacks the entry) ignores `.issues/drafts/`, so `git add -A` never picks them up. gitrac's lock, ID high-water mark and temp files live in the git dir or OS temp dir, never under `.issues/`, so need no ignore entry.
 
 **Web edits vs. external changes (optimistic concurrency).** The lock serializes writes but doesn't stop a client from writing back content it loaded before someone else's change. So single-issue API responses (`GET /api/issues/:id` and every mutation that returns an issue) carry an `ETag`: a quoted SHA-1 of the issue file's raw bytes, so any change — web, CLI, agent, `git pull`, hand edit — yields a new version. Mutations on an existing issue (`PATCH /api/issues/:id`, `DELETE /api/issues/:id`, comment add/edit/delete, close, reopen) accept `If-Match: <etag>` (or `*`); it is checked under the lock and a mismatch returns **409** `{ error, current }` with the current issue and its `ETag`, writing nothing. Without `If-Match` the request is last-writer-wins, as before (curl, scripts, metadata dropdowns that only send the changed field). Mutation responses return the issue as re-read from disk, so their body and `ETag` match a subsequent GET.
 
