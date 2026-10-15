@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { readdir, writeFile } from 'node:fs/promises';
+import { readdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { GitracError } from '../core/errors.ts';
+import { serializeIssue } from '../core/issue.ts';
 import {
   findIssueFile,
+  listAllIssueFiles,
   readConfig,
   readIssue,
   writeConfig,
@@ -332,6 +334,90 @@ describe('comments', () => {
     expect((oob as GitracError).message).toBe('Comment index out of bounds');
     const neg = await rejection(deleteComment(fx.context(), 1, -1));
     expect((neg as GitracError).code).toBe('invalid_input');
+  });
+});
+
+/** Write issue `id` under a filename that doesn't match its title. */
+async function writeMisnamed(id: number, title: string, filename: string) {
+  await writeFile(
+    join(fx.dir, '.issues', filename),
+    serializeIssue(makeIssue({ id, title })),
+  );
+}
+
+describe('a file whose name does not match its title', () => {
+  const stale = join('.issues', '1-old-title.md');
+  const current = join('.issues', '1-new-title.md');
+
+  beforeEach(async () => {
+    await writeMisnamed(1, 'New title', '1-old-title.md');
+  });
+
+  test('addComment replaces it and commits the deletion', async () => {
+    const result = await addComment(fx.context(), 1, 'hello');
+    expect(result.paths).toEqual([current, stale]);
+    expect(fx.commits[0]?.files).toEqual([current, stale]);
+    expect(await listAllIssueFiles(fx.dir)).toEqual(['1-new-title.md']);
+    expect((await readIssue(fx.dir, 1)).comments.at(-1)?.body).toBe('hello');
+  });
+
+  test('editComment / deleteComment replace it too', async () => {
+    await addComment(fx.context(), 1, 'first');
+    /** Move the issue back under the stale name. */
+    const misname = () => rename(join(fx.dir, current), join(fx.dir, stale));
+
+    await misname();
+    const edited = await editComment(fx.context(), 1, 0, 'changed');
+    expect(edited.paths).toEqual([current, stale]);
+    expect(await listAllIssueFiles(fx.dir)).toEqual(['1-new-title.md']);
+
+    await misname();
+    const deleted = await deleteComment(fx.context(), 1, 0);
+    expect(deleted.paths).toEqual([current, stale]);
+    expect(await listAllIssueFiles(fx.dir)).toEqual(['1-new-title.md']);
+    expect((await readIssue(fx.dir, 1)).comments).toEqual([]);
+  });
+
+  test('a comment on a closed issue stays in closed/', async () => {
+    await rename(
+      join(fx.dir, stale),
+      join(fx.dir, '.issues', 'closed', '1-old-title.md'),
+    );
+    const result = await addComment(fx.context(), 1, 'late note');
+    expect(result.paths).toEqual([
+      join('.issues', 'closed', '1-new-title.md'),
+      join('.issues', 'closed', '1-old-title.md'),
+    ]);
+    expect(await findIssueFile(fx.dir, 1)).toEqual({
+      filename: '1-new-title.md',
+      closed: true,
+    });
+  });
+});
+
+describe('duplicate files for one issue ID', () => {
+  test('every mutation fails with duplicate_issue and writes nothing', async () => {
+    await writeIssue(fx.dir, makeIssue({ id: 1, title: 'One' }));
+    await writeMisnamed(1, 'One', '1-one-copy.md');
+    const before = await snapshot();
+    for (const run of [
+      () => addComment(fx.context(), 1, 'x'),
+      () => updateIssue(fx.context(), 1, { title: 'Two' }),
+      () => closeIssue(fx.context(), 1),
+    ]) {
+      const err = await rejection(run());
+      expect(err).toBeInstanceOf(GitracError);
+      expect(err).not.toBeInstanceOf(IssueUnreadableError);
+      expect((err as GitracError).code).toBe('duplicate_issue');
+      expect(
+        ((err as GitracError).details?.files as string[]).toSorted(),
+      ).toEqual([
+        join('.issues', '1-one-copy.md'),
+        join('.issues', '1-one.md'),
+      ]);
+    }
+    expect(await snapshot()).toEqual(before);
+    expect(fx.commits).toEqual([]);
   });
 });
 

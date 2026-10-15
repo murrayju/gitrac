@@ -241,18 +241,18 @@ function validCommentIndex(index: number): void {
 }
 
 /**
- * Rewrite an issue in place (same directory) after a comment change. Note:
- * unlike close/reopen/update, this doesn't remove a file whose name no
- * longer matches the title.
+ * Rewrite an issue in its current directory after a comment change. Like
+ * close/reopen/update, a file whose name no longer matches the title is
+ * replaced (renamed), so the issue stays one file. Returns the paths to
+ * commit.
  */
-async function writeInPlace(
+function writeInPlace(
   ctx: ServiceContext,
-  stored: { issue: Issue; closed: boolean },
-): Promise<string> {
-  const filename = await writeIssue(ctx.dir, stored.issue, {
+  stored: { issue: Issue; filename: string; closed: boolean },
+): Promise<string[]> {
+  return relocateIssue(ctx.dir, stored.issue, stored, {
     closed: stored.closed,
   });
-  return issuePath(filename, stored.closed);
 }
 
 /**
@@ -278,12 +278,12 @@ export async function addComment(
     issue.comments.push({ author, timestamp: now, body: text });
     issue.updated = now;
 
-    const path = await writeInPlace(ctx, stored);
+    const issuePaths = await writeInPlace(ctx, stored);
     const suffix = ctx.policy.commentMessageHasTitle ? ` ${issue.title}` : '';
     return finish(ctx, config, {
       operation: 'comment',
       issue,
-      paths: [path, ...assetPaths(ctx, issue)],
+      paths: [...issuePaths, ...assetPaths(ctx, issue)],
       message: commitMessage(config, `comment on #${id}${suffix}`),
     });
   });
@@ -309,11 +309,11 @@ export async function editComment(
     if (comment) comment.body = text;
     issue.updated = new Date().toISOString();
 
-    const path = await writeInPlace(ctx, stored);
+    const issuePaths = await writeInPlace(ctx, stored);
     return finish(ctx, config, {
       operation: 'edit-comment',
       issue,
-      paths: [path, ...assetPaths(ctx, issue)],
+      paths: [...issuePaths, ...assetPaths(ctx, issue)],
       message: commitMessage(config, `edit comment on #${id} ${issue.title}`),
     });
   });
@@ -336,12 +336,12 @@ export async function deleteComment(
     issue.comments.splice(index, 1);
     issue.updated = new Date().toISOString();
 
-    const path = await writeInPlace(ctx, stored);
+    const issuePaths = await writeInPlace(ctx, stored);
     return finish(ctx, config, {
       operation: 'delete-comment',
       issue,
       // Assets referenced only by the deleted comment aren't committed.
-      paths: [path],
+      paths: issuePaths,
       message: commitMessage(config, `delete comment on #${id} ${issue.title}`),
     });
   });

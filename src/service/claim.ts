@@ -2,14 +2,13 @@ import { claimAssignee, decideClaim, decideUnclaim } from '../core/claim.ts';
 import { findAssigneeByEmail } from '../core/config.ts';
 import { GitracError } from '../core/errors.ts';
 import type { Config, Issue } from '../core/types.ts';
-import { deleteIssueFile, writeConfig, writeIssue } from '../fs/issue-store.ts';
+import { relocateIssue, writeConfig } from '../fs/issue-store.ts';
 import { withRepoLock } from '../git/lock.ts';
 import {
   assetPaths,
   CONFIG_PATH,
   commitChange,
   commitMessage,
-  issuePath,
   loadConfig,
   type ServiceContext,
 } from './context.ts';
@@ -98,14 +97,11 @@ export async function claimIssue(
       });
     }
 
-    // in_progress is an open status, so write to the open dir
-    const filename = await writeIssue(ctx.dir, issue);
-    const paths = [issuePath(filename, false)];
-    // If the issue was in the closed dir, remove that copy
-    if (stored.closed) {
-      await deleteIssueFile(ctx.dir, stored.filename, true);
-      paths.push(issuePath(stored.filename, true));
-    }
+    // in_progress is an open status, so write to the open dir; the old file
+    // goes if it was in the closed dir or its name doesn't match the title.
+    const paths = await relocateIssue(ctx.dir, issue, stored, {
+      closed: false,
+    });
     if (configChanged) paths.push(CONFIG_PATH);
     paths.push(...assetPaths(ctx, issue));
 
@@ -171,13 +167,10 @@ export async function unclaimIssue(
       });
     }
 
-    const filename = await writeIssue(ctx.dir, issue);
-    const paths = [issuePath(filename, false)];
-    if (filename !== stored.filename) {
-      // The on-disk filename didn't match the title's slug; replace it.
-      await deleteIssueFile(ctx.dir, stored.filename, false);
-      paths.push(issuePath(stored.filename, false));
-    }
+    // Replaces the old file if its name didn't match the title's slug.
+    const paths = await relocateIssue(ctx.dir, issue, stored, {
+      closed: false,
+    });
     paths.push(...assetPaths(ctx, issue));
 
     const commit = await commitChange(ctx, config, {

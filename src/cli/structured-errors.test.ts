@@ -200,6 +200,49 @@ describe('-o json', () => {
     expect(jsonError(res.stderr).code).toBe('not_initialized');
   });
 
+  test('several files for one issue ID: duplicate_issue lists them', async () => {
+    // `create -t Existing` wrote .issues/1-existing.md
+    const copy = join(root, '.issues', 'closed', '1-copy.md');
+    await Bun.write(
+      copy,
+      await Bun.file(join(root, '.issues', '1-existing.md')).text(),
+    );
+    for (const args of [
+      ['show', '1'],
+      ['comment', '1', 'hi'],
+      ['claim', '1'],
+    ]) {
+      const res = await cli('-o', 'json', ...args);
+      expect(res.code).toBe(EXIT_CONFLICT);
+      expect(jsonError(res.stderr)).toMatchObject({
+        code: 'duplicate_issue',
+        id: 1,
+        files: [
+          join('.issues', '1-existing.md'),
+          join('.issues', 'closed', '1-copy.md'),
+        ],
+      });
+    }
+    expect(
+      await Bun.file(join(root, '.issues', '1-existing.md')).text(),
+    ).not.toContain('hi');
+  });
+
+  test('a comment on a misnamed issue file commits the rename', async () => {
+    const git = simpleGit(root);
+    await git.mv(
+      join('.issues', '1-existing.md'),
+      join('.issues', '1-stale-name.md'),
+    );
+    await git.commit('hand rename');
+    const res = await cli('comment', '1', 'hello');
+    expect(res.code).toBe(0);
+    expect((await git.status()).isClean()).toBe(true);
+    const files = await git.raw(['ls-files', '.issues']);
+    expect(files).toContain('.issues/1-existing.md');
+    expect(files).not.toContain('1-stale-name.md');
+  });
+
   test('-o yaml prints the error as YAML', async () => {
     const res = await cli('-o', 'yaml', 'show', '99');
     expect(res.code).toBe(EXIT_NOT_FOUND);

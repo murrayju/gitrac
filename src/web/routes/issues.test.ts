@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Hono } from 'hono';
 import { createDefaultConfig } from '../../core/config.ts';
+import { serializeIssue } from '../../core/issue.ts';
 import type { Issue } from '../../core/types.ts';
 import {
   initIssuesDir,
@@ -174,6 +175,22 @@ describe('GET /api/issues/:id', () => {
   test('returns 400 for invalid id', async () => {
     const res = await req('/issues/abc');
     expect(res.status).toBe(400);
+  });
+
+  test('returns 409 duplicate_issue listing the files when an ID has several', async () => {
+    await writeIssue(dir, makeIssue({ id: 1, title: 'One' }));
+    await writeIssue(dir, makeIssue({ id: 1, title: 'Copy' }), {
+      closed: true,
+    });
+
+    const res = await req('/issues/1');
+    expect(res.status).toBe(409);
+    const data = (await res.json()) as { code: string; files: string[] };
+    expect(data.code).toBe('duplicate_issue');
+    expect(data.files.toSorted()).toEqual([
+      join('.issues', '1-one.md'),
+      join('.issues', 'closed', '1-copy.md'),
+    ]);
   });
 });
 
@@ -349,6 +366,40 @@ describe('PATCH /api/issues/:id', () => {
 });
 
 describe('POST /api/issues/:id/comments', () => {
+  test('replaces a file whose name does not match the title', async () => {
+    await writeFile(
+      join(dir, '.issues', '1-stale-name.md'),
+      serializeIssue(makeIssue({ id: 1, title: 'Current title' })),
+    );
+
+    const res = await req('/issues/1/comments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: 'A comment' }),
+    });
+    expect(res.status).toBe(200);
+    expect(await listIssueFiles(dir)).toEqual(['1-current-title.md']);
+  });
+
+  test('returns 409 duplicate_issue and writes nothing when an ID has several files', async () => {
+    await writeIssue(dir, makeIssue({ id: 1, title: 'One' }));
+    await writeIssue(dir, makeIssue({ id: 1, title: 'Copy' }));
+
+    const res = await req('/issues/1/comments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: 'A comment' }),
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe(
+      'duplicate_issue',
+    );
+    expect((await listIssueFiles(dir)).toSorted()).toEqual([
+      '1-copy.md',
+      '1-one.md',
+    ]);
+  });
+
   test('adds a comment', async () => {
     await writeIssue(dir, makeIssue({ id: 1, title: 'Issue' }));
 

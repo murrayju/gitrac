@@ -13,7 +13,7 @@ import {
   parseConfig,
   serializeConfig,
 } from '../core/config.ts';
-import { GitracError, issueNotFound } from '../core/errors.ts';
+import { duplicateIssue, GitracError, issueNotFound } from '../core/errors.ts';
 import { parseIssue, serializeIssue } from '../core/issue.ts';
 import { issueFilename, parseIssueId } from '../core/slug.ts';
 import type { Config, Issue } from '../core/types.ts';
@@ -24,6 +24,13 @@ function issuesDir(dir: string): string {
 
 function closedDir(dir: string): string {
   return join(dir, '.issues', 'closed');
+}
+
+/** Repo-relative path of an issue file (`.issues/[closed/]<filename>`). */
+function issueRelPath(filename: string, closed: boolean): string {
+  return closed
+    ? join('.issues', 'closed', filename)
+    : join('.issues', filename);
 }
 
 function configPath(dir: string): string {
@@ -118,26 +125,33 @@ export async function listAllIssueFiles(dir: string): Promise<string[]> {
 }
 
 /**
- * Find an issue file by its numeric ID prefix.
- * Searches open issues first, then closed.
+ * Find an issue file by its numeric ID prefix, in `.issues/` or
+ * `.issues/closed/`. Throws `duplicate_issue` (listing the files) if more
+ * than one file has the ID, rather than silently picking one.
  */
 export async function findIssueFile(
   dir: string,
   id: number,
 ): Promise<{ filename: string; closed: boolean } | null> {
-  const openFiles = await listIssueFiles(dir);
-  for (const f of openFiles) {
-    if (parseIssueId(f) === id) {
-      return { filename: f, closed: false };
-    }
+  const [openFiles, closedFiles] = await Promise.all([
+    listIssueFiles(dir),
+    listClosedIssueFiles(dir),
+  ]);
+  const matches = [
+    ...openFiles
+      .filter((f) => parseIssueId(f) === id)
+      .map((filename) => ({ filename, closed: false })),
+    ...closedFiles
+      .filter((f) => parseIssueId(f) === id)
+      .map((filename) => ({ filename, closed: true })),
+  ];
+  if (matches.length > 1) {
+    throw duplicateIssue(
+      id,
+      matches.map((m) => issueRelPath(m.filename, m.closed)),
+    );
   }
-  const closedFiles = await listClosedIssueFiles(dir);
-  for (const f of closedFiles) {
-    if (parseIssueId(f) === id) {
-      return { filename: f, closed: true };
-    }
-  }
-  return null;
+  return matches[0] ?? null;
 }
 
 /**
@@ -202,10 +216,13 @@ export async function deleteIssueFile(
 }
 
 /**
- * Write an issue into `.issues/closed/` (`to.closed`) or `.issues/`, then
- * remove the file it was read from (`from`) if that is a different path — a
- * different directory, or a filename that no longer matches the title. Used by
- * close/reopen so the issue ends up as exactly one file in the right place.
+ * Rewrite an issue that was read from `from`, into `.issues/closed/`
+ * (`to.closed`) or `.issues/`, under the filename its title gives. If that is
+ * a different path — a different directory, or a filename that no longer
+ * matches the title — the old file is renamed onto the new path (after
+ * writing the new contents into it), so the issue is exactly one file at
+ * every moment and readers never see a duplicate. Every service write of an
+ * existing issue goes through here.
  * Returns the repo-relative paths involved (new path first, then the old one
  * if it differed) for the commit.
  */
@@ -215,13 +232,15 @@ export async function relocateIssue(
   from: { filename: string; closed: boolean },
   to: { closed: boolean },
 ): Promise<string[]> {
-  const filename = await writeIssue(dir, issue, { closed: to.closed });
-  const relPath = (name: string, closed: boolean) =>
-    closed ? join('.issues', 'closed', name) : join('.issues', name);
-  const newPath = relPath(filename, to.closed);
-  const oldPath = relPath(from.filename, from.closed);
-  if (oldPath === newPath) return [newPath];
-  await deleteIssueFile(dir, from.filename, from.closed);
+  const filename = issueFilename(issue.id, issue.title);
+  const newPath = issueRelPath(filename, to.closed);
+  const oldPath = issueRelPath(from.filename, from.closed);
+  if (oldPath === newPath) {
+    await writeIssue(dir, issue, { closed: to.closed });
+    return [newPath];
+  }
+  await writeFile(join(dir, oldPath), serializeIssue(issue));
+  await rename(join(dir, oldPath), join(dir, newPath));
   return [newPath, oldPath];
 }
 

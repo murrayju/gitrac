@@ -179,7 +179,7 @@ stdout only ever holds the result. Errors and warnings (e.g. "not on the default
 | 0 | | Success |
 | 1 | `error`, `invalid_config` | Unexpected error, or unparseable `.issues/config.yaml` |
 | 2 | `invalid_input`, `usage` | Bad ID / field value / flag / missing argument — nothing was written |
-| 3 | `already_claimed`, `already_initialized`, `invalid_state` | Conflict: claimed by someone else, already initialized, closing a closed / reopening an open issue |
+| 3 | `already_claimed`, `already_initialized`, `invalid_state`, `duplicate_issue` | Conflict: claimed by someone else, already initialized, closing a closed / reopening an open issue, or several files on disk for one issue ID (`files` lists them — merge them by hand and delete all but one) |
 | 4 | `issue_closed` | `claim`/`unclaim` on a closed issue |
 | 5 | `not_found` | No such issue |
 | 6 | `lock_timeout` | Another gitrac process held the repo lock too long — retry |

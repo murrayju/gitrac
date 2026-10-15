@@ -51,7 +51,23 @@ interface LoadedIssue {
   closed: boolean;
 }
 
-/** Read + parse an issue and compute its ETag; null if missing/unreadable. */
+/** Whether `err` reports several files for one issue ID. */
+function isDuplicateIssue(err: unknown): err is GitracError {
+  return err instanceof GitracError && err.code === 'duplicate_issue';
+}
+
+/** 409 `{ error, code: "duplicate_issue", files }`. */
+function duplicateResponse(c: Context, err: GitracError): Response {
+  return c.json(
+    { error: err.message, code: err.code, files: err.details?.files ?? [] },
+    409,
+  );
+}
+
+/**
+ * Read + parse an issue and compute its ETag; null if missing/unreadable.
+ * Throws `duplicate_issue` if several files have the ID.
+ */
 async function loadIssue(dir: string, id: number): Promise<LoadedIssue | null> {
   try {
     const raw = await readIssueContent(dir, id);
@@ -62,7 +78,8 @@ async function loadIssue(dir: string, id: number): Promise<LoadedIssue | null> {
       filename: raw.filename,
       closed: raw.closed,
     };
-  } catch {
+  } catch (err) {
+    if (isDuplicateIssue(err)) throw err;
     return null;
   }
 }
@@ -106,6 +123,7 @@ function ifMatchGuard(c: Context): {
  *   `{ error, code, current }` (+ its ETag), nothing written
  * - field validation: 400 `{ error, errors }`; other bad input: 400 `{ error }`
  * - missing or unreadable issue, comment index out of range: 404 `{ error }`
+ * - several files for the issue ID: 409 `{ error, code, files }`
  */
 function errorResponse(
   c: Context,
@@ -128,6 +146,7 @@ function errorResponse(
   if (err instanceof IssueUnreadableError) {
     return c.json({ error: `Issue #${err.id} not found` }, 404);
   }
+  if (isDuplicateIssue(err)) return duplicateResponse(c, err);
   if (err instanceof GitracError) {
     if (err.code === 'invalid_state' && current) {
       c.header('ETag', current.etag);
@@ -157,7 +176,7 @@ async function respondWithIssue(
   issue: Issue,
   status: 200 | 201 = 200,
 ): Promise<Response> {
-  const loaded = await loadIssue(dir, issue.id);
+  const loaded = await loadIssue(dir, issue.id).catch(() => null);
   if (!loaded) return c.json(issue, status);
   c.header('ETag', loaded.etag);
   return c.json(loaded.issue, status);
@@ -235,7 +254,13 @@ export function issueRoutes(ctx: ServerContext): Hono {
       return c.json({ error: 'Invalid issue ID' }, 400);
     }
 
-    const loaded = await loadIssue(dir, id);
+    let loaded: LoadedIssue | null;
+    try {
+      loaded = await loadIssue(dir, id);
+    } catch (err) {
+      if (isDuplicateIssue(err)) return duplicateResponse(c, err);
+      throw err;
+    }
     if (!loaded) {
       return c.json({ error: `Issue #${id} not found` }, 404);
     }

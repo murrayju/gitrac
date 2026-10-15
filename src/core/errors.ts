@@ -39,6 +39,7 @@ export const ERROR_EXIT_CODES = {
   already_claimed: EXIT_CONFLICT,
   already_initialized: EXIT_CONFLICT,
   invalid_state: EXIT_CONFLICT,
+  duplicate_issue: EXIT_CONFLICT,
   issue_closed: EXIT_ISSUE_CLOSED,
   not_found: EXIT_NOT_FOUND,
   lock_timeout: EXIT_LOCK_TIMEOUT,
@@ -79,6 +80,19 @@ export function issueNotFound(id: number): GitracError {
   return new GitracError('not_found', `Issue #${id} not found`, {
     details: { id },
   });
+}
+
+/**
+ * More than one file on disk claims issue `id` (`files`: repo-relative paths,
+ * e.g. a hand-renamed title left the old file behind). Reported instead of
+ * silently picking one ({@link EXIT_CONFLICT}).
+ */
+export function duplicateIssue(id: number, files: string[]): GitracError {
+  return new GitracError(
+    'duplicate_issue',
+    `Issue #${id} has ${files.length} files: ${files.join(', ')}. Keep one (merge any changes into it) and delete the others.`,
+    { details: { id, files } },
+  );
 }
 
 /**

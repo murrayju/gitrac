@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { GitracError } from '../core/errors.ts';
+import { serializeIssue } from '../core/issue.ts';
+import type { Issue } from '../core/types.ts';
 import {
   findIssueFile,
+  listAllIssueFiles,
   readConfig,
   readIssue,
   writeIssue,
@@ -32,6 +36,12 @@ async function rejection(promise: Promise<unknown>): Promise<GitracError> {
     return err as GitracError;
   }
   throw new Error('expected the operation to fail');
+}
+
+/** Write `issue` as `.issues/[closed/]<filename>`, ignoring its title. */
+async function writeAs(issue: Issue, filename: string, closed = false) {
+  const base = closed ? join('.issues', 'closed') : '.issues';
+  await writeFile(join(fx.dir, base, filename), serializeIssue(issue));
 }
 
 describe('claimIssue', () => {
@@ -103,6 +113,70 @@ describe('claimIssue', () => {
       filename: '1-old.md',
       closed: false,
     });
+  });
+});
+
+describe('claim / unclaim on a file whose name does not match its title', () => {
+  const stale = join('.issues', '1-old-title.md');
+  const current = join('.issues', '1-new-title.md');
+
+  test('claim replaces the stale file and commits the deletion', async () => {
+    await writeAs(makeIssue({ id: 1, title: 'New title' }), '1-old-title.md');
+    const result = await claimIssue(fx.context(), 1);
+    expect(result.changed && result.paths).toEqual([
+      current,
+      stale,
+      join('.issues', 'config.yaml'),
+    ]);
+    expect(fx.commits[0]?.files).toEqual([
+      current,
+      stale,
+      join('.issues', 'config.yaml'),
+    ]);
+    expect(await listAllIssueFiles(fx.dir)).toEqual(['1-new-title.md']);
+    expect((await readIssue(fx.dir, 1)).status).toBe('in_progress');
+  });
+
+  test('claim --force of a misnamed closed issue moves and renames it', async () => {
+    await writeAs(
+      makeIssue({ id: 1, title: 'New title', status: 'done' }),
+      '1-old-title.md',
+      true,
+    );
+    const result = await claimIssue(fx.context(), 1, { force: true });
+    expect(result.changed && result.paths).toEqual([
+      current,
+      join('.issues', 'closed', '1-old-title.md'),
+      join('.issues', 'config.yaml'),
+    ]);
+    expect(await listAllIssueFiles(fx.dir)).toEqual(['1-new-title.md']);
+  });
+
+  test('unclaim replaces the stale file too', async () => {
+    await writeAs(
+      makeIssue({
+        id: 1,
+        title: 'New title',
+        status: 'in_progress',
+        assignee: ADA.email,
+      }),
+      '1-old-title.md',
+    );
+    const result = await unclaimIssue(fx.context(), 1);
+    expect(result.changed && result.paths).toEqual([current, stale]);
+    expect(await listAllIssueFiles(fx.dir)).toEqual(['1-new-title.md']);
+  });
+
+  test('duplicate files for the ID fail with duplicate_issue', async () => {
+    await writeIssue(fx.dir, makeIssue({ id: 1, title: 'New title' }));
+    await writeAs(makeIssue({ id: 1, title: 'New title' }), '1-old-title.md');
+    const err = await rejection(claimIssue(fx.context(), 1));
+    expect(err.code).toBe('duplicate_issue');
+    expect(fx.commits).toEqual([]);
+    expect((await listAllIssueFiles(fx.dir)).toSorted()).toEqual([
+      '1-new-title.md',
+      '1-old-title.md',
+    ]);
   });
 });
 

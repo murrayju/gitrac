@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createDefaultConfig } from '../core/config.ts';
+import { GitracError } from '../core/errors.ts';
 import { serializeIssue } from '../core/issue.ts';
 import type { Issue } from '../core/types.ts';
 import {
@@ -17,6 +18,7 @@ import {
   moveToReopen,
   readConfig,
   readIssue,
+  relocateIssue,
   writeConfig,
   writeIssue,
 } from './issue-store.ts';
@@ -218,6 +220,83 @@ describe('findIssueFile', () => {
     await initIssuesDir(dir);
     const result = await findIssueFile(dir, 999);
     expect(result).toBeNull();
+  });
+
+  test('throws duplicate_issue listing every file that has the id', async () => {
+    await initIssuesDir(dir);
+    await writeIssue(dir, makeIssue({ id: 4, title: 'Old name' }));
+    await writeIssue(dir, makeIssue({ id: 4, title: 'New name' }));
+    await writeIssue(dir, makeIssue({ id: 4, title: 'Done' }), {
+      closed: true,
+    });
+    await writeIssue(dir, makeIssue({ id: 41, title: 'Other' }));
+
+    const err = await findIssueFile(dir, 4).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(GitracError);
+    const files = [
+      join('.issues', '4-new-name.md'),
+      join('.issues', '4-old-name.md'),
+      join('.issues', 'closed', '4-done.md'),
+    ];
+    expect((err as GitracError).code).toBe('duplicate_issue');
+    expect((err as GitracError).exitCode).toBe(3);
+    expect(
+      ((err as GitracError).details?.files as string[]).toSorted(),
+    ).toEqual(files);
+    for (const f of files) expect((err as GitracError).message).toContain(f);
+    // Other IDs are unaffected; readIssue reports the same error.
+    expect((await findIssueFile(dir, 41))?.filename).toBe('41-other.md');
+    await expect(readIssue(dir, 4)).rejects.toThrow('Issue #4 has 3 files');
+  });
+
+  test('an open and a closed file with the same id are a duplicate', async () => {
+    await initIssuesDir(dir);
+    await writeIssue(dir, makeIssue({ id: 2, title: 'Same' }));
+    await writeIssue(dir, makeIssue({ id: 2, title: 'Same' }), {
+      closed: true,
+    });
+    await expect(findIssueFile(dir, 2)).rejects.toMatchObject({
+      code: 'duplicate_issue',
+    });
+  });
+});
+
+describe('relocateIssue', () => {
+  test('rewrites in place when the path is unchanged', async () => {
+    await initIssuesDir(dir);
+    await writeIssue(dir, makeIssue({ id: 1, title: 'Keep' }));
+    const paths = await relocateIssue(
+      dir,
+      makeIssue({ id: 1, title: 'Keep', description: 'changed' }),
+      { filename: '1-keep.md', closed: false },
+      { closed: false },
+    );
+    expect(paths).toEqual([join('.issues', '1-keep.md')]);
+    expect((await readIssue(dir, 1)).description).toBe('changed');
+  });
+
+  test('replaces a file whose name no longer matches the title', async () => {
+    await initIssuesDir(dir);
+    await writeFile(
+      join(dir, '.issues', '1-stale-name.md'),
+      serializeIssue(makeIssue({ id: 1, title: 'Fresh title' })),
+    );
+    const paths = await relocateIssue(
+      dir,
+      makeIssue({ id: 1, title: 'Fresh title', description: 'new' }),
+      { filename: '1-stale-name.md', closed: false },
+      { closed: true },
+    );
+    expect(paths).toEqual([
+      join('.issues', 'closed', '1-fresh-title.md'),
+      join('.issues', '1-stale-name.md'),
+    ]);
+    expect(await listAllIssueFiles(dir)).toEqual(['1-fresh-title.md']);
+    expect(await findIssueFile(dir, 1)).toEqual({
+      filename: '1-fresh-title.md',
+      closed: true,
+    });
+    expect((await readIssue(dir, 1)).description).toBe('new');
   });
 });
 

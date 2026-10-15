@@ -1,4 +1,4 @@
-import { issueNotFound } from '../core/errors.ts';
+import { GitracError, issueNotFound } from '../core/errors.ts';
 import { parseIssue } from '../core/issue.ts';
 import type { Issue } from '../core/types.ts';
 import { readIssueContent } from '../fs/issue-store.ts';
@@ -29,14 +29,17 @@ async function readStoredIssue(
     const raw = await readIssueContent(dir, id);
     return raw && { issue: parseIssue(raw.content), ...raw };
   } catch (err) {
+    // Several files for the ID is a conflict to resolve, not "unreadable".
+    if (err instanceof GitracError && err.code === 'duplicate_issue') throw err;
     throw new IssueUnreadableError(id, err);
   }
 }
 
 /**
  * Load an existing issue for a mutation (callers hold the repo lock) and run
- * `precondition` on it. Throws `not_found` if there is no file for the ID, or
- * {@link IssueUnreadableError} if it can't be read or parsed.
+ * `precondition` on it. Throws `not_found` if there is no file for the ID,
+ * `duplicate_issue` if there are several, or {@link IssueUnreadableError} if
+ * it can't be read or parsed.
  */
 export async function loadStoredIssue(
   dir: string,

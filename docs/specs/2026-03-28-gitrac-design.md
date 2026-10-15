@@ -124,6 +124,10 @@ Auto-incrementing integers. `nextId` in `config.yaml` is the counter. Allocation
 
 Issues are looked up by ID prefix match on the filename (`{id}-*.md`). Renaming a title changes the slug portion of the filename but the ID prefix remains the canonical identifier. Lookup searches both `.issues/` and `.issues/closed/`.
 
+Every write of an existing issue (edit, comment, comment edit/delete, close, reopen, claim, unclaim) writes it under the filename its current title gives, in the directory its state requires; if that differs from the file it was read from (title edited by hand, older slug rules, moved between `.issues/` and `.issues/closed/`), the old file is renamed onto the new path and both paths are committed, so an issue is always exactly one file.
+
+If more than one file has the same ID (across both directories), lookup fails with `duplicate_issue` (exit **3**; HTTP **409** `{ error, code: "duplicate_issue", files }`) listing the repo-relative paths, rather than picking one. Nothing is written; merge the copies by hand and delete all but one.
+
 ---
 
 ## Architecture
@@ -214,7 +218,7 @@ Commands never call `process.exit` on failure: they throw a `GitracError` (`src/
 Errors always go to **stderr**; stdout carries only the command's result (so with `-o json`, stdout is either the result or empty). Warnings (e.g. the non-default-branch warning) also go to stderr, before the error.
 
 - **human:** `Error: <message>` (one line per message when several fields are invalid).
-- **`-o json`:** one line, the last line of stderr: `{"error":{"code":"not_found","message":"Issue #9 not found","id":9}}`. `code` and `message` are always present; some errors add fields (`id`, `assignee`, `status`, `errors` for multiple validation messages, `lockPath`, `reason` for usage errors).
+- **`-o json`:** one line, the last line of stderr: `{"error":{"code":"not_found","message":"Issue #9 not found","id":9}}`. `code` and `message` are always present; some errors add fields (`id`, `assignee`, `status`, `errors` for multiple validation messages, `files` for duplicate issue files, `lockPath`, `reason` for usage errors).
 - **`-o yaml`:** the same object as YAML.
 - Stack traces are printed only with `--debug` (before the error line).
 
@@ -223,7 +227,7 @@ Errors always go to **stderr**; stdout carries only the command's result (so wit
 | 0 | — | Success (including no-op claims) |
 | 1 | `error`, `invalid_config`, `server_error` | Unexpected error, unparseable `.issues/config.yaml`, web server failed to start |
 | 2 | `invalid_input`, `usage` | Bad issue ID, field value, text input, flag, or missing argument; nothing written |
-| 3 | `already_claimed`, `already_initialized`, `invalid_state` | Conflicts with current state: claimed by someone else (`claim`/`unclaim`), `init` on an initialized repo, `close` of a closed issue, `reopen` of an open issue |
+| 3 | `already_claimed`, `already_initialized`, `invalid_state`, `duplicate_issue` | Conflicts with current state: claimed by someone else (`claim`/`unclaim`), `init` on an initialized repo, `close` of a closed issue, `reopen` of an open issue, several files for one issue ID (`files` lists them) |
 | 4 | `issue_closed` | `claim`/`unclaim` on a closed issue |
 | 5 | `not_found` | The issue doesn't exist |
 | 6 | `lock_timeout` | Timed out waiting for the repo lock (safe to retry) |
@@ -368,7 +372,7 @@ The server has no authentication, so exposure is limited instead (`src/web/secur
 | Method | Route | Description |
 |--------|-------|------------|
 | GET | `/api/issues` | List issues (supports query params for filtering) |
-| GET | `/api/issues/:id` | Get single issue |
+| GET | `/api/issues/:id` | Get single issue. **409** `{ error, code: "duplicate_issue", files }` if several files have the ID (also for every mutation of that issue) |
 | POST | `/api/issues` | Create issue (optional `author` sets `createdBy`) |
 | PATCH | `/api/issues/:id` | Update issue metadata |
 | POST | `/api/issues/:id/comments` | Add comment (`body`; optional `author`) |
