@@ -1,14 +1,14 @@
 ---
 id: 68
 title: Deleting an issue leaves dangling dependency references
-status: todo
+status: in_progress
 priority: low
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-15T13:15:03.763Z'
 createdBy: Justin Murray
-updated: '2026-10-15T13:15:03.763Z'
+updated: '2026-10-15T13:15:17.905Z'
 ---
 
 `gitrac delete` / `DELETE /api/issues/:id` (#59) removes the issue file but other issues may still reference it in `blockedBy` or `parent` (#55). They're treated as resolved/missing, but the references linger forever.
