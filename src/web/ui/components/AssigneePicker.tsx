@@ -15,7 +15,7 @@ export function AssigneePicker({
   onChange,
   trigger,
 }: AssigneePickerProps) {
-  const { config } = useConfig();
+  const { config, applyConfig } = useConfig();
   const assignees = config?.assignees ?? [];
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState('');
@@ -121,7 +121,7 @@ export function AssigneePicker({
     const newAssignee: Assignee = { name, email };
     const updated = [...assignees, newAssignee];
     try {
-      await updateAssignees(updated);
+      applyConfig(await updateAssignees(updated));
     } catch {
       // ignore
     }

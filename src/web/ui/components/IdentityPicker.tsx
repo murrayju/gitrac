@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { Assignee } from '../../../core/types.ts';
-import { fetchConfig, fetchIdentity, type Identity } from '../api.ts';
+import { fetchIdentity, type Identity } from '../api.ts';
+import { useConfig } from '../hooks.ts';
 import { effectiveAuthor, identityOptions } from '../lib/identity.ts';
 import { useIdentityStore } from '../stores/identityStore.ts';
 
@@ -13,7 +13,9 @@ export function IdentityPicker() {
   const author = useIdentityStore((s) => s.author);
   const setAuthor = useIdentityStore((s) => s.setAuthor);
   const [identity, setIdentity] = useState<Identity | null>(null);
-  const [assignees, setAssignees] = useState<Assignee[] | null>(null);
+  // Shared config (one fetch + one SSE connection for the whole tab).
+  const { config, refetch: refetchConfig } = useConfig();
+  const assignees = config?.assignees ?? null;
 
   // Load on mount and whenever the tab regains focus (git config / assignees
   // may have changed outside the browser).
@@ -23,17 +25,18 @@ export function IdentityPicker() {
       fetchIdentity()
         .then((id) => !cancelled && setIdentity(id))
         .catch(() => {});
-      fetchConfig()
-        .then((cfg) => !cancelled && setAssignees(cfg.assignees))
-        .catch(() => {});
+    }
+    function onFocus() {
+      load();
+      refetchConfig();
     }
     load();
-    window.addEventListener('focus', load);
+    window.addEventListener('focus', onFocus);
     return () => {
       cancelled = true;
-      window.removeEventListener('focus', load);
+      window.removeEventListener('focus', onFocus);
     };
-  }, []);
+  }, [refetchConfig]);
 
   // Drop a stored choice that is no longer a configured assignee.
   useEffect(() => {

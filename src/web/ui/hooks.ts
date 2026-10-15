@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import type { Config, Issue } from '../../core/types.ts';
 import type { Draft, GitStatus, IssueFilters } from './api.ts';
 import {
@@ -8,43 +14,18 @@ import {
   fetchIssues,
   fetchIssueVersioned,
 } from './api.ts';
+import { issueEvents } from './lib/event-stream.ts';
+import { createSharedQuery } from './lib/shared-query.ts';
 
+/**
+ * Call `onEvent` whenever the server reports changes (and on every
+ * (re)connect). All callers share one tab-wide `EventSource`.
+ */
 export function useSSE(onEvent: () => void): void {
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
 
-  useEffect(() => {
-    let es: EventSource | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-
-    function connect() {
-      es = new EventSource('/api/events');
-
-      // The server sends `connected` on every (re)connect. Refetch then so
-      // changes emitted while we were disconnected (or between the initial
-      // fetch and the stream opening) are never missed.
-      es.addEventListener('connected', () => {
-        onEventRef.current();
-      });
-
-      es.addEventListener('issues-changed', () => {
-        onEventRef.current();
-      });
-
-      es.onerror = () => {
-        es?.close();
-        // Reconnect after 3 seconds
-        reconnectTimer = setTimeout(connect, 3000);
-      };
-    }
-
-    connect();
-
-    return () => {
-      es?.close();
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-    };
-  }, []);
+  useEffect(() => issueEvents().subscribe(() => onEventRef.current()), []);
 }
 
 export function useIssues(filters?: IssueFilters): {
@@ -131,33 +112,36 @@ export function useIssue(id: number): {
   return { ...state, loading, error, refetch, applyIssue };
 }
 
+// Config is shared by every component (each list row reads label colors), so
+// it is fetched once per change, not once per consumer. Re-fetched when
+// issues change, since label colors may have been assigned.
+const configQuery = createSharedQuery(fetchConfig, (refetch) =>
+  issueEvents().subscribe(refetch),
+);
+
 export function useConfig(): {
   config: Config | null;
   loading: boolean;
   error: string | null;
+  refetch: () => void;
+  /** Adopt a config returned by a mutation (e.g. `updateAssignees`). */
+  applyConfig: (config: Config) => void;
 } {
-  const [config, setConfig] = useState<Config | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data, loading, error } = useSyncExternalStore(
+    configQuery.subscribe,
+    configQuery.getSnapshot,
+  );
+  return {
+    config: data,
+    loading,
+    error,
+    refetch: refetchConfig,
+    applyConfig: configQuery.set,
+  };
+}
 
-  const refetch = useCallback(() => {
-    fetchConfig()
-      .then((data) => {
-        setConfig(data);
-        setError(null);
-      })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => {
-    refetch();
-  }, [refetch]);
-
-  // Re-fetch config when issues change (label colors may have been assigned)
-  useSSE(refetch);
-
-  return { config, loading, error };
+function refetchConfig(): void {
+  void configQuery.refetch();
 }
 
 export function useGitStatus(): {
