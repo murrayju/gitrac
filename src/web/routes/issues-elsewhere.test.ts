@@ -200,6 +200,66 @@ describe('claimedElsewhere in the web API', () => {
     expect(list[0]?.claimedElsewhere).toEqual({ ...WHERE, worktree: wt1 });
   });
 
+  test('409 responses embed `current` with claimedElsewhere, as GET does (#77)', async () => {
+    await claimIn(wt1, 1, WHERE.updated);
+    const app = createApp(ctx, { ui: null });
+    const send = (method: string, path: string, headers = {}) =>
+      app.request(`http://localhost/api${path}`, {
+        method,
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: method === 'DELETE' ? undefined : JSON.stringify({}),
+      });
+    const expected = await get<Served>('/issues/1');
+    expect(expected.claimedElsewhere).toEqual({ ...WHERE, worktree: wt1 });
+
+    // If-Match mismatch
+    const stale = await app.request('http://localhost/api/issues/1', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'If-Match': '"stale"' },
+      body: JSON.stringify({ title: 'Changed' }),
+    });
+    expect(stale.status).toBe(409);
+    const staleBody = (await stale.json()) as { current: Served };
+    expect(staleBody.current).toEqual(expected);
+
+    // If-Match mismatch on DELETE
+    const del = await send('DELETE', '/issues/1', { 'If-Match': '"stale"' });
+    expect(del.status).toBe(409);
+    expect(((await del.json()) as { current: Served }).current).toEqual(
+      expected,
+    );
+
+    // invalid_state: reopening an open issue
+    const reopen = await send('PATCH', '/issues/1/reopen');
+    expect(reopen.status).toBe(409);
+    const reopenBody = (await reopen.json()) as {
+      code: string;
+      current: Served;
+    };
+    expect(reopenBody.code).toBe('invalid_state');
+    expect(reopenBody.current).toEqual(expected);
+
+    // An issue with no claim elsewhere has no field.
+    const other = await send('PATCH', '/issues/2/reopen');
+    expect(other.status).toBe(409);
+    expect(
+      ((await other.json()) as { current: Served }).current,
+    ).not.toHaveProperty('claimedElsewhere');
+  });
+
+  test('DELETE responses embed the issue with claimedElsewhere (#77)', async () => {
+    await claimIn(wt1, 1, WHERE.updated);
+    const app = createApp(ctx, { ui: null });
+    for (const path of ['/issues/1?dryRun=1', '/issues/1']) {
+      const res = await app.request(`http://localhost/api${path}`, {
+        method: 'DELETE',
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { issue: Served };
+      expect(body.issue.claimedElsewhere).toEqual({ ...WHERE, worktree: wt1 });
+    }
+  });
+
   test('the default cache is created lazily on the context', async () => {
     ctx.elsewhere = undefined;
     await claimIn(wt1, 1, WHERE.updated);

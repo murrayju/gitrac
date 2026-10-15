@@ -84,7 +84,7 @@ export class ApiError extends Error {
 export class ConflictError extends ApiError {
   constructor(
     body: string,
-    readonly current: Issue,
+    readonly current: ApiIssue,
     readonly version: string | null,
   ) {
     super(409, body);
@@ -117,9 +117,9 @@ async function requestVersioned<T>(
   if (!res.ok) {
     const body = await res.text();
     if (res.status === 409) {
-      let current: Issue | undefined;
+      let current: ApiIssue | undefined;
       try {
-        current = (JSON.parse(body) as { current?: Issue }).current;
+        current = (JSON.parse(body) as { current?: ApiIssue }).current;
       } catch {
         // not a conflict payload
       }
@@ -251,7 +251,7 @@ export interface IssueDeletion {
   /** False for a dry run (`?dryRun=1`): nothing was written. */
   deleted: boolean;
   /** The issue as it was before deletion. */
-  issue: Issue;
+  issue: ApiIssue;
   /** Repo-relative paths removed: the issue file, then orphaned assets. */
   paths: string[];
   assets: string[];

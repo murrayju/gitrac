@@ -118,7 +118,9 @@ function ifMatchGuard(c: Context): {
 
 /**
  * Map an error from a service operation to its HTTP response, or rethrow it
- * (-> 500). `current` is the issue version the operation loaded, if any.
+ * (-> 500). `current` is the issue version the operation loaded, if any;
+ * when embedded it's served like `GET /issues/:id` (`claimedElsewhere`
+ * included), so a conflict doesn't drop the UI's claim badge.
  *
  * - `If-Match` mismatch: 409 `{ error, current }` (+ its ETag)
  * - `invalid_state` (already closed / already open): 409
@@ -128,17 +130,18 @@ function ifMatchGuard(c: Context): {
  * - several files for the issue ID: 409 `{ error, code, files }`
  * - malformed issue file: 409 `{ error, code: "invalid_issue", file }`
  */
-function errorResponse(
+async function errorResponse(
   c: Context,
+  ctx: ServerContext,
   err: unknown,
   current?: LoadedIssue,
-): Response {
+): Promise<Response> {
   if (err instanceof PreconditionFailed && current) {
     c.header('ETag', current.etag);
     return c.json(
       {
         error: `Issue #${current.issue.id} was modified since it was loaded`,
-        current: current.issue,
+        current: await withClaim(ctx, current.issue),
       },
       409,
     );
@@ -155,7 +158,11 @@ function errorResponse(
     if (err.code === 'invalid_state' && current) {
       c.header('ETag', current.etag);
       return c.json(
-        { error: err.message, code: err.code, current: current.issue },
+        {
+          error: err.message,
+          code: err.code,
+          current: await withClaim(ctx, current.issue),
+        },
         409,
       );
     }
@@ -242,7 +249,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
         },
       );
     } catch (err) {
-      return errorResponse(c, err);
+      return errorResponse(c, ctx, err);
     }
     const { issues } = await listIssues(dir, query, config);
     return c.json(await withClaims(ctx, issues));
@@ -287,7 +294,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
       ctx.config = result.config;
       return respondWithIssue(c, ctx, result.issue, status);
     } catch (err) {
-      return errorResponse(c, err, guard.current());
+      return errorResponse(c, ctx, err, guard.current());
     }
   }
 
@@ -320,8 +327,9 @@ export function issueRoutes(ctx: ServerContext): Hono {
   // DELETE /issues/:id — delete an issue (and the assets only it references),
   // remove links to it from other issues, and commit the removal. Honors
   // `If-Match`. Replies `{ deleted: true, issue, paths, assets, unlinked }`
-  // with the issue as it was. With `?dryRun=1` (or `true`), writes nothing
-  // and replies the plan (`deleted: false`, same fields as `gitrac delete
+  // with the issue as it was (served like GET, `claimedElsewhere`
+  // included). With `?dryRun=1` (or `true`), writes nothing and replies the
+  // plan (`deleted: false`, same fields as `gitrac delete
   // --dry-run`) with the issue's `ETag`, to send as `If-Match` when
   // confirming so the deletion matches what was previewed.
   app.delete('/issues/:id', locked, async (c) => {
@@ -343,13 +351,13 @@ export function issueRoutes(ctx: ServerContext): Hono {
       if (dryRun && etag) c.header('ETag', etag);
       return c.json({
         deleted: !dryRun,
-        issue: result.issue,
+        issue: await withClaim(ctx, result.issue),
         paths: result.paths,
         assets: result.assets,
         unlinked: result.unlinked,
       });
     } catch (err) {
-      return errorResponse(c, err, guard.current());
+      return errorResponse(c, ctx, err, guard.current());
     }
   });
 
