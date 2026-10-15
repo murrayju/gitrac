@@ -9,6 +9,7 @@ import {
   findIssueFile,
   initIssuesDir,
   readConfig,
+  readIssue,
 } from '../../fs/issue-store.ts';
 import { AmendTracker } from '../../git/amend-tracker.ts';
 import type { ServerContext } from '../server.ts';
@@ -153,5 +154,42 @@ describe('DELETE /api/issues/:id', () => {
   test('missing issue is 404, bad ID is 400', async () => {
     expect((await send('DELETE', '/issues/99')).status).toBe(404);
     expect((await send('DELETE', '/issues/abc')).status).toBe(400);
+  });
+
+  test('removes links to the deleted issue in the same commit (#68)', async () => {
+    const gone = await create({ title: 'Gone' });
+    const blocked = await create({ title: 'Blocked' });
+    const child = await create({ title: 'Child' });
+    for (const [id, body] of [
+      [blocked.id, { blockedBy: gone.id }],
+      [child.id, { parent: gone.id }],
+    ] as const) {
+      expect((await send('POST', `/issues/${id}/link`, body)).status).toBe(200);
+    }
+
+    const res = await send('DELETE', `/issues/${gone.id}`);
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { unlinked: unknown[] };
+    expect(body.unlinked).toEqual([
+      {
+        id: blocked.id,
+        title: 'Blocked',
+        blockedBy: true,
+        parent: false,
+        paths: [join('.issues', `${blocked.id}-blocked.md`)],
+      },
+      {
+        id: child.id,
+        title: 'Child',
+        blockedBy: false,
+        parent: true,
+        paths: [join('.issues', `${child.id}-child.md`)],
+      },
+    ]);
+    expect((await readIssue(dir, blocked.id)).blockedBy).toBeUndefined();
+    expect((await readIssue(dir, child.id)).parent).toBeUndefined();
+    expect((await subjects())[0]).toBe(`issue: delete #${gone.id} Gone`);
+    expect((await simpleGit(dir).status()).isClean()).toBe(true);
   });
 });

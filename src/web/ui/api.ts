@@ -246,6 +246,14 @@ export interface IssueDeletion {
   /** Repo-relative paths removed: the issue file, then orphaned assets. */
   paths: string[];
   assets: string[];
+  /** Other issues whose `blockedBy` / `parent` links to it were removed. */
+  unlinked: {
+    id: number;
+    title: string;
+    blockedBy: boolean;
+    parent: boolean;
+    paths: string[];
+  }[];
 }
 
 /**

@@ -3,7 +3,7 @@ import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { GitracError } from '../core/errors.ts';
 import { serializeIssue } from '../core/issue.ts';
-import { findIssueFile, writeIssue } from '../fs/issue-store.ts';
+import { findIssueFile, readIssue, writeIssue } from '../fs/issue-store.ts';
 import { deleteIssue } from './delete.ts';
 import {
   makeIssue,
@@ -205,5 +205,161 @@ describe('deleteIssue', () => {
     const err = await rejection(deleteIssue(fx.context(), 1));
     expect(err.code).toBe('duplicate_issue');
     expect(await snapshot()).toEqual(before);
+  });
+
+  describe('links to the deleted issue (#68)', () => {
+    const old = '2025-01-01T00:00:00Z';
+
+    async function linkedFixture(): Promise<void> {
+      await writeIssue(fx.dir, makeIssue({ id: 1, title: 'Gone' }));
+      // #2 is blocked by #1 and another issue
+      await writeIssue(
+        fx.dir,
+        makeIssue({ id: 2, title: 'Blocked', blockedBy: [1, 4] }),
+      );
+      // #3 is a closed sub-issue of #1, only blocked by #1
+      await writeIssue(
+        fx.dir,
+        makeIssue({
+          id: 3,
+          title: 'Child',
+          status: 'done',
+          parent: 1,
+          blockedBy: [1],
+        }),
+        { closed: true },
+      );
+      // #4 doesn't reference #1
+      await writeIssue(
+        fx.dir,
+        makeIssue({ id: 4, title: 'Other', parent: 2, blockedBy: [2] }),
+      );
+    }
+
+    test('removes the ID from blockedBy and clears parent, in the same commit', async () => {
+      await linkedFixture();
+      const result = await deleteIssue(fx.context(), 1);
+
+      expect(result.paths).toEqual([join('.issues', '1-gone.md')]);
+      expect(result.unlinked).toEqual([
+        {
+          id: 2,
+          title: 'Blocked',
+          blockedBy: true,
+          parent: false,
+          paths: [join('.issues', '2-blocked.md')],
+        },
+        {
+          id: 3,
+          title: 'Child',
+          blockedBy: true,
+          parent: true,
+          paths: [join('.issues', 'closed', '3-child.md')],
+        },
+      ]);
+
+      const two = await readIssue(fx.dir, 2);
+      expect(two.blockedBy).toEqual([4]);
+      expect(two.updated).not.toBe(old);
+      const three = await readIssue(fx.dir, 3);
+      expect(three.blockedBy).toBeUndefined();
+      expect(three.parent).toBeUndefined();
+      expect(three.updated).not.toBe(old);
+      expect(three.status).toBe('done');
+      // Untouched
+      const four = await readIssue(fx.dir, 4);
+      expect(four).toMatchObject({ parent: 2, blockedBy: [2], updated: old });
+
+      expect(fx.commits).toHaveLength(1);
+      expect(fx.commits[0]?.files).toEqual([
+        join('.issues', '1-gone.md'),
+        join('.issues', '2-blocked.md'),
+        join('.issues', 'closed', '3-child.md'),
+      ]);
+      expect(fx.events).toEqual(['written:delete', 'commit:delete']);
+    });
+
+    test('dryRun lists the issues to unlink without writing', async () => {
+      await linkedFixture();
+      const before = await snapshot();
+      const plan = await deleteIssue(fx.context(), 1, { dryRun: true });
+      expect(plan.unlinked.map((u) => u.id)).toEqual([2, 3]);
+      expect(plan.unlinked[1]).toMatchObject({ blockedBy: true, parent: true });
+      expect(await snapshot()).toEqual(before);
+      expect(fx.events).toEqual([]);
+    });
+
+    test('a stale filename is renamed and both paths are committed', async () => {
+      await writeIssue(fx.dir, makeIssue({ id: 1, title: 'Gone' }));
+      await writeFile(
+        join(fx.dir, '.issues', '2-old-name.md'),
+        serializeIssue(makeIssue({ id: 2, title: 'New name', parent: 1 })),
+      );
+      const plan = await deleteIssue(fx.context(), 1, { dryRun: true });
+      const expected = [
+        join('.issues', '2-new-name.md'),
+        join('.issues', '2-old-name.md'),
+      ];
+      expect(plan.unlinked[0]?.paths).toEqual(expected);
+
+      const result = await deleteIssue(fx.context(), 1);
+      expect(result.unlinked[0]?.paths).toEqual(expected);
+      expect(fx.commits[0]?.files).toEqual([
+        join('.issues', '1-gone.md'),
+        ...expected,
+      ]);
+      expect((await findIssueFile(fx.dir, 2))?.filename).toBe('2-new-name.md');
+      expect((await readIssue(fx.dir, 2)).parent).toBeUndefined();
+    });
+
+    test('commits the assets the unlinked issues reference', async () => {
+      await writeAsset('kept.png');
+      await writeIssue(fx.dir, makeIssue({ id: 1, title: 'Gone' }));
+      await writeIssue(
+        fx.dir,
+        makeIssue({
+          id: 2,
+          title: 'Pic',
+          blockedBy: [1],
+          description: ref('kept.png'),
+        }),
+      );
+      await deleteIssue(fx.context(), 1);
+      expect(fx.commits[0]?.files).toContain(
+        join('.issues', 'assets', 'kept.png'),
+      );
+      expect(await Bun.file(asset('kept.png')).exists()).toBe(true);
+    });
+
+    test('onDeleted reports the result before committing', async () => {
+      await linkedFixture();
+      const seen: number[][] = [];
+      await deleteIssue(fx.context(), 1, {
+        onDeleted: (d) => {
+          seen.push(d.unlinked.map((u) => u.id));
+          fx.events.push('deleted');
+        },
+      });
+      expect(seen).toEqual([[2, 3]]);
+      expect(fx.events).toEqual(['deleted', 'written:delete', 'commit:delete']);
+    });
+
+    test('a failing precondition unlinks nothing', async () => {
+      await linkedFixture();
+      const before = await snapshot();
+      await rejection(
+        deleteIssue(fx.context(), 1, {
+          precondition: () => {
+            throw new GitracError('invalid_state', 'changed');
+          },
+        }),
+      );
+      expect(await snapshot()).toEqual(before);
+    });
+
+    test('no references: unlinked is empty', async () => {
+      await writeIssue(fx.dir, makeIssue({ id: 1 }));
+      expect((await deleteIssue(fx.context(), 1)).unlinked).toEqual([]);
+    });
   });
 });

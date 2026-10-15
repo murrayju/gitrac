@@ -1,21 +1,47 @@
 import { readdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { extractAssetRefs, isAssetFilename } from '../core/assets.ts';
+import { blockersOf } from '../core/dependencies.ts';
+import { issueFilename } from '../core/slug.ts';
 import type { Config, Issue } from '../core/types.ts';
-import { listClosedIssueFiles, listIssueFiles } from '../fs/issue-store.ts';
+import {
+  listClosedIssueFiles,
+  listIssueFiles,
+  relocateIssue,
+} from '../fs/issue-store.ts';
 import { withRepoLock } from '../git/lock.ts';
 import {
+  assetPaths,
   commitChange,
   commitMessage,
   issuePath,
   loadConfig,
   type ServiceContext,
 } from './context.ts';
+import { loadAllIssues } from './list.ts';
 import {
   loadStoredIssue,
   type Precondition,
   type StoredIssue,
 } from './load.ts';
+
+/**
+ * Another issue whose links to the deleted issue are removed (or would be)
+ * by {@link deleteIssue}.
+ */
+export interface UnlinkedIssue {
+  id: number;
+  title: string;
+  /** The deleted issue is removed from its `blockedBy`. */
+  blockedBy: boolean;
+  /** Its `parent` (the deleted issue) is cleared. */
+  parent: boolean;
+  /**
+   * Repo-relative paths of its rewritten file: the path it is written to,
+   * then the old one if its filename was stale (see `relocateIssue`).
+   */
+  paths: string[];
+}
 
 /** The result of {@link deleteIssue} (or what it would do, for a dry run). */
 export interface IssueDeletion {
@@ -23,11 +49,18 @@ export interface IssueDeletion {
   issue: Issue;
   /**
    * Repo-relative paths removed (or that would be): the issue file first,
-   * then {@link assets}. This is what was, or would be, committed.
+   * then {@link assets}. The commit also includes the {@link unlinked}
+   * issues' files (and the assets they reference).
    */
   paths: string[];
   /** The `.issues/assets/` files only this issue referenced (a subset of `paths`). */
   assets: string[];
+  /**
+   * Other issues (open or closed) that referenced the deleted one in
+   * `blockedBy` or `parent`, by ID; those links are removed in the same
+   * commit so none dangles.
+   */
+  unlinked: UnlinkedIssue[];
   config: Config;
   /** The new commit's hash, or null if nothing was committed (or dry run). */
   commit: string | null;
@@ -38,6 +71,12 @@ export interface DeleteIssueOptions {
   precondition?: Precondition;
   /** Report what would be deleted without touching disk or committing. */
   dryRun?: boolean;
+  /**
+   * Called once the files are removed/rewritten, before committing (with
+   * `commit: null`), so a caller can report the deletion even if the commit
+   * then fails. Not called for a dry run.
+   */
+  onDeleted?: (deletion: IssueDeletion) => void;
 }
 
 /** Repo-relative path of an asset file. */
@@ -108,12 +147,69 @@ async function orphanedAssets(
   return orphans.sort();
 }
 
+/** An issue that links to the deleted one, as loaded, with the fix applied. */
+interface Relink {
+  stored: StoredIssue;
+  unlinked: UnlinkedIssue;
+}
+
+/**
+ * Every other issue (open or closed) whose `blockedBy` or `parent` points at
+ * `id`, loaded fresh (callers hold the lock) with those links removed in
+ * memory. Unreadable files are skipped (they can't be fixed anyway); a
+ * duplicate or malformed file for a referencing issue fails the delete
+ * before anything is written.
+ */
+async function referencingIssues(dir: string, id: number): Promise<Relink[]> {
+  const { issues } = await loadAllIssues(dir);
+  const ids = new Set<number>();
+  for (const other of issues) {
+    if (other.id === id) continue;
+    if (other.parent === id || blockersOf(other).includes(id)) {
+      ids.add(other.id);
+    }
+  }
+  const relinks: Relink[] = [];
+  for (const otherId of [...ids].sort((a, b) => a - b)) {
+    const stored = await loadStoredIssue(dir, otherId);
+    const { issue } = stored;
+    const blockers = blockersOf(issue);
+    const blockedBy = blockers.includes(id);
+    const parent = issue.parent === id;
+    if (!blockedBy && !parent) continue;
+    if (blockedBy) {
+      const kept = blockers.filter((b) => b !== id);
+      if (kept.length > 0) issue.blockedBy = kept;
+      else delete issue.blockedBy;
+    }
+    if (parent) delete issue.parent;
+    const newPath = issuePath(
+      issueFilename(issue.id, issue.title),
+      stored.closed,
+    );
+    const oldPath = issuePath(stored.filename, stored.closed);
+    relinks.push({
+      stored,
+      unlinked: {
+        id: issue.id,
+        title: issue.title,
+        blockedBy,
+        parent,
+        paths: newPath === oldPath ? [newPath] : [newPath, oldPath],
+      },
+    });
+  }
+  return relinks;
+}
+
 /**
  * Delete an issue: remove its file (from `.issues/` or `.issues/closed/`)
- * plus any `.issues/assets/` files that only it referenced, and commit the
- * removal (`issue: delete #N <title>`) per the context's commit options. With
- * `dryRun`, only reports what would be removed. The issue ID is not reused:
- * the shared high-water mark already counted it.
+ * plus any `.issues/assets/` files that only it referenced, remove it from
+ * every other issue's `blockedBy` and clear `parent` where it was the parent
+ * (bumping their `updated`), and commit it all at once
+ * (`issue: delete #N <title>`) per the context's commit options. With
+ * `dryRun`, only reports what would be removed and unlinked. The issue ID is
+ * not reused: the shared high-water mark already counted it.
  */
 export async function deleteIssue(
   ctx: ServiceContext,
@@ -127,18 +223,39 @@ export async function deleteIssue(
     const file = issuePath(stored.filename, stored.closed);
     const assets = (await orphanedAssets(ctx.dir, stored)).map(assetPath);
     const paths = [file, ...assets];
-    const result = { issue, paths, assets, config, commit: null };
+    const relinks = await referencingIssues(ctx.dir, id);
+    const unlinked = relinks.map((r) => r.unlinked);
+    const result: IssueDeletion = {
+      issue,
+      paths,
+      assets,
+      unlinked,
+      config,
+      commit: null,
+    };
     if (options.dryRun) return result;
 
+    const committed = new Set(paths);
+    const now = new Date().toISOString();
+    for (const { stored, unlinked: entry } of relinks) {
+      stored.issue.updated = now;
+      entry.paths = await relocateIssue(ctx.dir, stored.issue, stored, {
+        closed: stored.closed,
+      });
+      for (const p of [...entry.paths, ...assetPaths(stored.issue)]) {
+        committed.add(p);
+      }
+    }
     for (const path of assets) {
       await rm(join(ctx.dir, path), { force: true });
     }
     await rm(join(ctx.dir, file), { force: true });
 
+    options.onDeleted?.(result);
     const commit = await commitChange(ctx, config, {
       operation: 'delete',
       issue,
-      paths,
+      paths: [...committed],
       message: commitMessage(config, `delete #${id} ${issue.title}`),
     });
     return { ...result, commit };

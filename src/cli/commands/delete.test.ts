@@ -166,6 +166,70 @@ describe('gitrac delete', () => {
   });
 });
 
+describe('gitrac delete with links to the issue (#68)', () => {
+  beforeEach(async () => {
+    expect((await cli('link', '2', '--blocked-by', '1')).code).toBe(0);
+    expect((await cli('create', '-t', 'Child')).code).toBe(0);
+    expect((await cli('link', '3', '--parent', '1')).code).toBe(0);
+  });
+
+  test('--dry-run lists the issues whose links would be removed', async () => {
+    const before = await subjects();
+    const res = await cli('delete', '1', '--dry-run');
+    expect(res.code).toBe(0);
+    expect(res.stdout).toContain('Would remove links to #1 from:');
+    expect(res.stdout).toContain('#2: Keep (blockedBy)');
+    expect(res.stdout).toContain('#3: Child (parent)');
+    expect((await readIssue(dir, 2)).blockedBy).toEqual([1]);
+    expect(await subjects()).toEqual(before);
+  });
+
+  test('-o json plan includes the unlinked issues', async () => {
+    const res = await cli('delete', '1', '--dry-run', '-o', 'json');
+    expect(res.code).toBe(0);
+    expect(JSON.parse(res.stdout).unlinked).toEqual([
+      {
+        id: 2,
+        title: 'Keep',
+        blockedBy: true,
+        parent: false,
+        paths: [join('.issues', '2-keep.md')],
+      },
+      {
+        id: 3,
+        title: 'Child',
+        blockedBy: false,
+        parent: true,
+        paths: [join('.issues', '3-child.md')],
+      },
+    ]);
+  });
+
+  test('--yes removes the links in the delete commit', async () => {
+    const res = await cli('delete', '1', '--yes', '-o', 'json');
+    expect(res.code).toBe(0);
+    expect(
+      JSON.parse(res.stdout).unlinked.map((u: { id: number }) => u.id),
+    ).toEqual([2, 3]);
+    expect((await subjects())[0]).toBe('issue: delete #1 Dupe');
+    expect((await readIssue(dir, 2)).blockedBy).toBeUndefined();
+    expect((await readIssue(dir, 3)).parent).toBeUndefined();
+    const changed = await simpleGit(dir).raw([
+      'show',
+      '--name-only',
+      '--format=',
+      'HEAD',
+    ]);
+    expect(changed.split('\n').filter(Boolean).sort()).toEqual([
+      '.issues/1-dupe.md',
+      '.issues/2-keep.md',
+      '.issues/3-child.md',
+      '.issues/assets/pic.png',
+    ]);
+    expect((await simpleGit(dir).status()).isClean()).toBe(true);
+  });
+});
+
 describe('runDelete confirmation on a terminal', () => {
   function opts(): GlobalOptions {
     return {

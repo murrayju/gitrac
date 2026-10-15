@@ -164,7 +164,7 @@ Two optional relations, stored only in the dependent issue's frontmatter (one ed
 - `blockedBy: [ids]` — this issue can't start until those are closed. The inverse, "blocks", is derived.
 - `parent: id` — this issue is a sub-issue of that one (inverse: sub-issues). Informational only: it doesn't affect readiness.
 
-**Resolved blockers.** A blocker is resolved when it is in any closed status — e.g. `done` **or** `cancelled` — or no longer exists (deleted). A cancelled blocker will never be done, so treating it as blocking would strand its dependents forever; re-plan them instead (e.g. `unlink`, or cancel them too).
+**Resolved blockers.** A blocker is resolved when it is in any closed status — e.g. `done` **or** `cancelled` — or no longer exists (deleted; `delete` also removes the links to it from other issues in this worktree, but copies on other branches may keep them). A cancelled blocker will never be done, so treating it as blocking would strand its dependents forever; re-plan them instead (e.g. `unlink`, or cancel them too).
 
 **Validation** (`validateLinks`, `src/core/dependencies.ts`, run by `linkIssue` under the repo lock against every open and closed issue): an issue can't be blocked by itself or be its own parent, every target must exist, a new `blockedBy` edge must not close a cycle (directly or transitively), and a new parent must not make the issue its own ancestor. Violations are `invalid_input` (exit 2 / HTTP 400 `{ error, errors }`) and nothing is written. Unlinking needs no validation (links to deleted issues can be removed). Links that two branches add independently can still form a cycle after a merge; such issues are simply never ready until one link is removed.
 
@@ -302,10 +302,12 @@ A later unclaim or close anywhere (with a newer `updated`) supersedes a claim au
 
 `gitrac delete <id>` first works out what it would remove: the issue file, plus each asset the issue references that exists in `.issues/assets/` and whose filename appears in no other issue file (open or closed) or web UI draft. Matching is loose on purpose — any mention keeps the asset — and only plain filenames are considered (a ref with `/` or `..` never deletes anything outside `.issues/assets/`). Assets referenced only from other branches can't be seen and may be removed; they remain in git history.
 
-- `--yes` / `-y`: delete without asking. `--dry-run`: print the plan and exit 0.
+It also finds every other issue (open or closed) that links to the deleted one: the deleted ID is removed from their `blockedBy` (dropping the field if it becomes empty) and their `parent` is cleared if it was the deleted issue, bumping their `updated`. Those files are rewritten (renamed if their filename was stale) under the same lock and committed in the delete commit, so no link dangles. Links on other branches or in other worktrees are not touched (they are still treated as resolved/missing).
+
+- `--yes` / `-y`: delete without asking. `--dry-run`: print the plan (including the issues whose links would be removed) and exit 0.
 - Otherwise, on a terminal it prints the plan and asks `Delete issue #N? [y/N]`; anything but `y`/`yes` aborts with `confirmation_required` (exit **2**). When stdin is not a terminal (agents, scripts) it prints the plan to stdout and fails with `confirmation_required` (exit **2**) without asking — re-run with `--yes`.
 - The prompt runs outside the repo lock; if the issue changed while it was open, the delete fails with `invalid_state` (exit **3**) and nothing is removed.
-- Output (stdout): human `Deleted #N: <title>` (or `Would delete …`) followed by the paths; `-o json`/`yaml` `{ deleted, issue, paths, assets }`, where `paths` is the issue file followed by the removed assets.
+- Output (stdout): human `Deleted #N: <title>` (or `Would delete …`) followed by the paths, then `Removed links to #N from:` (or `Would remove …`) with one `#M: <title> (blockedBy, parent)` line per unlinked issue; `-o json`/`yaml` `{ deleted, issue, paths, assets, unlinked }`, where `paths` is the issue file followed by the removed assets, and `unlinked` is `[{ id, title, blockedBy, parent, paths }]` (`blockedBy`/`parent`: whether that link was removed; `paths`: the rewritten file, plus its old path if renamed).
 - The ID is not reused: new IDs come from the shared high-water mark, which already counted it.
 
 ### Errors and Exit Codes
@@ -509,7 +511,7 @@ The server has no authentication, so exposure is limited instead (`src/web/secur
 | GET | `/api/issues/:id` | Get single issue. **409** `{ error, code: "duplicate_issue", files }` if several files have the ID, **409** `{ error, code: "invalid_issue", file }` if its file is malformed (both also for every mutation of that issue) |
 | POST | `/api/issues` | Create issue (optional `author` sets `createdBy`) |
 | PATCH | `/api/issues/:id` | Update issue metadata |
-| DELETE | `/api/issues/:id` | Delete issue + assets only it references (see [Deleting](#deleting)); always a new commit, never amended into the create. **200** `{ deleted: true, issue, paths, assets }` (the issue as it was). Honors `If-Match` |
+| DELETE | `/api/issues/:id` | Delete issue + assets only it references, and remove links to it from other issues (see [Deleting](#deleting)); always a new commit, never amended into the create. **200** `{ deleted: true, issue, paths, assets, unlinked }` (the issue as it was). Honors `If-Match` |
 | POST | `/api/issues/:id/comments` | Add comment (`body`; optional `author`) |
 | PUT | `/api/issues/:id/comments/:index` | Edit comment |
 | DELETE | `/api/issues/:id/comments/:index` | Delete comment |

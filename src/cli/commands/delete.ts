@@ -2,7 +2,11 @@ import type { Command } from 'commander';
 import yaml from 'js-yaml';
 import { GitracError, parseIssueIdArg } from '../../core/errors.ts';
 import type { OutputFormat } from '../../core/types.ts';
-import { deleteIssue, type IssueDeletion } from '../../service/delete.ts';
+import {
+  deleteIssue,
+  type IssueDeletion,
+  type UnlinkedIssue,
+} from '../../service/delete.ts';
 import {
   type GlobalOptions,
   resolveProjectOptions,
@@ -29,7 +33,17 @@ const defaultIO: DeleteIO = {
 };
 
 /** What a deletion removes (or would). */
-type DeletionSummary = Pick<IssueDeletion, 'issue' | 'paths' | 'assets'>;
+type DeletionSummary = Pick<
+  IssueDeletion,
+  'issue' | 'paths' | 'assets' | 'unlinked'
+>;
+
+/** Which links of an unlinked issue go: `blockedBy`, `parent`, or both. */
+function removedLinks(u: UnlinkedIssue): string {
+  return [u.blockedBy && 'blockedBy', u.parent && 'parent']
+    .filter(Boolean)
+    .join(', ');
+}
 
 /** Format a deletion (done or planned) in the `-o` format. */
 export function formatDeletion(
@@ -42,17 +56,28 @@ export function formatDeletion(
     issue: plan.issue,
     paths: plan.paths,
     assets: plan.assets,
+    unlinked: plan.unlinked,
   };
   switch (format) {
     case 'json':
       return JSON.stringify(data, null, 2);
     case 'yaml':
       return yaml.dump(data, { lineWidth: -1 });
-    case 'human':
-      return [
+    case 'human': {
+      const lines = [
         `${deleted ? 'Deleted' : 'Would delete'} #${plan.issue.id}: ${plan.issue.title}`,
         ...plan.paths.map((p) => `  ${p}`),
-      ].join('\n');
+      ];
+      if (plan.unlinked.length > 0) {
+        lines.push(
+          `${deleted ? 'Removed' : 'Would remove'} links to #${plan.issue.id} from:`,
+          ...plan.unlinked.map(
+            (u) => `  #${u.id}: ${u.title} (${removedLinks(u)})`,
+          ),
+        );
+      }
+      return lines.join('\n');
+    }
   }
 }
 
@@ -104,28 +129,22 @@ export async function runDelete(
     }
   }
 
-  return deleteIssue(
-    cliServiceContext(globalOpts, ({ issue, paths }) => {
-      if (!issue) return;
-      // The issue file comes first, then the orphaned assets.
-      print({ issue, paths, assets: paths.slice(1) }, true);
-    }),
-    id,
-    {
-      precondition: (stored) => {
-        if (
-          confirmedContent !== undefined &&
-          stored.content !== confirmedContent
-        ) {
-          throw new GitracError(
-            'invalid_state',
-            `Issue #${id} changed while waiting for confirmation; nothing was deleted. Run the command again.`,
-            { details: { id } },
-          );
-        }
-      },
+  return deleteIssue(cliServiceContext(globalOpts), id, {
+    // Printed before committing, so it shows even if the commit fails.
+    onDeleted: (deletion) => print(deletion, true),
+    precondition: (stored) => {
+      if (
+        confirmedContent !== undefined &&
+        stored.content !== confirmedContent
+      ) {
+        throw new GitracError(
+          'invalid_state',
+          `Issue #${id} changed while waiting for confirmation; nothing was deleted. Run the command again.`,
+          { details: { id } },
+        );
+      }
     },
-  );
+  });
 }
 
 export function registerDeleteCommand(program: Command): void {
@@ -133,7 +152,7 @@ export function registerDeleteCommand(program: Command): void {
     .command('delete <id>')
     .alias('rm')
     .description(
-      'Delete an issue (its file and any assets only it references) and commit the removal. ' +
+      'Delete an issue (its file and any assets only it references), remove links to it from other issues, and commit the removal. ' +
         'Asks for confirmation; without a terminal, requires --yes.',
     )
     .option('-y, --yes', 'Delete without asking for confirmation')

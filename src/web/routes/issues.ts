@@ -288,9 +288,10 @@ export function issueRoutes(ctx: ServerContext): Hono {
     );
   });
 
-  // DELETE /issues/:id — delete an issue (and the assets only it references)
-  // and commit the removal. Honors `If-Match`. Replies
-  // `{ deleted: true, issue, paths, assets }` with the issue as it was.
+  // DELETE /issues/:id — delete an issue (and the assets only it references),
+  // remove links to it from other issues, and commit the removal. Honors
+  // `If-Match`. Replies `{ deleted: true, issue, paths, assets, unlinked }`
+  // with the issue as it was.
   app.delete('/issues/:id', locked, async (c) => {
     const id = Number.parseInt(c.req.param('id'), 10);
     if (Number.isNaN(id)) {
@@ -307,6 +308,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
         issue: result.issue,
         paths: result.paths,
         assets: result.assets,
+        unlinked: result.unlinked,
       });
     } catch (err) {
       return errorResponse(c, err, guard.current());

@@ -61,7 +61,7 @@ export function IssueDetail() {
     if (!issue) return;
     if (
       !window.confirm(
-        `Delete issue #${issue.id} "${issue.title}"?\n\nThis removes the issue file (and any images only it uses) and commits the deletion.`,
+        `Delete issue #${issue.id} "${issue.title}"?\n\nThis removes the issue file (and any images only it uses), removes links to it from other issues, and commits the deletion.`,
       )
     ) {
       return;
