@@ -3,14 +3,14 @@ id: 62
 title: >-
   Web UI opens one SSE connection per hook/row and starves the browser
   connection pool
-status: todo
+status: in_progress
 priority: urgent
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-15T00:06:21.536Z'
 createdBy: Justin Murray
-updated: '2026-10-15T00:06:21.536Z'
+updated: '2026-10-15T00:06:22.328Z'
 ---
 
 Found while browser-testing (follow-up noted in #47). Every `useSSE()` call opens its own `EventSource('/api/events')`, and `useSSE` is called from `useIssues`, `useIssue`, `useConfig`, … — and `useConfig()` is called **in every `IssueRow`**.
