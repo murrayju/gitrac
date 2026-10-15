@@ -1,14 +1,14 @@
 ---
 id: 75
 title: Web delete dialog doesn't list issues whose links will be removed
-status: todo
+status: in_progress
 priority: low
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - enhancement
 created: '2026-10-15T16:06:59.362Z'
 createdBy: Justin Murray
-updated: '2026-10-15T16:06:59.362Z'
+updated: '2026-10-15T18:48:19.405Z'
 ---
 
 Since #68, deleting an issue also strips `blockedBy`/`parent` references from other issues. The CLI shows them in its plan and `--dry-run`, but the web confirmation dialog only says links will be removed.
