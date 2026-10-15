@@ -1,11 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import type { Issue } from '../../../core/types.ts';
-import { ConflictError, deleteIssue, updateIssue } from '../api.ts';
+import {
+  ConflictError,
+  deleteIssue,
+  fetchDeletePlan,
+  type IssueDeletion,
+  updateIssue,
+  type Versioned,
+} from '../api.ts';
 import { useIssue } from '../hooks.ts';
 import { relativeTime } from '../lib/time.ts';
 import { CommentEditor } from './CommentEditor.tsx';
 import { CommentList } from './CommentList.tsx';
+import { DeleteIssueDialog } from './DeleteIssueDialog.tsx';
 import { DependenciesPanel } from './DependenciesPanel.tsx';
 import { DescriptionEditor } from './DescriptionEditor.tsx';
 import { MetadataPanel } from './MetadataPanel.tsx';
@@ -18,6 +26,10 @@ export function IssueDetail() {
   const navigate = useNavigate();
   const [editingTitle, setEditingTitle] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [planning, setPlanning] = useState(false);
+  const [deletePlan, setDeletePlan] = useState<Versioned<IssueDeletion> | null>(
+    null,
+  );
   const [titleDraft, setTitleDraft] = useState('');
   const titleInputRef = useRef<HTMLInputElement>(null);
 
@@ -55,28 +67,45 @@ export function IssueDetail() {
     }
   }
 
-  // Guarded by the version shown, so a change made elsewhere since it was
-  // loaded is reviewed before it can be deleted.
+  /** A 409: show the latest version, to review before deleting again. */
+  function handleDeleteConflict(e: ConflictError) {
+    applyIssue(e.current, e.version);
+    window.alert(
+      'This issue was changed elsewhere since it was loaded. The latest version is now shown; review it and delete again if you still want to.',
+    );
+  }
+
+  // Ask the server what deleting would remove and unlink (a dry run guarded
+  // by the version shown), then confirm in a dialog listing it.
   async function handleDelete() {
     if (!issue) return;
-    if (
-      !window.confirm(
-        `Delete issue #${issue.id} "${issue.title}"?\n\nThis removes the issue file (and any images only it uses), removes links to it from other issues, and commits the deletion.`,
-      )
-    ) {
-      return;
+    setPlanning(true);
+    try {
+      setDeletePlan(await fetchDeletePlan(issue.id, version));
+    } catch (e) {
+      if (e instanceof ConflictError) {
+        handleDeleteConflict(e);
+        return;
+      }
+      window.alert(`Failed to prepare deletion: ${(e as Error).message}`);
+    } finally {
+      setPlanning(false);
     }
+  }
+
+  // Guarded by the version the plan was made from, so what is deleted is
+  // what the dialog listed; a change made elsewhere since is reviewed first.
+  async function confirmDelete() {
+    if (!issue || !deletePlan) return;
     setDeleting(true);
     try {
-      await deleteIssue(issue.id, version);
+      await deleteIssue(issue.id, deletePlan.version ?? version);
       navigate('/');
     } catch (e) {
       setDeleting(false);
+      setDeletePlan(null);
       if (e instanceof ConflictError) {
-        applyIssue(e.current, e.version);
-        window.alert(
-          'This issue was changed elsewhere since it was loaded. The latest version is now shown; review it and delete again if you still want to.',
-        );
+        handleDeleteConflict(e);
         return;
       }
       window.alert(`Failed to delete issue: ${(e as Error).message}`);
@@ -166,14 +195,22 @@ export function IssueDetail() {
             <button
               type="button"
               onClick={handleDelete}
-              disabled={deleting}
+              disabled={deleting || planning || deletePlan !== null}
               className="text-xs text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50 cursor-pointer bg-transparent border-none p-0"
             >
-              {deleting ? 'Deleting…' : 'Delete issue'}
+              {deleting ? 'Deleting…' : planning ? 'Checking…' : 'Delete issue'}
             </button>
           </div>
         </div>
       </div>
+      {deletePlan && (
+        <DeleteIssueDialog
+          plan={deletePlan.data}
+          deleting={deleting}
+          onConfirm={confirmDelete}
+          onCancel={() => setDeletePlan(null)}
+        />
+      )}
     </div>
   );
 }

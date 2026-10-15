@@ -320,20 +320,29 @@ export function issueRoutes(ctx: ServerContext): Hono {
   // DELETE /issues/:id — delete an issue (and the assets only it references),
   // remove links to it from other issues, and commit the removal. Honors
   // `If-Match`. Replies `{ deleted: true, issue, paths, assets, unlinked }`
-  // with the issue as it was.
+  // with the issue as it was. With `?dryRun=1` (or `true`), writes nothing
+  // and replies the plan (`deleted: false`, same fields as `gitrac delete
+  // --dry-run`) with the issue's `ETag`, to send as `If-Match` when
+  // confirming so the deletion matches what was previewed.
   app.delete('/issues/:id', locked, async (c) => {
     const id = Number.parseInt(c.req.param('id'), 10);
     if (Number.isNaN(id)) {
       return c.json({ error: 'Invalid issue ID' }, 400);
     }
+    const dryRunParam = c.req.query('dryRun');
+    const dryRun =
+      dryRunParam !== undefined && !/^(0|false|no)$/i.test(dryRunParam);
     const guard = ifMatchGuard(c);
     try {
       const result = await deleteIssue(webServiceContext(ctx), id, {
         precondition: guard.precondition,
+        dryRun,
       });
       ctx.config = result.config;
+      const etag = guard.current()?.etag;
+      if (dryRun && etag) c.header('ETag', etag);
       return c.json({
-        deleted: true,
+        deleted: !dryRun,
         issue: result.issue,
         paths: result.paths,
         assets: result.assets,

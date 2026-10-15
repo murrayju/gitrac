@@ -246,9 +246,10 @@ export async function reopenIssue(id: number): Promise<Issue> {
   return request<Issue>(`/api/issues/${id}/reopen`, { method: 'PATCH' });
 }
 
-/** What `DELETE /api/issues/:id` removed. */
+/** What `DELETE /api/issues/:id` removed (or, for a dry run, would). */
 export interface IssueDeletion {
-  deleted: true;
+  /** False for a dry run (`?dryRun=1`): nothing was written. */
+  deleted: boolean;
   /** The issue as it was before deletion. */
   issue: Issue;
   /** Repo-relative paths removed: the issue file, then orphaned assets. */
@@ -274,6 +275,22 @@ export async function deleteIssue(
   baseVersion?: string | null,
 ): Promise<IssueDeletion> {
   return request<IssueDeletion>(`/api/issues/${id}`, {
+    method: 'DELETE',
+    headers: ifMatch(baseVersion),
+  });
+}
+
+/**
+ * What deleting an issue would remove and unlink (`?dryRun=1`; writes
+ * nothing), with the issue version it was planned from — pass that to
+ * {@link deleteIssue} so the deletion matches the preview. Throws
+ * `ConflictError` if the issue is no longer at `baseVersion`.
+ */
+export async function fetchDeletePlan(
+  id: number,
+  baseVersion?: string | null,
+): Promise<Versioned<IssueDeletion>> {
+  return requestVersioned<IssueDeletion>(`/api/issues/${id}?dryRun=1`, {
     method: 'DELETE',
     headers: ifMatch(baseVersion),
   });
