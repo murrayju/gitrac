@@ -1,14 +1,14 @@
 ---
 id: 76
 title: Rejected image uploads are not surfaced in the web UI
-status: todo
+status: in_progress
 priority: low
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-15T16:07:00.243Z'
 createdBy: Justin Murray
-updated: '2026-10-15T16:07:00.243Z'
+updated: '2026-10-15T17:51:40.769Z'
 ---
 
 Since #39, uploads reject SVG and files over 10 MiB (400/413), but the editor's image paste/drop handler only logs the failure to the console. The user sees nothing happen.
