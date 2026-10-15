@@ -12,22 +12,6 @@ export function serverIdentity(ctx: ServerContext): Promise<ClaimUser> {
   return ctx.identity.get();
 }
 
-/**
- * Resolve the author for a write: an explicit non-empty `requested` name (the
- * identity picked in the UI) wins, else the server's default identity name.
- * Returns null if `requested` is present but not a non-empty string.
- */
-export async function resolveAuthor(
-  ctx: ServerContext,
-  requested: unknown,
-): Promise<string | null> {
-  if (requested !== undefined) {
-    if (typeof requested !== 'string' || !requested.trim()) return null;
-    return requested.trim();
-  }
-  return (await serverIdentity(ctx)).name;
-}
-
 export function identityRoutes(ctx: ServerContext): Hono {
   const app = new Hono();
 

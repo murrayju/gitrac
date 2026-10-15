@@ -2,9 +2,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { Command } from 'commander';
 import { GitracError } from '../core/errors.ts';
-import type { Config, OutputFormat } from '../core/types.ts';
-import { withRepoLock } from '../git/lock.ts';
-import { commitIssueChange, pushIfConfigured } from '../git/operations.ts';
+import type { OutputFormat } from '../core/types.ts';
 import { getGitRoot } from '../git/status.ts';
 import { DEFAULT_HOST } from '../web/security.ts';
 
@@ -140,45 +138,4 @@ export async function resolveProjectOptions(
 ): Promise<GlobalOptions> {
   const opts = getGlobalOptions(program);
   return { ...opts, dir: await resolveProjectRoot(opts.dir, options) };
-}
-
-/** Whether a mutating command should auto-commit its changes. */
-export function shouldCommit(opts: GlobalOptions, config: Config): boolean {
-  return opts.commit && config.git.autoCommit;
-}
-
-/**
- * Commit the given files (if auto-commit is enabled and `--no-commit` was not
- * passed), then push according to `--push` / `--no-push` / `autoPush`.
- * Returns the commit hash, or null if nothing was committed.
- */
-export async function commitAndMaybePush(
-  opts: GlobalOptions,
-  config: Config,
-  files: string[],
-  message: string,
-): Promise<string | null> {
-  if (!shouldCommit(opts, config)) {
-    return null;
-  }
-  const hash = await commitIssueChange(opts.dir, files, message);
-  await pushIfConfigured(opts.dir, config, { push: opts.push });
-  return hash;
-}
-
-/**
- * Run a mutating command's whole read-modify-write-commit sequence (including
- * ID allocation and `--no-commit` file writes) while holding the repo-wide
- * gitrac lock, so concurrent gitrac processes and the web server can't
- * interleave. Keep interactive input (prompts, stdin) outside of `fn`.
- *
- * The lock is released when `fn` settles, so commands signal failure by
- * throwing (a `GitracError`) rather than calling `process.exit`. If the lock
- * can't be acquired in time, throws a `LockTimeoutError` (`lock_timeout`).
- */
-export async function withMutationLock<T>(
-  opts: GlobalOptions,
-  fn: () => Promise<T>,
-): Promise<T> {
-  return withRepoLock(opts.dir, fn);
 }

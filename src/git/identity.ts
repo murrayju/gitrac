@@ -28,7 +28,8 @@ export async function readGitIdentity(dir: string): Promise<ClaimUser> {
 export interface IdentityResolverOptions {
   /**
    * Fixed author name (e.g. from `--author`). When set, git config is never
-   * consulted and the email is ''. Mirrors `resolveClaimUser` in the CLI.
+   * consulted and the email is ''. Mirrors `resolveClaimUser` in the CLI
+   * (`src/cli/service-context.ts`).
    */
   author?: string;
   /**

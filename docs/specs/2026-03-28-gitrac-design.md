@@ -133,8 +133,10 @@ Layered library architecture:
 ```
 src/
   core/          # Pure data layer — parse/serialize issues, validate, transform
+  fs/            # Filesystem CRUD for issue files and config
   git/           # Git operations — commit, amend, push, pull, conflict resolution
-  cli/           # CLI commands — thin wrappers over core + git
+  service/       # Mutations shared by CLI + web — lock, validate, write, commit
+  cli/           # CLI commands — thin adapters over the service layer
   web/
     server/      # Bun HTTP server (Hono) + REST API
     ui/          # React SPA (Vite + Tailwind + Tiptap)
@@ -144,9 +146,11 @@ src/
 
 **Git layer** — all git operations. Commit, amend-until-pushed, push, pull, rebase, conflict resolution for issue files. Tracks "amendable" commit state. Uses simple-git or shells out to git.
 
-**CLI layer** — thin command wrappers using Commander.js. Reads args/flags, calls core + git, formats output.
+**Service layer** — one function per mutation (`createIssue`, `updateIssue`, `addComment`, `editComment`, `deleteComment`, `closeIssue`, `reopenIssue`, `claimIssue`, `unclaimIssue`, `initProject`, `updateLabelColors`, `updateAssignees`). Each takes an explicit context — project root, identity, a config loader, commit options (`noCommit`, `push`) and a commit strategy (the CLI makes plain commits; the web plugs in the amend-until-pushed `AmendTracker`) — and returns the resulting issue/config plus the changed paths. It owns the repo lock, input validation, the close/reopen and claim rules, label registration, moving files between `.issues/` and `.issues/closed/`, the commit file set (incl. referenced assets) and commit messages. Errors are `GitracError`s. The few remaining CLI-vs-web differences (commit-message wording, which files are committed, error precedence for reopen) are explicit `SurfacePolicy` switches.
 
-**Web layer** — Hono server serves REST API + pre-built React SPA. File watcher detects external changes and pushes events to the UI via SSE (Server-Sent Events).
+**CLI layer** — thin command adapters using Commander.js. Reads args/flags/stdin, calls the service, formats output; errors become exit codes.
+
+**Web layer** — Hono server serves REST API + pre-built React SPA. Routes parse the request, call the service, and map errors to HTTP statuses. File watcher detects external changes and pushes events to the UI via SSE (Server-Sent Events).
 
 ---
 
@@ -314,7 +318,7 @@ Every mutation — CLI command or web API request — runs its whole read-modify
 
 The description editor sends the version its content is based on with every autosave, one save at a time. When a newer version arrives (SSE refetch or a 409's `current`): if the description is unchanged (only comments/metadata changed) it just adopts the new version (and retries a 409'd save); if the description changed and the editor has no unsaved edits, the new text is loaded into the editor; if it has unsaved edits, autosave pauses and a notice offers "Discard mine, load theirs" or "Keep mine, overwrite theirs". Comment edit/delete send the version too, since comments are addressed by index. The title input is an explicit edit of one field and stays last-writer-wins.
 
-Implementation: `withLock` (`src/fs/lock.ts`, generic) and `withRepoLock` (`src/git/lock.ts`, resolves the lock path). The CLI wraps commands with `withMutationLock`; web routes use the `mutationLock` middleware (`src/web/lock.ts`).
+Implementation: `withLock` (`src/fs/lock.ts`, generic) and `withRepoLock` (`src/git/lock.ts`, resolves the lock path). Every service operation (`src/service/`) runs inside `withRepoLock`, so CLI commands and web routes get the lock by calling it; mutating web routes additionally use the `mutationLock` middleware (`src/web/lock.ts`) to hold the lock for the whole request (and answer 503 on timeout). The `If-Match` check is a precondition the service runs on the issue it loads under the lock.
 
 ### Push/Pull
 

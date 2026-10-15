@@ -47,8 +47,8 @@ export async function readTextSource(
  * or via a file option (e.g. `--description-file <path|->`). Returns
  * `undefined` when neither was given. Giving both is an error. The result is
  * trimmed, matching how descriptions and comment bodies round-trip through
- * the issue file. Throws `invalid_input` on bad input. Call this outside
- * `withMutationLock` (it may block reading stdin).
+ * the issue file. Throws `invalid_input` on bad input. Call this before the
+ * service operation, which takes the repo lock (it may block reading stdin).
  */
 export async function resolveTextOption(opts: {
   inline: string | undefined;

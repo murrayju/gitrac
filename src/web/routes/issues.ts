@@ -1,53 +1,31 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type Context, Hono } from 'hono';
-import { extractAssetRefs } from '../../core/assets.ts';
 import { GitracError } from '../../core/errors.ts';
 import { parseIssue } from '../../core/issue.ts';
-import {
-  assertCanClose,
-  assertCanReopen,
-  reopenStatus,
-} from '../../core/lifecycle.ts';
-import { issueFilename } from '../../core/slug.ts';
 import type { Issue } from '../../core/types.ts';
 import { isClosedStatus, type Status } from '../../core/types.ts';
-import { validateIssue, validateIssueFields } from '../../core/validate.ts';
 import {
-  allocateNextId,
-  deleteIssueFile,
   listClosedIssueFiles,
   listIssueFiles,
-  readConfig,
   readIssueContent,
-  registerLabels,
-  relocateIssue,
-  writeIssue,
 } from '../../fs/issue-store.ts';
-import { commitIssueChange } from '../../git/operations.ts';
+import { IssueUnreadableError, ValidationError } from '../../service/errors.ts';
+import {
+  addComment,
+  closeIssue,
+  createIssue,
+  deleteComment,
+  editComment,
+  type IssueChange,
+  reopenIssue,
+  updateIssue,
+} from '../../service/issues.ts';
+import type { Precondition } from '../../service/load.ts';
 import { ifMatchSatisfied, issueETag } from '../etag.ts';
 import { mutationLock } from '../lock.ts';
 import type { ServerContext } from '../server.ts';
-import { resolveAuthor } from './identity.ts';
-
-/**
- * Ensure any new labels used on an issue get assigned colors in the config.
- * Returns the list of extra files to include in the git commit if config was updated.
- */
-async function syncLabelColors(
-  ctx: ServerContext,
-  labels: string[],
-): Promise<string[]> {
-  const updated = await registerLabels(ctx.dir, labels);
-  if (!updated) return [];
-  ctx.config = updated;
-  return [join('.issues', 'config.yaml')];
-}
-
-/** 400 response listing every validation error. */
-function validationError(c: Context, errors: string[]): Response {
-  return c.json({ error: errors.join('; '), errors }, 400);
-}
+import { webServiceContext } from '../service-context.ts';
 
 /** Treat a non-object JSON body as empty so field checks reject it. */
 function asRecord(value: unknown): Record<string, unknown> {
@@ -89,48 +67,83 @@ async function loadIssue(dir: string, id: number): Promise<LoadedIssue | null> {
   }
 }
 
+/** Thrown by the `If-Match` precondition when the issue has changed. */
+class PreconditionFailed extends Error {}
+
 /**
- * Optimistic concurrency: if the request carries an `If-Match` that doesn't
- * match the issue's current ETag, return a 409 with the current issue (and
- * its ETag) so the client can reconcile. Returns null when the write may
- * proceed. Must be called while holding the mutation lock.
+ * Optimistic concurrency for a mutation of an existing issue. `precondition`
+ * runs inside the service operation, under the repo lock, on the issue as
+ * loaded: it remembers that version (for error responses) and aborts if the
+ * request's `If-Match` doesn't match its ETag.
  */
-function preconditionFailed(c: Context, loaded: LoadedIssue): Response | null {
-  if (ifMatchSatisfied(c.req.header('If-Match'), loaded.etag)) return null;
-  c.header('ETag', loaded.etag);
-  return c.json(
-    {
-      error: `Issue #${loaded.issue.id} was modified since it was loaded`,
-      current: loaded.issue,
+function ifMatchGuard(c: Context): {
+  precondition: Precondition;
+  current: () => LoadedIssue | undefined;
+} {
+  let current: LoadedIssue | undefined;
+  return {
+    precondition: (stored) => {
+      current = {
+        issue: structuredClone(stored.issue),
+        etag: issueETag(stored.content),
+        filename: stored.filename,
+        closed: stored.closed,
+      };
+      if (!ifMatchSatisfied(c.req.header('If-Match'), current.etag)) {
+        throw new PreconditionFailed();
+      }
     },
-    409,
-  );
+    current: () => current,
+  };
 }
 
 /**
- * Run a close/reopen precondition (`assertCanClose` / `assertCanReopen`). If
- * it throws `invalid_state` (already closed / already open), return a 409
- * with the error code and the current issue (and its ETag), writing nothing.
- * Returns null when the transition may proceed.
+ * Map an error from a service operation to its HTTP response, or rethrow it
+ * (-> 500). `current` is the issue version the operation loaded, if any.
+ *
+ * - `If-Match` mismatch: 409 `{ error, current }` (+ its ETag)
+ * - `invalid_state` (already closed / already open): 409
+ *   `{ error, code, current }` (+ its ETag), nothing written
+ * - field validation: 400 `{ error, errors }`; other bad input: 400 `{ error }`
+ * - missing or unreadable issue, comment index out of range: 404 `{ error }`
  */
-function invalidState(
+function errorResponse(
   c: Context,
-  loaded: LoadedIssue,
-  check: () => void,
-): Response | null {
-  try {
-    check();
-    return null;
-  } catch (err) {
-    if (!(err instanceof GitracError) || err.code !== 'invalid_state') {
-      throw err;
-    }
-    c.header('ETag', loaded.etag);
+  err: unknown,
+  current?: LoadedIssue,
+): Response {
+  if (err instanceof PreconditionFailed && current) {
+    c.header('ETag', current.etag);
     return c.json(
-      { error: err.message, code: err.code, current: loaded.issue },
+      {
+        error: `Issue #${current.issue.id} was modified since it was loaded`,
+        current: current.issue,
+      },
       409,
     );
   }
+  if (err instanceof ValidationError) {
+    return c.json({ error: err.errors.join('; '), errors: err.errors }, 400);
+  }
+  if (err instanceof IssueUnreadableError) {
+    return c.json({ error: `Issue #${err.id} not found` }, 404);
+  }
+  if (err instanceof GitracError) {
+    if (err.code === 'invalid_state' && current) {
+      c.header('ETag', current.etag);
+      return c.json(
+        { error: err.message, code: err.code, current: current.issue },
+        409,
+      );
+    }
+    if (err.code === 'invalid_input') {
+      return c.json({ error: err.message }, 400);
+    }
+    if (err.code === 'not_found') {
+      return c.json({ error: err.message }, 404);
+    }
+  }
+  throw err;
 }
 
 /**
@@ -148,15 +161,6 @@ async function respondWithIssue(
   if (!loaded) return c.json(issue, status);
   c.header('ETag', loaded.etag);
   return c.json(loaded.issue, status);
-}
-
-/** Collect .issues/assets/ paths for all assets referenced by the issue */
-function referencedAssetPaths(issue: Issue): string[] {
-  const allContent = [
-    issue.description,
-    ...issue.comments.map((c) => c.body),
-  ].join('\n');
-  return extractAssetRefs(allContent).map((f) => join('.issues', 'assets', f));
 }
 
 export function issueRoutes(ctx: ServerContext): Hono {
@@ -239,405 +243,123 @@ export function issueRoutes(ctx: ServerContext): Hono {
     return c.json(loaded.issue);
   });
 
-  // POST /issues — create a new issue
+  /**
+   * Run a service mutation on an existing issue (with `If-Match`) and reply
+   * with the issue as written, or the mapped error.
+   */
+  async function mutateIssue(
+    c: Context,
+    run: (precondition: Precondition) => Promise<IssueChange>,
+    status: 200 | 201 = 200,
+  ): Promise<Response> {
+    const guard = ifMatchGuard(c);
+    try {
+      const result = await run(guard.precondition);
+      ctx.config = result.config;
+      return respondWithIssue(c, ctx.dir, result.issue, status);
+    } catch (err) {
+      return errorResponse(c, err, guard.current());
+    }
+  }
+
+  // POST /issues — create a new issue. `author` (optional) is the identity
+  // picked in the UI; default: the server's git identity.
   app.post('/issues', locked, async (c) => {
-    const { dir, config, amendTracker } = ctx;
-
-    // Validate everything before touching disk (allocating the ID bumps
-    // nextId in config.yaml).
     const body = await readJsonBody(c);
-    const fields = validateIssueFields(body, config, {
-      requireTitle: true,
-    });
-    if (!fields.valid) {
-      return validationError(c, fields.errors);
-    }
-    // `author` (optional) is the identity picked in the UI; default to the
-    // server's git identity.
-    const createdBy = await resolveAuthor(ctx, asRecord(body).author);
-    if (createdBy === null) {
-      return validationError(c, ['Invalid author: must be a non-empty string']);
-    }
-    const values = fields.values;
-    const now = new Date().toISOString();
-
-    const issue: Issue = {
-      id: 0,
-      title: values.title ?? '',
-      status: values.status ?? config.defaultStatus,
-      priority: values.priority ?? config.defaultPriority,
-      assignee: values.assignee ?? '',
-      labels: values.labels ?? [],
-      created: now,
-      createdBy,
-      updated: now,
-      description: values.description ?? '',
-      comments: [],
-    };
-    // Final gate on the assembled issue (catches e.g. config defaults that
-    // aren't in the configured statuses/priorities). Use a placeholder id.
-    const check = validateIssue({ ...issue, id: 1 }, config);
-    if (!check.valid) {
-      return validationError(c, check.errors);
-    }
-
-    const id = await allocateNextId(dir);
-    issue.id = id;
-
-    const filename = await writeIssue(dir, issue);
-    const extraFiles = await syncLabelColors(ctx, issue.labels);
-
-    if (config.git.autoCommit) {
-      const prefix = config.git.commitPrefix;
-      const message = `${prefix} create #${id} ${issue.title}`;
-      const assetPaths = referencedAssetPaths(issue);
-      const hash = await commitIssueChange(
-        dir,
-        [
-          join('.issues', filename),
-          join('.issues', 'config.yaml'),
-          ...extraFiles,
-          ...assetPaths,
-        ],
-        message,
-      );
-      if (hash) {
-        amendTracker.record(id, hash);
-      }
-    }
-
-    return respondWithIssue(c, dir, issue, 201);
+    return mutateIssue(
+      c,
+      () =>
+        createIssue(webServiceContext(ctx), body, {
+          author: asRecord(body).author,
+        }),
+      201,
+    );
   });
 
   // PATCH /issues/:id — update issue metadata
   app.patch('/issues/:id', locked, async (c) => {
-    const { dir, config, amendTracker } = ctx;
     const id = Number.parseInt(c.req.param('id'), 10);
-
     if (Number.isNaN(id)) {
       return c.json({ error: 'Invalid issue ID' }, 400);
     }
-
-    // Track original location
-    const loaded = await loadIssue(dir, id);
-    if (!loaded) {
-      return c.json({ error: `Issue #${id} not found` }, 404);
-    }
-    const conflict = preconditionFailed(c, loaded);
-    if (conflict) return conflict;
-    const { issue, closed: wasClosed, filename: oldFilename } = loaded;
-
-    const fields = validateIssueFields(await readJsonBody(c), config);
-    if (!fields.valid) {
-      return validationError(c, fields.errors);
-    }
-    const { title, priority, labels, assignee, status, description } =
-      fields.values;
-
-    if (title !== undefined) issue.title = title;
-    if (priority !== undefined) issue.priority = priority;
-    if (labels !== undefined) issue.labels = labels;
-    if (assignee !== undefined) issue.assignee = assignee;
-    if (status !== undefined) issue.status = status;
-    if (description !== undefined) issue.description = description;
-    issue.updated = new Date().toISOString();
-
-    const nowClosed = isClosedStatus(issue.status);
-    const newFilename = issueFilename(issue.id, issue.title);
-
-    // Write to the correct directory based on current status
-    const filename = await writeIssue(dir, issue, { closed: nowClosed });
-
-    // Clean up old file if filename changed or issue moved between directories
-    const filenameChanged = newFilename !== oldFilename;
-    const directoryChanged = wasClosed !== nowClosed;
-    if (filenameChanged || directoryChanged) {
-      await deleteIssueFile(dir, oldFilename, wasClosed);
-    }
-
-    const extraFiles = await syncLabelColors(ctx, issue.labels);
-    const newDir = nowClosed ? 'closed' : '';
-    const newRelPath = newDir
-      ? join('.issues', newDir, filename)
-      : join('.issues', filename);
-    const allFiles = [newRelPath, ...extraFiles];
-
-    // Include old file path for git tracking
-    if (filenameChanged || directoryChanged) {
-      const oldDir = wasClosed ? 'closed' : '';
-      const oldRelPath = oldDir
-        ? join('.issues', oldDir, oldFilename)
-        : join('.issues', oldFilename);
-      allFiles.push(oldRelPath);
-    }
-
-    const assetPaths = referencedAssetPaths(issue);
-    allFiles.push(...assetPaths);
-
-    if (config.git.autoCommit) {
-      const prefix = config.git.commitPrefix;
-      const message = `${prefix} update #${id} ${issue.title}`;
-      await amendTracker.commitOrAmend(dir, id, allFiles, message);
-    }
-
-    return respondWithIssue(c, dir, issue);
+    const body = await readJsonBody(c);
+    return mutateIssue(c, (precondition) =>
+      updateIssue(webServiceContext(ctx), id, body, { precondition }),
+    );
   });
 
   // POST /issues/:id/comments — add a comment
   app.post('/issues/:id/comments', locked, async (c) => {
-    const { dir, config, amendTracker } = ctx;
     const id = Number.parseInt(c.req.param('id'), 10);
-
     if (Number.isNaN(id)) {
       return c.json({ error: 'Invalid issue ID' }, 400);
     }
-
-    const loaded = await loadIssue(dir, id);
-    if (!loaded) {
-      return c.json({ error: `Issue #${id} not found` }, 404);
-    }
-    const conflict = preconditionFailed(c, loaded);
-    if (conflict) return conflict;
-    const { issue, closed: isClosed } = loaded;
-
-    const { body: commentBody, author } = asRecord(await readJsonBody(c));
-
-    if (
-      !commentBody ||
-      typeof commentBody !== 'string' ||
-      !commentBody.trim()
-    ) {
-      return c.json({ error: 'body is required' }, 400);
-    }
-    const commentAuthor = await resolveAuthor(ctx, author);
-    if (commentAuthor === null) {
-      return c.json(
-        { error: 'Invalid author: must be a non-empty string' },
-        400,
-      );
-    }
-
-    issue.comments.push({
-      author: commentAuthor,
-      timestamp: new Date().toISOString(),
-      body: commentBody.trim(),
-    });
-    issue.updated = new Date().toISOString();
-
-    const filename = await writeIssue(dir, issue, { closed: isClosed });
-    const relDir = isClosed ? join('.issues', 'closed') : '.issues';
-    const relPath = join(relDir, filename);
-
-    if (config.git.autoCommit) {
-      const prefix = config.git.commitPrefix;
-      const message = `${prefix} comment on #${id} ${issue.title}`;
-      const assetPaths = referencedAssetPaths(issue);
-      await amendTracker.commitOrAmend(
-        dir,
-        id,
-        [relPath, ...assetPaths],
-        message,
-      );
-    }
-
-    return respondWithIssue(c, dir, issue);
+    const { body, author } = asRecord(await readJsonBody(c));
+    return mutateIssue(c, (precondition) =>
+      addComment(webServiceContext(ctx), id, body, { author, precondition }),
+    );
   });
 
   // PUT /issues/:id/comments/:commentIndex — edit a comment
   app.put('/issues/:id/comments/:commentIndex', locked, async (c) => {
-    const { dir, config, amendTracker } = ctx;
     const id = Number.parseInt(c.req.param('id'), 10);
     const commentIndex = Number.parseInt(c.req.param('commentIndex'), 10);
-
     if (Number.isNaN(id)) {
       return c.json({ error: 'Invalid issue ID' }, 400);
     }
     if (Number.isNaN(commentIndex) || commentIndex < 0) {
       return c.json({ error: 'Invalid comment index' }, 400);
     }
-
-    const loaded = await loadIssue(dir, id);
-    if (!loaded) {
-      return c.json({ error: `Issue #${id} not found` }, 404);
-    }
-    const conflict = preconditionFailed(c, loaded);
-    if (conflict) return conflict;
-    const { issue, closed: isClosed } = loaded;
-
-    if (commentIndex >= issue.comments.length) {
-      return c.json({ error: 'Comment index out of bounds' }, 404);
-    }
-
-    const { body: commentBody } = asRecord(await readJsonBody(c));
-
-    if (
-      !commentBody ||
-      typeof commentBody !== 'string' ||
-      !commentBody.trim()
-    ) {
-      return c.json({ error: 'body is required' }, 400);
-    }
-
-    const comment = issue.comments[commentIndex];
-    if (comment) {
-      comment.body = commentBody.trim();
-    }
-    issue.updated = new Date().toISOString();
-
-    const filename = await writeIssue(dir, issue, { closed: isClosed });
-    const relDir = isClosed ? join('.issues', 'closed') : '.issues';
-    const relPath = join(relDir, filename);
-
-    if (config.git.autoCommit) {
-      const prefix = config.git.commitPrefix;
-      const message = `${prefix} edit comment on #${id} ${issue.title}`;
-      const assetPaths = referencedAssetPaths(issue);
-      await amendTracker.commitOrAmend(
-        dir,
-        id,
-        [relPath, ...assetPaths],
-        message,
-      );
-    }
-
-    return respondWithIssue(c, dir, issue);
+    const { body } = asRecord(await readJsonBody(c));
+    return mutateIssue(c, (precondition) =>
+      editComment(webServiceContext(ctx), id, commentIndex, body, {
+        precondition,
+      }),
+    );
   });
 
   // DELETE /issues/:id/comments/:commentIndex — delete a comment
   app.delete('/issues/:id/comments/:commentIndex', locked, async (c) => {
-    const { dir, config, amendTracker } = ctx;
     const id = Number.parseInt(c.req.param('id'), 10);
     const commentIndex = Number.parseInt(c.req.param('commentIndex'), 10);
-
     if (Number.isNaN(id)) {
       return c.json({ error: 'Invalid issue ID' }, 400);
     }
     if (Number.isNaN(commentIndex) || commentIndex < 0) {
       return c.json({ error: 'Invalid comment index' }, 400);
     }
-
-    const loaded = await loadIssue(dir, id);
-    if (!loaded) {
-      return c.json({ error: `Issue #${id} not found` }, 404);
-    }
-    const conflict = preconditionFailed(c, loaded);
-    if (conflict) return conflict;
-    const { issue, closed: isClosed } = loaded;
-
-    if (commentIndex >= issue.comments.length) {
-      return c.json({ error: 'Comment index out of bounds' }, 404);
-    }
-
-    issue.comments.splice(commentIndex, 1);
-    issue.updated = new Date().toISOString();
-
-    const filename = await writeIssue(dir, issue, { closed: isClosed });
-    const relDir = isClosed ? join('.issues', 'closed') : '.issues';
-    const relPath = join(relDir, filename);
-
-    if (config.git.autoCommit) {
-      const prefix = config.git.commitPrefix;
-      const message = `${prefix} delete comment on #${id} ${issue.title}`;
-      await amendTracker.commitOrAmend(dir, id, [relPath], message);
-    }
-
-    return respondWithIssue(c, dir, issue);
+    return mutateIssue(c, (precondition) =>
+      deleteComment(webServiceContext(ctx), id, commentIndex, {
+        precondition,
+      }),
+    );
   });
 
-  // PATCH /issues/:id/close — close an issue
+  // PATCH /issues/:id/close — close an issue (status done)
   app.patch('/issues/:id/close', locked, async (c) => {
-    const { dir, config, amendTracker } = ctx;
     const id = Number.parseInt(c.req.param('id'), 10);
-
     if (Number.isNaN(id)) {
       return c.json({ error: 'Invalid issue ID' }, 400);
     }
-
-    const loaded = await loadIssue(dir, id);
-    if (!loaded) {
-      return c.json({ error: `Issue #${id} not found` }, 404);
-    }
-    const conflict = preconditionFailed(c, loaded);
-    if (conflict) return conflict;
-    const invalid = invalidState(c, loaded, () =>
-      assertCanClose(loaded.issue, loaded.closed),
+    return mutateIssue(c, (precondition) =>
+      closeIssue(webServiceContext(ctx), id, { precondition }),
     );
-    if (invalid) return invalid;
-    const { issue } = loaded;
-
-    issue.status = 'done';
-    issue.updated = new Date().toISOString();
-
-    // Write into .issues/closed/ and remove the open copy
-    const paths = await relocateIssue(dir, issue, loaded, { closed: true });
-
-    if (config.git.autoCommit) {
-      const prefix = config.git.commitPrefix;
-      const message = `${prefix} close #${id} ${issue.title}`;
-      const assetPaths = referencedAssetPaths(issue);
-      await amendTracker.commitOrAmend(
-        dir,
-        id,
-        [...paths, ...assetPaths],
-        message,
-      );
-    }
-
-    return respondWithIssue(c, dir, issue);
   });
 
   // PATCH /issues/:id/reopen — reopen a closed issue. Optional JSON body
   // `{ status }` picks the status (default: config.defaultStatus).
   app.patch('/issues/:id/reopen', locked, async (c) => {
-    const { dir, config, amendTracker } = ctx;
     const id = Number.parseInt(c.req.param('id'), 10);
-
     if (Number.isNaN(id)) {
       return c.json({ error: 'Invalid issue ID' }, 400);
     }
-
-    const loaded = await loadIssue(dir, id);
-    if (!loaded) {
-      return c.json({ error: `Issue #${id} not found` }, 404);
-    }
-    const conflict = preconditionFailed(c, loaded);
-    if (conflict) return conflict;
-    const invalid = invalidState(c, loaded, () =>
-      assertCanReopen(loaded.issue, loaded.closed),
+    const { status } = asRecord(await readJsonBody(c));
+    return mutateIssue(c, (precondition) =>
+      reopenIssue(webServiceContext(ctx), id, {
+        status: status ?? undefined,
+        precondition,
+      }),
     );
-    if (invalid) return invalid;
-    const { issue } = loaded;
-
-    const currentConfig = await readConfig(dir);
-    const { status: requested } = asRecord(await readJsonBody(c));
-    let status: Status;
-    try {
-      status = reopenStatus(currentConfig, requested ?? undefined);
-    } catch (err) {
-      if (err instanceof GitracError) {
-        return validationError(c, [err.message]);
-      }
-      throw err;
-    }
-    issue.status = status;
-    issue.updated = new Date().toISOString();
-
-    // Write into .issues/ and remove the closed copy
-    const paths = await relocateIssue(dir, issue, loaded, { closed: false });
-
-    if (config.git.autoCommit) {
-      const prefix = config.git.commitPrefix;
-      const message = `${prefix} reopen #${id} ${issue.title}`;
-      const assetPaths = referencedAssetPaths(issue);
-      await amendTracker.commitOrAmend(
-        dir,
-        id,
-        [...paths, ...assetPaths],
-        message,
-      );
-    }
-
-    return respondWithIssue(c, dir, issue);
   });
 
   return app;

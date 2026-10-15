@@ -1,10 +1,7 @@
 import type { Command } from 'commander';
-import { initIssuesDir, readConfig } from '../../fs/issue-store.ts';
-import {
-  commitAndMaybePush,
-  resolveProjectOptions,
-  withMutationLock,
-} from '../global-options.ts';
+import { initProject } from '../../service/config.ts';
+import { resolveProjectOptions } from '../global-options.ts';
+import { cliServiceContext } from '../service-context.ts';
 
 export function registerInitCommand(program: Command): void {
   program
@@ -15,24 +12,16 @@ export function registerInitCommand(program: Command): void {
       const globalOpts = await resolveProjectOptions(program, {
         requireInit: false,
       });
-      const { dir } = globalOpts;
 
-      await withMutationLock(globalOpts, async () => {
-        await initIssuesDir(dir, { force: options.force });
-        console.log('Initialized .issues directory.');
-
-        // Auto-commit if configured (freshly created, so read config).
-        // Respects --no-commit and --push / --no-push.
-        const config = await readConfig(dir);
-        const hash = await commitAndMaybePush(
-          globalOpts,
-          config,
-          ['.issues/config.yaml'],
-          `${config.git.commitPrefix} initialize issue tracker`,
-        );
-        if (hash) {
-          console.log('Committed initial configuration.');
-        }
-      });
+      // Auto-commits if configured; respects --no-commit and --push / --no-push.
+      const { commit } = await initProject(
+        cliServiceContext(globalOpts, () =>
+          console.log('Initialized .issues directory.'),
+        ),
+        { force: options.force },
+      );
+      if (commit) {
+        console.log('Committed initial configuration.');
+      }
     });
 }

@@ -34,6 +34,7 @@ src/
   core/       # Pure data layer (types, parsing, serialization, validation)
   fs/         # Filesystem CRUD for issue files
   git/        # Git operations (commit, amend, push, conflict resolution)
+  service/    # Issue/config operations shared by CLI + web (lock, validate, write, commit)
   cli/        # Commander.js CLI commands
   web/
     server.ts # Hono HTTP server + API routes
@@ -46,7 +47,7 @@ scripts/
 .issues/      # Project issues (managed by gitrac itself)
 ```
 
-The architecture is layered: `core` (pure functions, no I/O) -> `fs` (filesystem) -> `git` (git operations) -> `cli`/`web` (thin consumers). Each layer only depends on layers below it.
+The architecture is layered: `core` (pure functions, no I/O) -> `fs` (filesystem) -> `git` (git operations) -> `service` (one function per mutation: `createIssue`, `updateIssue`, `addComment`, `editComment`, `deleteComment`, `closeIssue`, `reopenIssue`, `claimIssue`, `unclaimIssue`, `initProject`, `updateLabelColors`, `updateAssignees`) -> `cli`/`web` (thin adapters: parse input -> call the service -> format output, mapping `GitracError`s to exit codes / HTTP statuses). Each layer only depends on layers below it.
 
 ## Development
 
@@ -106,12 +107,13 @@ This builds the React UI with Vite, then compiles the CLI into a standalone bina
 - **`node:` prefix** for Node.js built-in imports
 - **Resolve the project root via `resolveProjectOptions`** (`src/cli/global-options.ts`) at the start of every CLI command (not `getGlobalOptions`, whose `dir` is just `--dir`/cwd). It runs `git rev-parse --show-toplevel` so gitrac works from any subdirectory, and prints a friendly error if not in a git repo or `.issues/` isn't initialized (pass `{ requireInit: false }` for `init`).
 - **Web routes are same-origin only** — `requestGuard` (`src/web/security.ts`) runs on every request; don't add CORS. Uploads are capped (`MAX_UPLOAD_BYTES`) and SVG is not allowed.
-- **Validate issue fields before writing** — any path that creates/updates an issue from user input runs it through `validateIssueFields` (`src/core/validate.ts`) first and rejects invalid input (CLI exit 1, HTTP 400) before touching disk. Register new labels with `registerLabels` (`src/fs/issue-store.ts`).
+- **Mutations go through `src/service/`** — CLI commands and web routes don't read-modify-write issue or config files themselves. Each service operation takes a `ServiceContext` (root dir, identity, `loadConfig`, `noCommit`/`push`, a `CommitStrategy`, and a `SurfacePolicy`; build it with `cliServiceContext` in `src/cli/service-context.ts` or `webServiceContext` in `src/web/service-context.ts`) and returns the issue/config plus the changed paths. Validation, lifecycle/claim rules, label registration, file moves, commit messages and asset paths live there once; `SurfacePolicy` (`CLI_POLICY` / `WEB_POLICY`) holds the few remaining CLI-vs-web differences. Add new mutations as service operations.
+- **Validate issue fields before writing** — any service operation that creates/updates an issue from user input runs it through `validateIssueFields` (`src/core/validate.ts`) first and rejects invalid input (CLI exit 2, HTTP 400) before touching disk. Register new labels with `registerLabels` (`src/fs/issue-store.ts`).
 - **CLI errors are thrown, not `process.exit`ed** — commands signal failure by throwing a `GitracError` (`src/core/errors.ts`; helpers `issueNotFound`, `invalidInput`, `parseIssueIdArg`) and let the single top-level handler (`runCli` in `src/cli/index.ts` → `src/cli/errors.ts`) print `Error: <message>` or the `-o json` `{"error":{"code","message"}}` line to stderr and exit with the code's exit status. Don't catch-and-print in commands, never print warnings to stdout, and keep the exit codes stable (they're documented in the skill). See "Errors and Exit Codes" in `docs/specs/`.
-- **Mutations must hold the repo lock** — wrap the whole read-modify-write-commit of any new CLI command in `withMutationLock` (`src/cli/global-options.ts`) and add the `mutationLock` middleware (`src/web/lock.ts`) to any new mutating web route. Keep interactive input (prompts, stdin) outside the lock. See "Concurrency" in `docs/specs/`.
-- **Server config is live** — web routes read `ctx.config`, which is re-read from disk per request (`freshConfig`, `src/web/live-config.ts`) and inside `mutationLock` for mutations. Don't cache config elsewhere in the server; tests that need a custom config must `writeConfig` it to disk, not just set `ctx.config`.
+- **Mutations must hold the repo lock** — every service operation runs its whole read-modify-write-commit in `withRepoLock` (`src/git/lock.ts`, re-entrant), so new mutations get it by being service operations. Mutating web routes also add the `mutationLock` middleware (`src/web/lock.ts`), which holds the same lock for the whole request (FIFO request order, `If-Match` response read-back) and answers 503 on timeout. Keep interactive input (prompts, stdin) outside the lock: read it before calling the service. See "Concurrency" in `docs/specs/`.
+- **Server config is live** — web routes read `ctx.config`, which is re-read from disk per request (`freshConfig`, `src/web/live-config.ts`) and, for mutations, under the lock (`mutationLock`, and the service's `loadConfig`). Don't cache config elsewhere in the server; tests that need a custom config must `writeConfig` it to disk, not just set `ctx.config`.
 - **One SSE connection per tab** — UI code subscribes to live updates via `useSSE` (`src/web/ui/hooks.ts`) or `issueEvents()` (`src/web/ui/lib/event-stream.ts`), never `new EventSource`, and reads config via `useConfig()` (one shared fetch), never `fetchConfig()` directly. Each open stream holds one of the browser's ~6 per-host connections; a test enforces this.
-- **Single-issue web mutations honor `If-Match`** — load the issue with `loadIssue`, return `preconditionFailed(c, loaded)` if set (409 + current issue), and reply via `respondWithIssue` so the response carries the new `ETag` (`src/web/routes/issues.ts`, `src/web/etag.ts`). UI code that writes stale-able content (the description editor, comment edit/delete) sends the version it was based on.
+- **Single-issue web mutations honor `If-Match`** — run the service operation through `mutateIssue` (`src/web/routes/issues.ts`): it passes an `If-Match` `precondition` that the service checks on the issue it loads under the lock (409 + current issue), maps errors via `errorResponse`, and replies via `respondWithIssue` so the response carries the new `ETag` (`src/web/etag.ts`). UI code that writes stale-able content (the description editor, comment edit/delete) sends the version it was based on.
 
 ## Issue File Format
 
