@@ -49,7 +49,9 @@ src/
     ui/       # React SPA (Vite + Tailwind + Tiptap)
 scripts/
   build.ts    # Two-phase build (Vite + bun compile)
-  release.ts  # Version bump, tag, push
+  release.ts  # Version bump, tag, push (triggers the Publish workflow)
+  npm/        # npm packaging: @gitrac/cli wrapper + per-platform binary packages
+install.sh    # One-line installer served at https://get.gitrac.dev (see docs/releasing.md)
 .issues/      # Project issues (managed by gitrac itself)
 ```
 
@@ -94,6 +96,10 @@ Open `http://localhost:5173` — Vite proxies API requests to the backend at `12
 ```
 
 Tests are colocated with source files (`*.test.ts` next to `*.ts`). Use `bun:test` (`describe`, `test`, `expect`).
+
+### Releasing
+
+`./bun run scripts/release.ts <patch|minor|major|x.y.z>` bumps the version, tags and pushes; the tag-triggered Publish workflow builds the binaries, creates the GitHub Release and publishes the npm packages. See `docs/releasing.md` (including the one-time Cloudflare/npm setup). Keep `install.sh`, `scripts/npm/` and the workflow's platform matrix in sync.
 
 ### Building
 

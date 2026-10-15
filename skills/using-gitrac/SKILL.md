@@ -37,19 +37,13 @@ digraph when {
 
 ## Installation
 
-**From GitHub releases (standalone binary):**
 ```bash
-# Download for your platform from https://github.com/murrayju/gitrac/releases
-# Extract the single binary (the web UI is embedded) and place it on your PATH
-gitrac --help
+curl -fsSL https://get.gitrac.dev | bash     # binary to ~/.local/bin (GITRAC_NONINTERACTIVE=1 in CI)
+npm install -g @gitrac/cli                   # or via npm
+gitrac --version
 ```
 
-**From source (if working in the gitrac repo itself):**
-```bash
-./bun index.ts <command>
-```
-
-When installed as a binary, replace `./bun index.ts` with `gitrac` in all examples below.
+**From source (if working in the gitrac repo itself):** use `./gitrac <command>` instead of `gitrac`.
 
 ## Quick Reference
 

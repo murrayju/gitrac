@@ -16,5 +16,7 @@ jobs:
         run: ./bun run typecheck
       - name: Run Biome Linter
         run: ./bun run lint
+      - name: ShellCheck (install.sh and wrappers)
+        run: ./bun x shellcheck install.sh gitrac bun
       - name: Run Tests
         run: ./bun test

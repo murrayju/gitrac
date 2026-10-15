@@ -46,23 +46,48 @@ The format is deliberately boring. Any tool (or person, or LLM) that can read ma
 
 ## Installation
 
-gitrac ships as a **single self-contained binary**. The web UI is embedded, and there's no runtime to install.
+gitrac ships as a **single self-contained binary** for Linux (x64, arm64) and macOS (Apple Silicon). The web UI is embedded, and there's no runtime to install.
 
-### Prebuilt binaries
-
-Tagged releases publish binaries for Linux (x64, arm64) and macOS (Apple Silicon) on [GitHub Releases](https://github.com/murrayju/gitrac/releases). If no release is listed yet, [build from source](#from-source).
+### Quick install (recommended)
 
 ```bash
-# Pick your platform: linux-x64, linux-arm64, darwin-arm64
-PLATFORM=linux-x64
-curl -fsSL -o /tmp/gitrac.tar.gz \
-  "https://github.com/murrayju/gitrac/releases/latest/download/gitrac-${PLATFORM}.tar.gz"
-tar -xzf /tmp/gitrac.tar.gz -C /tmp
-install -m 755 "/tmp/gitrac-${PLATFORM}" ~/.local/bin/gitrac   # or anywhere on your PATH
-gitrac --version
+curl -fsSL https://get.gitrac.dev | bash
 ```
 
-On macOS, if you downloaded the archive with a browser, clear the quarantine flag once: `xattr -d com.apple.quarantine ~/.local/bin/gitrac`.
+The script:
+- downloads the latest release binary to `~/.local/bin/gitrac`;
+- offers to add that directory to your `PATH`;
+- checks that the binary runs.
+
+Re-run it at any time to update. Options (environment variables, e.g. `curl -fsSL https://get.gitrac.dev | GITRAC_VERSION=0.2.0 bash`):
+
+| Variable | Effect |
+|---|---|
+| `GITRAC_VERSION` | Install a specific version instead of the latest |
+| `GITRAC_INSTALL_DIR` | Install somewhere other than `~/.local/bin` |
+| `GITRAC_NONINTERACTIVE=1` | Never prompt (CI, Dockerfiles). Prints PATH instructions instead of editing your shell rc |
+
+The script is [`install.sh`](install.sh) in this repo. Read it first if you like.
+
+### npm
+
+```bash
+npm install -g @gitrac/cli
+```
+
+This installs a small Node wrapper plus the prebuilt binary for your platform. It doesn't add a Bun or Node runtime dependency to gitrac itself. It also works with `pnpm add -g`, `bun add -g`, and one-off runs via `npx @gitrac/cli ls`.
+
+### Manual download
+
+Grab `gitrac-<os>-<arch>` (`linux-x64`, `linux-arm64`, `darwin-arm64`) from [GitHub Releases](https://github.com/murrayju/gitrac/releases):
+
+```bash
+curl -fsSL -o ~/.local/bin/gitrac \
+  https://github.com/murrayju/gitrac/releases/latest/download/gitrac-linux-x64
+chmod +x ~/.local/bin/gitrac
+```
+
+On macOS, if you downloaded the binary with a browser, clear the quarantine flag once: `xattr -d com.apple.quarantine ~/.local/bin/gitrac`.
 
 ### From source
 
@@ -420,10 +445,10 @@ Statuses and priorities are fully customizable. The CLI, filters, sorting and we
 ./bun run vite build --config vite.config.ts    # build the UI that ./gitrac serves
 ./bun run check                                 # install + typecheck + lint (auto-fixes!) + tests
 ./bun run scripts/build.ts                      # build ./bin/gitrac
-./bun run scripts/release.ts patch              # bump version, tag, push → CI publishes binaries
+./bun run scripts/release.ts patch              # bump version, tag, push → CI publishes binaries + npm
 ```
 
-Conventions, layering rules and the issue workflow for contributors (human or agent) are in [`AGENTS.md`](AGENTS.md). This project tracks its own issues with gitrac: run `./gitrac ls` to see what's open.
+Conventions, layering rules and the issue workflow for contributors (human or agent) are in [`AGENTS.md`](AGENTS.md). Maintainers: releases, the install script and npm publishing are described in [`docs/releasing.md`](docs/releasing.md). This project tracks its own issues with gitrac: run `./gitrac ls` to see what's open.
 
 ---
 

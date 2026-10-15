@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   build:
@@ -41,16 +42,17 @@ jobs:
             --target=${{ matrix.target }} \
             --outfile=gitrac-${{ matrix.os }}-${{ matrix.arch }}
 
-      # The web UI is embedded in the binary; ship just the binary (tarred to
-      # keep the executable bit).
-      - name: Package binary
-        run: tar czf gitrac-${{ matrix.os }}-${{ matrix.arch }}.tar.gz gitrac-${{ matrix.os }}-${{ matrix.arch }}
+      # The web UI is embedded, so the binary is self-contained. Release assets
+      # are the raw binaries (install.sh and the npm packages chmod +x them).
+      - name: Smoke test binary
+        if: matrix.os == 'linux' && matrix.arch == 'x64'
+        run: ./gitrac-${{ matrix.os }}-${{ matrix.arch }} --version
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: gitrac-${{ matrix.os }}-${{ matrix.arch }}
-          path: gitrac-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
+          path: gitrac-${{ matrix.os }}-${{ matrix.arch }}
 
   release:
     name: Create GitHub Release
@@ -74,3 +76,34 @@ jobs:
         with:
           files: ./binaries/*
           generate_release_notes: true
+          # v1.2.0-rc.1 etc. are prereleases, so releases/latest (used by
+          # install.sh) keeps pointing at the newest stable version
+          prerelease: ${{ contains(github.ref_name, '-') }}
+
+  publish-npm:
+    name: Publish to npm
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./binaries
+          merge-multiple: true
+
+      - name: List binaries
+        run: ls -la ./binaries
+
+      # Authenticates via npm trusted publishing (OIDC) — no token needed.
+      # One-time setup per package: see docs/releasing.md.
+      - name: Publish to npm
+        run: |
+          ./bun scripts/npm/publish.ts \
+            --version "${GITHUB_REF_NAME#v}" \
+            --binaries-dir ./binaries
