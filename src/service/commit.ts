@@ -28,11 +28,17 @@ export const commitStrategy: CommitStrategy = ({ dir, files, message }) =>
  * The web UI's amend-until-pushed strategy: a create starts a new amendable
  * commit, later changes to the same issue are folded into it while it is
  * still HEAD and unpushed (see `AmendTracker.commitOrAmend`), and config-only
- * changes are plain commits.
+ * changes are plain commits. A delete is always a new commit (folding it
+ * into the issue's create commit would leave an empty commit) and ends any
+ * amend chain.
  */
 export function amendStrategy(tracker: AmendTracker): CommitStrategy {
   return async ({ dir, operation, issueId, files, message }) => {
     if (issueId === null) {
+      return commitIssueChange(dir, files, message);
+    }
+    if (operation === 'delete') {
+      tracker.clear();
       return commitIssueChange(dir, files, message);
     }
     if (operation === 'create') {

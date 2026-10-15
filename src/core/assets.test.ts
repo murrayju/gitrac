@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { extractAssetRefs } from './assets.ts';
+import { extractAssetRefs, isAssetFilename } from './assets.ts';
 
 describe('extractAssetRefs', () => {
   test('extracts image refs from markdown', () => {
@@ -20,5 +20,21 @@ describe('extractAssetRefs', () => {
   test('handles inline refs', () => {
     const md = 'See /.issues/assets/foo.webp for details';
     expect(extractAssetRefs(md)).toEqual(['foo.webp']);
+  });
+});
+
+describe('isAssetFilename', () => {
+  test('accepts plain filenames', () => {
+    expect(isAssetFilename('abc123.png')).toBe(true);
+    expect(isAssetFilename('V1StGXR8_Z5jdHi6B-myT.webp')).toBe(true);
+  });
+
+  test('rejects paths and traversal', () => {
+    expect(isAssetFilename('')).toBe(false);
+    expect(isAssetFilename('..')).toBe(false);
+    expect(isAssetFilename('../config.yaml')).toBe(false);
+    expect(isAssetFilename('../../src/index.ts')).toBe(false);
+    expect(isAssetFilename('sub/a.png')).toBe(false);
+    expect(isAssetFilename('..\\a.png')).toBe(false);
   });
 });

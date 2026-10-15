@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import type { Issue } from '../../../core/types.ts';
-import { updateIssue } from '../api.ts';
+import { ConflictError, deleteIssue, updateIssue } from '../api.ts';
 import { useIssue } from '../hooks.ts';
 import { relativeTime } from '../lib/time.ts';
 import { CommentEditor } from './CommentEditor.tsx';
@@ -14,7 +14,9 @@ export function IssueDetail() {
   const issueId = Number(id);
   const { issue, version, loading, error, refetch, applyIssue } =
     useIssue(issueId);
+  const navigate = useNavigate();
   const [editingTitle, setEditingTitle] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const titleInputRef = useRef<HTMLInputElement>(null);
 
@@ -49,6 +51,34 @@ export function IssueDetail() {
     const trimmed = titleDraft.trim();
     if (trimmed && trimmed !== issue.title) {
       await updateIssue(issue.id, { title: trimmed });
+    }
+  }
+
+  // Guarded by the version shown, so a change made elsewhere since it was
+  // loaded is reviewed before it can be deleted.
+  async function handleDelete() {
+    if (!issue) return;
+    if (
+      !window.confirm(
+        `Delete issue #${issue.id} "${issue.title}"?\n\nThis removes the issue file (and any images only it uses) and commits the deletion.`,
+      )
+    ) {
+      return;
+    }
+    setDeleting(true);
+    try {
+      await deleteIssue(issue.id, version);
+      navigate('/');
+    } catch (e) {
+      setDeleting(false);
+      if (e instanceof ConflictError) {
+        applyIssue(e.current, e.version);
+        window.alert(
+          'This issue was changed elsewhere since it was loaded. The latest version is now shown; review it and delete again if you still want to.',
+        );
+        return;
+      }
+      window.alert(`Failed to delete issue: ${(e as Error).message}`);
     }
   }
 
@@ -130,6 +160,16 @@ export function IssueDetail() {
         {/* Metadata sidebar */}
         <div className="w-56 shrink-0">
           <MetadataPanel issue={issue} />
+          <div className="mt-8 pt-4 border-t border-gray-200 dark:border-gray-800">
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={deleting}
+              className="text-xs text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50 cursor-pointer bg-transparent border-none p-0"
+            >
+              {deleting ? 'Deleting…' : 'Delete issue'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

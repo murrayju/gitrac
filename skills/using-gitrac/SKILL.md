@@ -63,6 +63,7 @@ When installed as a binary, replace `./bun index.ts` with `gitrac` in all exampl
 | `gitrac close <id>` | Close an issue (moves to closed/) |
 | `gitrac close <id> --no-commit` | Close without committing (for atomic commits) |
 | `gitrac close <id> -c "text"` | Close with an inline comment |
+| `gitrac delete <id> --yes` | Delete an issue (duplicates, test issues) and the assets only it uses, in one commit. Without `--yes` and no terminal it only prints what would be deleted and exits 2; `--dry-run` previews (exit 0) |
 | `gitrac reopen <id>` | Reopen a closed issue (status = config `defaultStatus`; `-s todo` to pick) |
 | `gitrac create -t "title" --description-file desc.md` | Create with a markdown description (`-` = stdin; or `-d "text"`) |
 | `gitrac comment <id> "text"` | Add a comment (or `--body-file <path\|->`) |
@@ -182,7 +183,7 @@ stdout only ever holds the result. Errors and warnings (e.g. "not on the default
 |------|--------|---------|
 | 0 | | Success |
 | 1 | `error`, `invalid_config` | Unexpected error, or unparseable `.issues/config.yaml` |
-| 2 | `invalid_input`, `usage` | Bad ID / field value / flag / missing argument — nothing was written |
+| 2 | `invalid_input`, `usage`, `confirmation_required` | Bad ID / field value / flag / missing argument, or `delete` without `--yes` (stdin not a terminal) — nothing was written |
 | 3 | `already_claimed`, `already_initialized`, `invalid_state`, `duplicate_issue` | Conflict: claimed by someone else, already initialized, closing a closed / reopening an open issue, or several files on disk for one issue ID (`files` lists them — merge them by hand and delete all but one) |
 | 4 | `issue_closed` | `claim`/`unclaim` on a closed issue |
 | 5 | `not_found` | No such issue |
@@ -202,6 +203,7 @@ Stack traces are hidden unless you pass `--debug`.
 | Forgetting `--no-commit` on close | Creates two commits instead of one | Close with `--no-commit`, then `git add -A && git commit` |
 | Working on closed issues | They live in `closed/` and are done | Check `gitrac show <id>` first |
 | Closing without a comment | Loses context about what was done and why | Always `gitrac comment <id> "..."` before closing |
+| Deleting an issue you just don't want to do | Erases its history from the tracker | `gitrac close <id> --cancelled -c "why"`; reserve `delete` for duplicates / test issues |
 
 ## Creating Issues
 

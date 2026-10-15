@@ -8,7 +8,10 @@
 
 /** Unexpected / general failure (also: invalid config file, server errors). */
 export const EXIT_GENERAL = 1;
-/** Bad arguments, flags, or field values (including CLI usage errors). */
+/**
+ * Bad arguments, flags, or field values (including CLI usage errors), or a
+ * destructive command (`delete`) that wasn't confirmed.
+ */
 export const EXIT_INVALID_INPUT = 2;
 /**
  * The request conflicts with the issue's / repo's current state. For `claim`
@@ -36,6 +39,7 @@ export const ERROR_EXIT_CODES = {
   server_error: EXIT_GENERAL,
   invalid_input: EXIT_INVALID_INPUT,
   usage: EXIT_INVALID_INPUT,
+  confirmation_required: EXIT_INVALID_INPUT,
   already_claimed: EXIT_CONFLICT,
   already_initialized: EXIT_CONFLICT,
   invalid_state: EXIT_CONFLICT,

@@ -3,6 +3,7 @@ import { registerClaimCommand } from './commands/claim.ts';
 import { registerCloseCommand } from './commands/close.ts';
 import { registerCommentCommand } from './commands/comment.ts';
 import { registerCreateCommand } from './commands/create.ts';
+import { registerDeleteCommand } from './commands/delete.ts';
 import { registerEditCommand } from './commands/edit.ts';
 import { registerInitCommand } from './commands/init.ts';
 import { registerListCommand } from './commands/list.ts';
@@ -63,6 +64,7 @@ export function createProgram(): Command {
   registerReopenCommand(program);
   registerClaimCommand(program);
   registerUnclaimCommand(program);
+  registerDeleteCommand(program);
 
   return program;
 }

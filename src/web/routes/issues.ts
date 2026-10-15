@@ -4,6 +4,7 @@ import { parseIssue } from '../../core/issue.ts';
 import { type IssueQuery, parseIssueQuery } from '../../core/query.ts';
 import type { Issue } from '../../core/types.ts';
 import { readIssueContent } from '../../fs/issue-store.ts';
+import { deleteIssue } from '../../service/delete.ts';
 import { IssueUnreadableError, ValidationError } from '../../service/errors.ts';
 import {
   addComment,
@@ -279,6 +280,31 @@ export function issueRoutes(ctx: ServerContext): Hono {
     return mutateIssue(c, (precondition) =>
       updateIssue(webServiceContext(ctx), id, body, { precondition }),
     );
+  });
+
+  // DELETE /issues/:id — delete an issue (and the assets only it references)
+  // and commit the removal. Honors `If-Match`. Replies
+  // `{ deleted: true, issue, paths, assets }` with the issue as it was.
+  app.delete('/issues/:id', locked, async (c) => {
+    const id = Number.parseInt(c.req.param('id'), 10);
+    if (Number.isNaN(id)) {
+      return c.json({ error: 'Invalid issue ID' }, 400);
+    }
+    const guard = ifMatchGuard(c);
+    try {
+      const result = await deleteIssue(webServiceContext(ctx), id, {
+        precondition: guard.precondition,
+      });
+      ctx.config = result.config;
+      return c.json({
+        deleted: true,
+        issue: result.issue,
+        paths: result.paths,
+        assets: result.assets,
+      });
+    } catch (err) {
+      return errorResponse(c, err, guard.current());
+    }
   });
 
   // POST /issues/:id/comments — add a comment

@@ -16,6 +16,7 @@ export type Operation =
   | 'delete-comment'
   | 'close'
   | 'reopen'
+  | 'delete'
   | 'claim'
   | 'unclaim'
   | 'label-colors'

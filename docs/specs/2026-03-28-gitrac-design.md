@@ -158,7 +158,7 @@ src/
 
 **Git layer** — all git operations. Commit, amend-until-pushed, push, pull, rebase, conflict resolution for issue files. Tracks "amendable" commit state. Uses simple-git or shells out to git.
 
-**Service layer** — one function per mutation (`createIssue`, `updateIssue`, `addComment`, `editComment`, `deleteComment`, `closeIssue`, `reopenIssue`, `claimIssue`, `unclaimIssue`, `initProject`, `updateLabelColors`, `updateAssignees`). Each takes an explicit context — project root, identity, a config loader, commit options (`noCommit`, `push`) and a commit strategy (the CLI makes plain commits; the web plugs in the amend-until-pushed `AmendTracker`) — and returns the resulting issue/config plus the changed paths. It owns the repo lock, input validation, the close/reopen and claim rules, label registration, moving files between `.issues/` and `.issues/closed/`, the commit file set (incl. referenced assets) and commit messages. Errors are `GitracError`s. The few remaining CLI-vs-web differences (commit-message wording, which files are committed, error precedence for reopen) are explicit `SurfacePolicy` switches.
+**Service layer** — one function per mutation (`createIssue`, `updateIssue`, `addComment`, `editComment`, `deleteComment`, `closeIssue`, `reopenIssue`, `deleteIssue`, `claimIssue`, `unclaimIssue`, `initProject`, `updateLabelColors`, `updateAssignees`). Each takes an explicit context — project root, identity, a config loader, commit options (`noCommit`, `push`) and a commit strategy (the CLI makes plain commits; the web plugs in the amend-until-pushed `AmendTracker`) — and returns the resulting issue/config plus the changed paths. It owns the repo lock, input validation, the close/reopen and claim rules, label registration, moving files between `.issues/` and `.issues/closed/`, the commit file set (incl. referenced assets) and commit messages. Errors are `GitracError`s. The few remaining CLI-vs-web differences (commit-message wording, which files are committed, error precedence for reopen) are explicit `SurfacePolicy` switches.
 
 **CLI layer** — thin command adapters using Commander.js. Reads args/flags/stdin, calls the service, formats output; errors become exit codes.
 
@@ -183,6 +183,7 @@ src/
 | `gitrac close <id>` | | Close issue (moves to `.issues/closed/`). `--cancelled` flag sets status to `cancelled` instead of `done`. Fails with exit **3** (`invalid_state`, nothing written) if the issue is already closed. |
 | `gitrac reopen <id>` | | Reopen issue (moves back to `.issues/`) with status `defaultStatus` from the config, or `-s, --status <status>` (any configured non-closed status). Fails with exit **3** (`invalid_state`) if the issue is already open. |
 | `gitrac claim <id>` | | Assign to self + set status to `in_progress`. Exclusive: see [Claiming](#claiming). |
+| `gitrac delete <id>` | `rm` | Delete an issue (open or closed): removes its file plus any `.issues/assets/` files no other issue or draft references, and commits the removal (`issue: delete #N <title>`). See [Deleting](#deleting). |
 | `gitrac unclaim <id>` | `release` | Give an issue back: clear `assignee`, and set `in_progress` back to `todo`. See [Claiming](#claiming). |
 
 ### Global Flags
@@ -200,7 +201,7 @@ src/
 
 **Project root resolution:** every command (including `serve` / bare `gitrac`) resolves the project root once, via `git rev-parse --show-toplevel` starting from `--dir` (or the cwd), so gitrac works from any subdirectory of the repo. `.issues/` always lives at that root. Outside a git repo, commands exit 8 (`not_a_git_repo`) with `Error: Not inside a git repository`; if `.issues/config.yaml` is missing, every command except `init` exits 8 (`not_initialized`) with a message to run `gitrac init`.
 
-Global flags may appear before or after the subcommand (`gitrac --no-commit close 1` and `gitrac close 1 --no-commit` are equivalent). `--no-commit` applies to every mutating command (`init`, `create`, `edit`, `comment`, `close`, `reopen`, `claim`, `unclaim`) and also suppresses push. If both `--push` and `--no-push` are given, the last one wins.
+Global flags may appear before or after the subcommand (`gitrac --no-commit close 1` and `gitrac close 1 --no-commit` are equivalent). `--no-commit` applies to every mutating command (`init`, `create`, `edit`, `comment`, `close`, `reopen`, `claim`, `unclaim`, `delete`) and also suppresses push. If both `--push` and `--no-push` are given, the last one wins.
 
 Because global flags are matched anywhere on the command line, they must not define short flags that subcommands also use. In particular `-p` belongs to the subcommands (`create -p high`, `edit -p high`, `serve -p 4000`); the global port option is long-only (`--port`).
 
@@ -219,6 +220,16 @@ The claimer's identity is their git `user.email` (falling back to `user.name`), 
 
 Exit codes: `3` claimed by someone else, `4` issue is closed (see [Errors and Exit Codes](#errors-and-exit-codes)).
 
+### Deleting
+
+`gitrac delete <id>` first works out what it would remove: the issue file, plus each asset the issue references that exists in `.issues/assets/` and whose filename appears in no other issue file (open or closed) or web UI draft. Matching is loose on purpose — any mention keeps the asset — and only plain filenames are considered (a ref with `/` or `..` never deletes anything outside `.issues/assets/`). Assets referenced only from other branches can't be seen and may be removed; they remain in git history.
+
+- `--yes` / `-y`: delete without asking. `--dry-run`: print the plan and exit 0.
+- Otherwise, on a terminal it prints the plan and asks `Delete issue #N? [y/N]`; anything but `y`/`yes` aborts with `confirmation_required` (exit **2**). When stdin is not a terminal (agents, scripts) it prints the plan to stdout and fails with `confirmation_required` (exit **2**) without asking — re-run with `--yes`.
+- The prompt runs outside the repo lock; if the issue changed while it was open, the delete fails with `invalid_state` (exit **3**) and nothing is removed.
+- Output (stdout): human `Deleted #N: <title>` (or `Would delete …`) followed by the paths; `-o json`/`yaml` `{ deleted, issue, paths, assets }`, where `paths` is the issue file followed by the removed assets.
+- The ID is not reused: new IDs come from the shared high-water mark, which already counted it.
+
 ### Errors and Exit Codes
 
 Commands never call `process.exit` on failure: they throw a `GitracError` (`src/core/errors.ts`) carrying a machine-readable `code`, and a single top-level handler (`runCli` in `src/cli/index.ts`, using `src/cli/errors.ts`) prints it and exits with that code's exit status. Errors from simple-git become `git_error`; Commander usage errors (unknown option, missing argument, bad `-o` value) become `usage`; anything else becomes `error` with the original message.
@@ -234,7 +245,7 @@ Errors always go to **stderr**; stdout carries only the command's result (so wit
 |------|--------|---------|
 | 0 | — | Success (including no-op claims) |
 | 1 | `error`, `invalid_config`, `server_error` | Unexpected error, unparseable `.issues/config.yaml`, web server failed to start |
-| 2 | `invalid_input`, `usage` | Bad issue ID, field value, text input, flag, or missing argument; nothing written |
+| 2 | `invalid_input`, `usage`, `confirmation_required` | Bad issue ID, field value, text input, flag, or missing argument; or `delete` without confirmation (no `--yes` and no terminal, or the prompt was declined); nothing written |
 | 3 | `already_claimed`, `already_initialized`, `invalid_state`, `duplicate_issue` | Conflicts with current state: claimed by someone else (`claim`/`unclaim`), `init` on an initialized repo, `close` of a closed issue, `reopen` of an open issue, several files for one issue ID (`files` lists them) |
 | 4 | `issue_closed` | `claim`/`unclaim` on a closed issue |
 | 5 | `not_found` | The issue doesn't exist |
@@ -340,7 +351,7 @@ Every mutation — CLI command or web API request — runs its whole read-modify
 - Outside a git repo (tests, plain directories) the lock lives in the OS temp dir, keyed by directory.
 - Asset uploads and drafts don't take the lock: uploads write new uniquely-named files and drafts are untracked.
 
-**Web edits vs. external changes (optimistic concurrency).** The lock serializes writes but doesn't stop a client from writing back content it loaded before someone else's change. So single-issue API responses (`GET /api/issues/:id` and every mutation that returns an issue) carry an `ETag`: a quoted SHA-1 of the issue file's raw bytes, so any change — web, CLI, agent, `git pull`, hand edit — yields a new version. Mutations on an existing issue (`PATCH /api/issues/:id`, comment add/edit/delete, close, reopen) accept `If-Match: <etag>` (or `*`); it is checked under the lock and a mismatch returns **409** `{ error, current }` with the current issue and its `ETag`, writing nothing. Without `If-Match` the request is last-writer-wins, as before (curl, scripts, metadata dropdowns that only send the changed field). Mutation responses return the issue as re-read from disk, so their body and `ETag` match a subsequent GET.
+**Web edits vs. external changes (optimistic concurrency).** The lock serializes writes but doesn't stop a client from writing back content it loaded before someone else's change. So single-issue API responses (`GET /api/issues/:id` and every mutation that returns an issue) carry an `ETag`: a quoted SHA-1 of the issue file's raw bytes, so any change — web, CLI, agent, `git pull`, hand edit — yields a new version. Mutations on an existing issue (`PATCH /api/issues/:id`, `DELETE /api/issues/:id`, comment add/edit/delete, close, reopen) accept `If-Match: <etag>` (or `*`); it is checked under the lock and a mismatch returns **409** `{ error, current }` with the current issue and its `ETag`, writing nothing. Without `If-Match` the request is last-writer-wins, as before (curl, scripts, metadata dropdowns that only send the changed field). Mutation responses return the issue as re-read from disk, so their body and `ETag` match a subsequent GET.
 
 The description editor sends the version its content is based on with every autosave, one save at a time. When a newer version arrives (SSE refetch or a 409's `current`): if the description is unchanged (only comments/metadata changed) it just adopts the new version (and retries a 409'd save); if the description changed and the editor has no unsaved edits, the new text is loaded into the editor; if it has unsaved edits, autosave pauses and a notice offers "Discard mine, load theirs" or "Keep mine, overwrite theirs". Comment edit/delete send the version too, since comments are addressed by index. The title input is an explicit edit of one field and stays last-writer-wins.
 
@@ -397,6 +408,7 @@ The server has no authentication, so exposure is limited instead (`src/web/secur
 | GET | `/api/issues/:id` | Get single issue. **409** `{ error, code: "duplicate_issue", files }` if several files have the ID (also for every mutation of that issue) |
 | POST | `/api/issues` | Create issue (optional `author` sets `createdBy`) |
 | PATCH | `/api/issues/:id` | Update issue metadata |
+| DELETE | `/api/issues/:id` | Delete issue + assets only it references (see [Deleting](#deleting)); always a new commit, never amended into the create. **200** `{ deleted: true, issue, paths, assets }` (the issue as it was). Honors `If-Match` |
 | POST | `/api/issues/:id/comments` | Add comment (`body`; optional `author`) |
 | PUT | `/api/issues/:id/comments/:index` | Edit comment |
 | DELETE | `/api/issues/:id/comments/:index` | Delete comment |
@@ -414,7 +426,7 @@ The server has no authentication, so exposure is limited instead (`src/web/secur
 
 **List View:** Sortable/filterable table with columns: ID, Title, Status, Priority, Assignee, Labels, Updated. Colored status/priority badges. Click row to open detail view. Inline status/assignee quick-edit.
 
-**Detail View:** Tiptap WYSIWYG editor for description (auto-save on change; external changes are loaded into the editor or flagged as a conflict — see "Concurrency"). Inline metadata editing (dropdowns for status, priority, assignee, labels). Comments rendered below with author/timestamp. Tiptap "add comment" editor at bottom. All changes trigger commit (with amend-until-pushed logic).
+**Detail View:** Tiptap WYSIWYG editor for description (auto-save on change; external changes are loaded into the editor or flagged as a conflict — see "Concurrency"). Inline metadata editing (dropdowns for status, priority, assignee, labels). Comments rendered below with author/timestamp. Tiptap "add comment" editor at bottom. "Delete issue" at the bottom of the sidebar asks for confirmation, deletes with `If-Match` (a 409 shows the latest version instead), then returns to the list. All changes trigger commit (with amend-until-pushed logic).
 
 **Visual Style:** Dark theme by default (with light theme option). Status colors: backlog=gray, todo=blue, in_progress=yellow, done=green, cancelled=red. Clean sans-serif typography, minimal chrome.
 

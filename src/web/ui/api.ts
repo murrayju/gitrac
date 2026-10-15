@@ -230,6 +230,31 @@ export async function reopenIssue(id: number): Promise<Issue> {
   return request<Issue>(`/api/issues/${id}/reopen`, { method: 'PATCH' });
 }
 
+/** What `DELETE /api/issues/:id` removed. */
+export interface IssueDeletion {
+  deleted: true;
+  /** The issue as it was before deletion. */
+  issue: Issue;
+  /** Repo-relative paths removed: the issue file, then orphaned assets. */
+  paths: string[];
+  assets: string[];
+}
+
+/**
+ * Delete an issue, only if it is still at `baseVersion` (throws
+ * `ConflictError` if it changed, so you never delete something you haven't
+ * seen).
+ */
+export async function deleteIssue(
+  id: number,
+  baseVersion?: string | null,
+): Promise<IssueDeletion> {
+  return request<IssueDeletion>(`/api/issues/${id}`, {
+    method: 'DELETE',
+    headers: ifMatch(baseVersion),
+  });
+}
+
 export async function fetchConfig(): Promise<Config> {
   return request<Config>('/api/config');
 }

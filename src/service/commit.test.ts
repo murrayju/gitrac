@@ -78,4 +78,20 @@ describe('amendStrategy', () => {
       'initial',
     ]);
   });
+
+  test('a delete is a new commit, never folded into the create (#59)', async () => {
+    const tracker = new AmendTracker();
+    const commit = amendStrategy(tracker);
+
+    await Bun.write(join(dir, 'a.md'), 'one');
+    await commit(request({ operation: 'create', message: 'create #1' }));
+    await rm(join(dir, 'a.md'));
+    expect(
+      await commit(request({ operation: 'delete', message: 'delete #1' })),
+    ).toBeTruthy();
+    expect(await tracker.canAmend(dir, 1)).toBe(false);
+
+    expect(await subjects()).toEqual(['delete #1', 'create #1', 'initial']);
+    expect((await simpleGit(dir).raw(['ls-files', 'a.md'])).trim()).toBe('');
+  });
 });
