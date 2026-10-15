@@ -2,7 +2,13 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type Context, Hono } from 'hono';
 import { extractAssetRefs } from '../../core/assets.ts';
+import { GitracError } from '../../core/errors.ts';
 import { parseIssue } from '../../core/issue.ts';
+import {
+  assertCanClose,
+  assertCanReopen,
+  reopenStatus,
+} from '../../core/lifecycle.ts';
 import { issueFilename } from '../../core/slug.ts';
 import type { Issue } from '../../core/types.ts';
 import { isClosedStatus, type Status } from '../../core/types.ts';
@@ -12,11 +18,10 @@ import {
   deleteIssueFile,
   listClosedIssueFiles,
   listIssueFiles,
-  moveToClose,
-  moveToReopen,
   readConfig,
   readIssueContent,
   registerLabels,
+  relocateIssue,
   writeIssue,
 } from '../../fs/issue-store.ts';
 import { commitIssueChange } from '../../git/operations.ts';
@@ -100,6 +105,32 @@ function preconditionFailed(c: Context, loaded: LoadedIssue): Response | null {
     },
     409,
   );
+}
+
+/**
+ * Run a close/reopen precondition (`assertCanClose` / `assertCanReopen`). If
+ * it throws `invalid_state` (already closed / already open), return a 409
+ * with the error code and the current issue (and its ETag), writing nothing.
+ * Returns null when the transition may proceed.
+ */
+function invalidState(
+  c: Context,
+  loaded: LoadedIssue,
+  check: () => void,
+): Response | null {
+  try {
+    check();
+    return null;
+  } catch (err) {
+    if (!(err instanceof GitracError) || err.code !== 'invalid_state') {
+      throw err;
+    }
+    c.header('ETag', loaded.etag);
+    return c.json(
+      { error: err.message, code: err.code, current: loaded.issue },
+      409,
+    );
+  }
 }
 
 /**
@@ -528,14 +559,17 @@ export function issueRoutes(ctx: ServerContext): Hono {
     }
     const conflict = preconditionFailed(c, loaded);
     if (conflict) return conflict;
+    const invalid = invalidState(c, loaded, () =>
+      assertCanClose(loaded.issue, loaded.closed),
+    );
+    if (invalid) return invalid;
     const { issue } = loaded;
 
     issue.status = 'done';
     issue.updated = new Date().toISOString();
 
-    // Write updated issue then move to closed
-    const filename = await writeIssue(dir, issue);
-    await moveToClose(dir, id);
+    // Write into .issues/closed/ and remove the open copy
+    const paths = await relocateIssue(dir, issue, loaded, { closed: true });
 
     if (config.git.autoCommit) {
       const prefix = config.git.commitPrefix;
@@ -544,11 +578,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
       await amendTracker.commitOrAmend(
         dir,
         id,
-        [
-          join('.issues', filename),
-          join('.issues', 'closed', filename),
-          ...assetPaths,
-        ],
+        [...paths, ...assetPaths],
         message,
       );
     }
@@ -556,7 +586,8 @@ export function issueRoutes(ctx: ServerContext): Hono {
     return respondWithIssue(c, dir, issue);
   });
 
-  // PATCH /issues/:id/reopen — reopen a closed issue
+  // PATCH /issues/:id/reopen — reopen a closed issue. Optional JSON body
+  // `{ status }` picks the status (default: config.defaultStatus).
   app.patch('/issues/:id/reopen', locked, async (c) => {
     const { dir, config, amendTracker } = ctx;
     const id = Number.parseInt(c.req.param('id'), 10);
@@ -571,18 +602,28 @@ export function issueRoutes(ctx: ServerContext): Hono {
     }
     const conflict = preconditionFailed(c, loaded);
     if (conflict) return conflict;
+    const invalid = invalidState(c, loaded, () =>
+      assertCanReopen(loaded.issue, loaded.closed),
+    );
+    if (invalid) return invalid;
     const { issue } = loaded;
 
     const currentConfig = await readConfig(dir);
-    issue.status = currentConfig.defaultStatus;
+    const { status: requested } = asRecord(await readJsonBody(c));
+    let status: Status;
+    try {
+      status = reopenStatus(currentConfig, requested ?? undefined);
+    } catch (err) {
+      if (err instanceof GitracError) {
+        return validationError(c, [err.message]);
+      }
+      throw err;
+    }
+    issue.status = status;
     issue.updated = new Date().toISOString();
 
-    // Move from closed back to open if needed
-    if (loaded.closed) {
-      await moveToReopen(dir, id);
-    }
-
-    const filename = await writeIssue(dir, issue);
+    // Write into .issues/ and remove the closed copy
+    const paths = await relocateIssue(dir, issue, loaded, { closed: false });
 
     if (config.git.autoCommit) {
       const prefix = config.git.commitPrefix;
@@ -591,11 +632,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
       await amendTracker.commitOrAmend(
         dir,
         id,
-        [
-          join('.issues', filename),
-          join('.issues', 'closed', filename),
-          ...assetPaths,
-        ],
+        [...paths, ...assetPaths],
         message,
       );
     }

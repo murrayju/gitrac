@@ -1,11 +1,11 @@
 import type { Command } from 'commander';
-import { parseIssueIdArg } from '../../core/errors.ts';
-import { issueFilename } from '../../core/slug.ts';
+import { issueNotFound, parseIssueIdArg } from '../../core/errors.ts';
+import { parseIssue } from '../../core/issue.ts';
+import { assertCanClose } from '../../core/lifecycle.ts';
 import {
-  moveToClose,
   readConfig,
-  readIssue,
-  writeIssue,
+  readIssueContent,
+  relocateIssue,
 } from '../../fs/issue-store.ts';
 import {
   commitAndMaybePush,
@@ -44,9 +44,14 @@ export function registerCloseCommand(program: Command): void {
 
         await withMutationLock(globalOpts, async () => {
           const config = await readConfig(dir);
-          const issue = await readIssue(dir, id);
-          const status = options.cancelled ? 'cancelled' : 'done';
-          issue.status = status;
+          const raw = await readIssueContent(dir, id);
+          if (!raw) throw issueNotFound(id);
+          const issue = parseIssue(raw.content);
+
+          // Closing a closed issue is an error (exit 3), not a rewrite.
+          assertCanClose(issue, raw.closed);
+
+          issue.status = options.cancelled ? 'cancelled' : 'done';
           const now = new Date().toISOString();
           issue.updated = now;
 
@@ -58,20 +63,16 @@ export function registerCloseCommand(program: Command): void {
             });
           }
 
-          // Write the updated issue (still in open dir)
-          await writeIssue(dir, issue);
-
-          // Move to closed directory
-          await moveToClose(dir, id);
+          // Write into .issues/closed/ and remove the open copy
+          const paths = await relocateIssue(dir, issue, raw, { closed: true });
 
           const format = globalOpts.output;
           console.log(formatIssueDetail(issue, format));
 
-          const filename = issueFilename(issue.id, issue.title);
           await commitAndMaybePush(
             globalOpts,
             config,
-            [`.issues/${filename}`, `.issues/closed/${filename}`],
+            paths,
             `${config.git.commitPrefix} close #${id} ${issue.title}`,
           );
         });

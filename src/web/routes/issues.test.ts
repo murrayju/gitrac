@@ -416,6 +416,54 @@ describe('PATCH /api/issues/:id/close', () => {
     const res = await req('/issues/999/close', { method: 'PATCH' });
     expect(res.status).toBe(404);
   });
+
+  test('returns 409 invalid_state for an already-closed issue, writing nothing', async () => {
+    await writeIssue(
+      dir,
+      makeIssue({ id: 1, title: 'Done', status: 'cancelled' }),
+      { closed: true },
+    );
+    const path = join(dir, '.issues', 'closed', '1-done.md');
+    const before = await Bun.file(path).text();
+
+    const res = await req('/issues/1/close', { method: 'PATCH' });
+
+    expect(res.status).toBe(409);
+    const data = (await res.json()) as { code: string; current: Issue };
+    expect(data.code).toBe('invalid_state');
+    expect(data.current.status).toBe('cancelled');
+    expect(res.headers.get('ETag')).toBeTruthy();
+    expect(await Bun.file(path).text()).toBe(before);
+    expect(await listIssueFiles(dir)).toEqual([]);
+  });
+
+  test('closes a done issue left in the open dir (repair)', async () => {
+    await writeIssue(dir, makeIssue({ id: 1, title: 'Stray', status: 'done' }));
+
+    const res = await req('/issues/1/close', { method: 'PATCH' });
+
+    expect(res.status).toBe(200);
+    expect(await listIssueFiles(dir)).toEqual([]);
+    expect(await listClosedIssueFiles(dir)).toEqual(['1-stray.md']);
+  });
+
+  test('removes a stale-named open file instead of leaving a duplicate', async () => {
+    // Title edited by hand: filename no longer matches the title slug
+    await writeIssue(dir, makeIssue({ id: 1, title: 'Old name' }));
+    const oldPath = join(dir, '.issues', '1-old-name.md');
+    const content = await Bun.file(oldPath).text();
+    await rm(oldPath);
+    await Bun.write(
+      oldPath,
+      content.replace('title: Old name', 'title: New name'),
+    );
+
+    const res = await req('/issues/1/close', { method: 'PATCH' });
+
+    expect(res.status).toBe(200);
+    expect(await listIssueFiles(dir)).toEqual([]);
+    expect(await listClosedIssueFiles(dir)).toEqual(['1-new-name.md']);
+  });
 });
 
 describe('PATCH /api/issues/:id/reopen', () => {
@@ -429,6 +477,82 @@ describe('PATCH /api/issues/:id/reopen', () => {
     expect(res.status).toBe(200);
     const data = (await res.json()) as Issue;
     expect(data.status).toBe('backlog');
+  });
+
+  test('reopens with config.defaultStatus', async () => {
+    const config = createDefaultConfig();
+    config.defaultStatus = 'todo';
+    config.git.autoCommit = false;
+    await writeConfig(dir, config);
+    await writeIssue(
+      dir,
+      makeIssue({ id: 1, title: 'Issue', status: 'done' }),
+      {
+        closed: true,
+      },
+    );
+
+    const res = await req('/issues/1/reopen', { method: 'PATCH' });
+
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as Issue).status).toBe('todo');
+    expect(await listIssueFiles(dir)).toEqual(['1-issue.md']);
+    expect(await listClosedIssueFiles(dir)).toEqual([]);
+  });
+
+  test('accepts an explicit open status in the body', async () => {
+    await writeIssue(
+      dir,
+      makeIssue({ id: 1, title: 'Issue', status: 'done' }),
+      {
+        closed: true,
+      },
+    );
+
+    const res = await req('/issues/1/reopen', {
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'in_progress' }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as Issue).status).toBe('in_progress');
+  });
+
+  test('rejects a closed or unknown status with 400, writing nothing', async () => {
+    await writeIssue(
+      dir,
+      makeIssue({ id: 1, title: 'Issue', status: 'done' }),
+      {
+        closed: true,
+      },
+    );
+
+    for (const status of ['cancelled', 'bogus', 42]) {
+      const res = await req('/issues/1/reopen', {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      });
+      expect(res.status).toBe(400);
+    }
+    expect(await listIssueFiles(dir)).toEqual([]);
+    expect(await listClosedIssueFiles(dir)).toEqual(['1-issue.md']);
+  });
+
+  test('returns 409 invalid_state for an open issue, writing nothing', async () => {
+    await writeIssue(
+      dir,
+      makeIssue({ id: 1, title: 'Issue', status: 'in_progress' }),
+    );
+    const path = join(dir, '.issues', '1-issue.md');
+    const before = await Bun.file(path).text();
+
+    const res = await req('/issues/1/reopen', { method: 'PATCH' });
+
+    expect(res.status).toBe(409);
+    const data = (await res.json()) as { code: string; current: Issue };
+    expect(data.code).toBe('invalid_state');
+    expect(data.current.status).toBe('in_progress');
+    expect(await Bun.file(path).text()).toBe(before);
   });
 
   test('returns 404 for non-existent issue', async () => {

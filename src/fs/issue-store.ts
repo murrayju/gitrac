@@ -202,6 +202,30 @@ export async function deleteIssueFile(
 }
 
 /**
+ * Write an issue into `.issues/closed/` (`to.closed`) or `.issues/`, then
+ * remove the file it was read from (`from`) if that is a different path — a
+ * different directory, or a filename that no longer matches the title. Used by
+ * close/reopen so the issue ends up as exactly one file in the right place.
+ * Returns the repo-relative paths involved (new path first, then the old one
+ * if it differed) for the commit.
+ */
+export async function relocateIssue(
+  dir: string,
+  issue: Issue,
+  from: { filename: string; closed: boolean },
+  to: { closed: boolean },
+): Promise<string[]> {
+  const filename = await writeIssue(dir, issue, { closed: to.closed });
+  const relPath = (name: string, closed: boolean) =>
+    closed ? join('.issues', 'closed', name) : join('.issues', name);
+  const newPath = relPath(filename, to.closed);
+  const oldPath = relPath(from.filename, from.closed);
+  if (oldPath === newPath) return [newPath];
+  await deleteIssueFile(dir, from.filename, from.closed);
+  return [newPath, oldPath];
+}
+
+/**
  * Move an issue to .issues/closed/.
  */
 export async function moveToClose(dir: string, id: number): Promise<void> {

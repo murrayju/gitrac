@@ -164,8 +164,8 @@ src/
 | `gitrac show <id>` | `view` | Show full issue detail |
 | `gitrac edit <id>` | | Edit issue fields (title, status, priority, assignee, labels, description). See [Text Input](#text-input). |
 | `gitrac comment <id> [body]` | `c` | Add a comment. Body from the argument, `-F, --body-file <path\|->`, or piped stdin. |
-| `gitrac close <id>` | | Close issue (moves to `.issues/closed/`). `--cancelled` flag sets status to `cancelled` instead of `done`. |
-| `gitrac reopen <id>` | | Reopen issue (moves back to `.issues/`) |
+| `gitrac close <id>` | | Close issue (moves to `.issues/closed/`). `--cancelled` flag sets status to `cancelled` instead of `done`. Fails with exit **3** (`invalid_state`, nothing written) if the issue is already closed. |
+| `gitrac reopen <id>` | | Reopen issue (moves back to `.issues/`) with status `defaultStatus` from the config, or `-s, --status <status>` (any configured non-closed status). Fails with exit **3** (`invalid_state`) if the issue is already open. |
 | `gitrac claim <id>` | | Assign to self + set status to `in_progress`. Exclusive: see [Claiming](#claiming). |
 | `gitrac unclaim <id>` | `release` | Give an issue back: clear `assignee`, and set `in_progress` back to `todo`. See [Claiming](#claiming). |
 
@@ -219,7 +219,7 @@ Errors always go to **stderr**; stdout carries only the command's result (so wit
 | 0 | — | Success (including no-op claims) |
 | 1 | `error`, `invalid_config`, `server_error` | Unexpected error, unparseable `.issues/config.yaml`, web server failed to start |
 | 2 | `invalid_input`, `usage` | Bad issue ID, field value, text input, flag, or missing argument; nothing written |
-| 3 | `already_claimed`, `already_initialized`, `invalid_state` | Conflicts with current state: claimed by someone else (`claim`/`unclaim`), `init` on an initialized repo, `reopen` of an open issue |
+| 3 | `already_claimed`, `already_initialized`, `invalid_state` | Conflicts with current state: claimed by someone else (`claim`/`unclaim`), `init` on an initialized repo, `close` of a closed issue, `reopen` of an open issue |
 | 4 | `issue_closed` | `claim`/`unclaim` on a closed issue |
 | 5 | `not_found` | The issue doesn't exist |
 | 6 | `lock_timeout` | Timed out waiting for the repo lock (safe to retry) |
@@ -370,8 +370,8 @@ The server has no authentication, so exposure is limited instead (`src/web/secur
 | POST | `/api/issues/:id/comments` | Add comment (`body`; optional `author`) |
 | PUT | `/api/issues/:id/comments/:index` | Edit comment |
 | DELETE | `/api/issues/:id/comments/:index` | Delete comment |
-| PATCH | `/api/issues/:id/close` | Close issue |
-| PATCH | `/api/issues/:id/reopen` | Reopen issue |
+| PATCH | `/api/issues/:id/close` | Close issue (status `done`). **409** `{ error, code: "invalid_state", current }` if already closed |
+| PATCH | `/api/issues/:id/reopen` | Reopen issue with `defaultStatus` (optional body `{ status }`: a non-closed status, else 400). **409** `invalid_state` if already open |
 | GET | `/api/config` | Get project config |
 | GET | `/api/identity` | Default author for web writes (`{ name, email }` from git config / `--author`) |
 | GET | `/api/git/status` | Branch, push state, warnings |

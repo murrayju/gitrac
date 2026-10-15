@@ -63,6 +63,7 @@ When installed as a binary, replace `./bun index.ts` with `gitrac` in all exampl
 | `gitrac close <id>` | Close an issue (moves to closed/) |
 | `gitrac close <id> --no-commit` | Close without committing (for atomic commits) |
 | `gitrac close <id> -c "text"` | Close with an inline comment |
+| `gitrac reopen <id>` | Reopen a closed issue (status = config `defaultStatus`; `-s todo` to pick) |
 | `gitrac create -t "title" --description-file desc.md` | Create with a markdown description (`-` = stdin; or `-d "text"`) |
 | `gitrac comment <id> "text"` | Add a comment (or `--body-file <path\|->`) |
 | `gitrac edit <id> -s todo` | Update status |
@@ -178,7 +179,7 @@ stdout only ever holds the result. Errors and warnings (e.g. "not on the default
 | 0 | | Success |
 | 1 | `error`, `invalid_config` | Unexpected error, or unparseable `.issues/config.yaml` |
 | 2 | `invalid_input`, `usage` | Bad ID / field value / flag / missing argument — nothing was written |
-| 3 | `already_claimed`, `already_initialized`, `invalid_state` | Conflict: claimed by someone else, already initialized, reopening an open issue |
+| 3 | `already_claimed`, `already_initialized`, `invalid_state` | Conflict: claimed by someone else, already initialized, closing a closed / reopening an open issue |
 | 4 | `issue_closed` | `claim`/`unclaim` on a closed issue |
 | 5 | `not_found` | No such issue |
 | 6 | `lock_timeout` | Another gitrac process held the repo lock too long — retry |

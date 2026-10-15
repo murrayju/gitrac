@@ -12,7 +12,6 @@ labels:
   enhancement: '#4dba6f'
   docs: '#d4a843'
   chore: '#b065d6'
-  foo: '#e07843'
 priorities:
   - urgent
   - high
