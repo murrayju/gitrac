@@ -1,14 +1,14 @@
 ---
 id: 78
 title: Unknown /api/* routes return the SPA index.html instead of a JSON 404
-status: todo
+status: in_progress
 priority: low
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-15T16:07:01.961Z'
 createdBy: Justin Murray
-updated: '2026-10-15T16:07:01.961Z'
+updated: '2026-10-15T16:07:30.619Z'
 ---
 
 `GET /api/does-not-exist` falls through to the SPA fallback and returns `index.html` with status 200. API clients and agents get HTML instead of an error.
