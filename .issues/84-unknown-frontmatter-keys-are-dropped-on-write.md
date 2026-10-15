@@ -1,14 +1,14 @@
 ---
 id: 84
 title: Unknown frontmatter keys are dropped on write
-status: todo
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - enhancement
 created: '2026-10-15T16:07:07.351Z'
 createdBy: Justin Murray
-updated: '2026-10-15T16:07:07.351Z'
+updated: '2026-10-15T17:51:38.930Z'
 ---
 
 `serializeIssue` only writes known fields, so any custom frontmatter (`estimate:`, `externalId:`, `sprint:`) added by hand or by another tool silently disappears on the next gitrac write. The design spec lists custom fields / external sync IDs as future work, and dropping data is the opposite of that.
