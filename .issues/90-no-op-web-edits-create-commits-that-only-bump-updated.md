@@ -1,14 +1,14 @@
 ---
 id: 90
 title: No-op web edits create commits that only bump updated
-status: todo
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-15T17:16:25.173Z'
 createdBy: Justin Murray
-updated: '2026-10-15T17:16:25.173Z'
+updated: '2026-10-15T18:48:22.608Z'
 ---
 
 Found by the #74 subagent. Clicking into a description that ends in a code block (or another non-paragraph block) makes StarterKit append an empty trailing paragraph. That counts as an edit, so autosave PATCHes a description that is semantically unchanged, and gitrac commits `issue: edit #N` with only `updated` changed. The amend tracker only drops no-ops when it is *amending*; a fresh no-op commit is kept.
