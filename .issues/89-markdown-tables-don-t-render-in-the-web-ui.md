@@ -1,14 +1,14 @@
 ---
 id: 89
 title: Markdown tables don't render in the web UI
-status: todo
+status: in_progress
 priority: low
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - enhancement
 created: '2026-10-15T16:51:32.861Z'
 createdBy: Justin Murray
-updated: '2026-10-15T16:51:32.861Z'
+updated: '2026-10-15T19:56:03.037Z'
 ---
 
 Found by the #73 subagent. Tiptap's StarterKit has no table support, so markdown tables in descriptions and comments don't render as tables (and editing a description containing a table may mangle it on autosave).
