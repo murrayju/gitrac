@@ -1,14 +1,14 @@
 ---
 id: 82
 title: Interactive prompts write to stdout
-status: todo
+status: in_progress
 priority: low
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-15T16:07:05.541Z'
 createdBy: Justin Murray
-updated: '2026-10-15T16:07:05.541Z'
+updated: '2026-10-15T16:51:51.445Z'
 ---
 
 `gitrac create` without `-t` prints the `Issue title: ` prompt to stdout, and does so even when stdin is not a TTY. That pollutes machine-readable output.
