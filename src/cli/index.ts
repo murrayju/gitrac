@@ -1,4 +1,7 @@
 import { Command, Option } from 'commander';
+// Imported (not read at runtime) so `bun build --compile` bundles it and the
+// binary reports the version `scripts/release.ts` wrote to package.json.
+import packageJson from '../../package.json' with { type: 'json' };
 import { registerClaimCommand } from './commands/claim.ts';
 import { registerCloseCommand } from './commands/close.ts';
 import { registerCommentCommand } from './commands/comment.ts';
@@ -30,7 +33,7 @@ export function createProgram(): Command {
   program
     .name('gitrac')
     .description('Manage project issues as markdown files in git')
-    .version('0.1.0')
+    .version(packageJson.version)
     // Errors (including usage errors) are thrown instead of exiting, and
     // printed by the top-level handler in runCli. Subcommands inherit both
     // settings, so these must come before the commands are registered.
