@@ -244,7 +244,7 @@ describe('runRenumber on a terminal', () => {
     const io = {
       asked: 0,
       isTTY: () => true,
-      prompt: () => {
+      prompt: async () => {
         io.asked++;
         return answer;
       },

@@ -246,7 +246,7 @@ describe('runDelete confirmation on a terminal', () => {
   function tty(answer: string | null, onPrompt?: () => void): DeleteIO {
     return {
       isTTY: () => true,
-      prompt: () => {
+      prompt: async () => {
         onPrompt?.();
         return answer;
       },

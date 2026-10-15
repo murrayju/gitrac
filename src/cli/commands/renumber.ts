@@ -16,6 +16,7 @@ import {
   type GlobalOptions,
   resolveProjectOptions,
 } from '../global-options.ts';
+import { promptLine, stdinIsTTY } from '../prompt.ts';
 import { cliServiceContext } from '../service-context.ts';
 
 /** `gitrac renumber` options. */
@@ -29,13 +30,13 @@ export interface RenumberCliOptions {
 export interface RenumberIO {
   /** Whether stdin is an interactive terminal (so we may ask). */
   isTTY: () => boolean;
-  /** Ask a question; returns the answer, or null on EOF. */
-  prompt: (question: string) => string | null;
+  /** Ask a question (on stderr); resolves to the answer, or null on EOF. */
+  prompt: (question: string) => Promise<string | null>;
 }
 
 const defaultIO: RenumberIO = {
-  isTTY: () => Boolean(process.stdin.isTTY),
-  prompt: (question) => prompt(question),
+  isTTY: stdinIsTTY,
+  prompt: (question) => promptLine(question),
 };
 
 /**
@@ -114,11 +115,11 @@ export function formatRenumbering(
 }
 
 /** Ask which of the duplicate files to renumber; returns its path. */
-function chooseFile(
+async function chooseFile(
   id: number,
   candidates: RenumberCandidate[],
   io: RenumberIO,
-): string {
+): Promise<string> {
   const lines = [
     `Issue #${id} has ${candidates.length} files:`,
     ...candidates.map(
@@ -128,9 +129,9 @@ function chooseFile(
   ];
   // stderr, so `-o json` stdout stays a single JSON document.
   console.error(lines.join('\n'));
-  const answer = io
-    .prompt(`Renumber which file? [1-${candidates.length}]`)
-    ?.trim();
+  const answer = (
+    await io.prompt(`Renumber which file? [1-${candidates.length}]`)
+  )?.trim();
   if (!answer) {
     throw new GitracError(
       'confirmation_required',
@@ -162,7 +163,7 @@ export async function runRenumber(
       : resolveFileArg(globalOpts.dir, options.file);
   if (file === undefined && io.isTTY()) {
     const candidates = await renumberCandidates(globalOpts.dir, id);
-    if (candidates.length > 1) file = chooseFile(id, candidates, io);
+    if (candidates.length > 1) file = await chooseFile(id, candidates, io);
   }
   return renumberIssue(cliServiceContext(globalOpts), id, {
     file,

@@ -11,6 +11,7 @@ import {
   type GlobalOptions,
   resolveProjectOptions,
 } from '../global-options.ts';
+import { promptLine, stdinIsTTY } from '../prompt.ts';
 import { cliServiceContext } from '../service-context.ts';
 
 /** `gitrac delete` options. */
@@ -23,13 +24,13 @@ export interface DeleteOptions {
 export interface DeleteIO {
   /** Whether stdin is an interactive terminal (so we may ask). */
   isTTY: () => boolean;
-  /** Ask a question; returns the answer, or null on EOF. */
-  prompt: (question: string) => string | null;
+  /** Ask a question (on stderr); resolves to the answer, or null on EOF. */
+  prompt: (question: string) => Promise<string | null>;
 }
 
 const defaultIO: DeleteIO = {
-  isTTY: () => Boolean(process.stdin.isTTY),
-  prompt: (question) => prompt(question),
+  isTTY: stdinIsTTY,
+  prompt: (question) => promptLine(question),
 };
 
 /** What a deletion removes (or would). */
@@ -119,7 +120,7 @@ export async function runDelete(
       );
     }
     print(plan, false);
-    const answer = io.prompt(`Delete issue #${id}? [y/N]`);
+    const answer = await io.prompt(`Delete issue #${id}? [y/N]`);
     if (!answer || !/^y(es)?$/i.test(answer.trim())) {
       throw new GitracError(
         'confirmation_required',

@@ -245,7 +245,7 @@ When you discover a bug or identify needed work during development:
 gitrac create -t "Brief description" -p high -l bug
 ```
 
-Flags: `-t` title (required), `-p` priority, `-l` labels (comma-separated), `-a` assignee, `-s` status, `-d` description (markdown), `--description-file <path|->` description from a file or stdin (`-`).
+Flags: `-t` title (required — without it, and no terminal, `create` exits 2 rather than prompting), `-p` priority, `-l` labels (comma-separated), `-a` assignee, `-s` status, `-d` description (markdown), `--description-file <path|->` description from a file or stdin (`-`).
 
 Status and priority must be one of the values in `.issues/config.yaml` — anything else is rejected (exit 2, nothing written). New labels are added to the config automatically with a color.
 

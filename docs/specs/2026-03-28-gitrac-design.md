@@ -355,8 +355,10 @@ gitrac create --title "Fix login" --priority high --labels bug,auth
 gitrac create -t "Fix login" -p high -l bug,auth
 gitrac create -t "Fix login" -d "Steps to reproduce: ..."
 gitrac create -t "Fix login" --description-file desc.md
-gitrac create   # interactive mode — prompts for title, priority, etc.
+gitrac create   # on a terminal, asks for the title
 ```
+
+Interactive prompts (the `create` title, the `delete` confirmation, the `renumber` file choice) are written to **stderr**, so stdout carries only the command's output (`-o json` stays parseable), and are shown only when stdin is a terminal. Without one, `create` with no `-t` fails with `invalid_input` (exit **2**) instead of reading a title from stdin; `delete` and `renumber` behave as described under [Deleting](#deleting) and [Renumbering](#renumbering).
 
 ### Text Input
 
