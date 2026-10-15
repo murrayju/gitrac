@@ -1,14 +1,14 @@
 ---
 id: 53
 title: Wire up issue-aware conflict resolution (git merge driver)
-status: todo
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - feature
 created: '2026-10-14T21:43:46.806Z'
 createdBy: Justin Murray
-updated: '2026-10-14T21:43:46.806Z'
+updated: '2026-10-15T01:50:48.605Z'
 ---
 
 `resolveIssueConflict`, `mergeIssueFrontmatter` and `mergeComments` in `src/git/conflict.ts` are implemented and tested but never invoked. `pullRebase` is also unused.
