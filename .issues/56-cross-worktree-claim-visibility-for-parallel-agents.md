@@ -1,14 +1,14 @@
 ---
 id: 56
 title: Cross-worktree claim visibility for parallel agents
-status: todo
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - feature
 created: '2026-10-14T21:43:46.806Z'
 createdBy: Justin Murray
-updated: '2026-10-14T21:43:46.806Z'
+updated: '2026-10-15T03:24:39.789Z'
 ---
 
 Subagents typically work in separate git worktrees. Each worktree has its own checkout of `.issues/`, so a claim made in one worktree is invisible to the others until merged — defeating the purpose of claims.
