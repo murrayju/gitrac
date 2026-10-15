@@ -1,14 +1,14 @@
 ---
 id: 65
 title: unclaim cannot release a claim held in another worktree or branch
-status: todo
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-15T13:15:01.159Z'
 createdBy: Justin Murray
-updated: '2026-10-15T13:15:01.159Z'
+updated: '2026-10-15T13:46:18.999Z'
 ---
 
 Since #56, `claim`/`ready`/`next`/`ls` judge an issue by its *effective* state (newest `updated` across this working tree, other worktrees' working trees, and all local/remote-tracking refs). `unclaim` still only looks at the local file, so from `main` you can't release a claim made in an agent's worktree: the local file is unassigned, so `unclaim` is a no-op, and the claim keeps blocking `claim`/`ready`/`next`.
