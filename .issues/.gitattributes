@@ -1,0 +1,3 @@
+# Issue-aware merges for gitrac (see `gitrac install-merge-driver`).
+*.md merge=gitrac
+config.yaml merge=gitrac
