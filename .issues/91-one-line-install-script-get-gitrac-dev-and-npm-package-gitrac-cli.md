@@ -1,14 +1,14 @@
 ---
 id: 91
 title: One-line install script (get.gitrac.dev) and npm package (@gitrac/cli)
-status: todo
+status: in_progress
 priority: high
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - feature
 created: '2026-10-15T21:24:59.754Z'
 createdBy: Justin Murray
-updated: '2026-10-15T21:24:59.754Z'
+updated: '2026-10-15T21:25:00.951Z'
 ---
 
 Simplify installation, modeled closely on how ox does it (`~/dev/timescale/ox`: `install.sh`, `scripts/npm/`, the publish workflow).
