@@ -1,9 +1,9 @@
 import { claimAssignee, decideClaim, decideUnclaim } from '../core/claim.ts';
 import { findAssigneeByEmail } from '../core/config.ts';
-import { describeLocation } from '../core/elsewhere.ts';
+import { type ClaimedElsewhere, describeLocation } from '../core/elsewhere.ts';
 import { GitracError } from '../core/errors.ts';
 import type { Config, Issue } from '../core/types.ts';
-import { activeStatus, unclaimStatus } from '../core/workflow.ts';
+import { activeStatus } from '../core/workflow.ts';
 import { relocateIssue, writeConfig } from '../fs/issue-store.ts';
 import { issueStatesElsewhere } from '../git/elsewhere.ts';
 import { withRepoLock } from '../git/lock.ts';
@@ -30,7 +30,16 @@ import { loadStoredIssue } from './load.ts';
  * nothing to do (then nothing was written, including any comment).
  */
 export type ClaimResult =
-  | (IssueChange & { changed: true })
+  | (IssueChange & {
+      changed: true;
+      /**
+       * claim: the effective state was already the user's own claim on
+       * another branch or worktree (now claimed here too). unclaim: the
+       * released claim was the effective version elsewhere (superseded by
+       * the local release).
+       */
+      elsewhere?: ClaimedElsewhere;
+    })
   | { changed: false; issue: Issue; config: Config };
 
 export interface ClaimOptions {
@@ -137,15 +146,27 @@ export async function claimIssue(
       paths,
       message: commitMessage(config, `claim #${id} ${issue.title}`),
     });
-    return { changed: true, issue, paths, config, commit };
+    return {
+      changed: true,
+      issue,
+      paths,
+      config,
+      commit,
+      ...(decision.heldElsewhere ? { elsewhere: decision.heldElsewhere } : {}),
+    };
   });
 }
 
 /**
  * Give an issue back: clear the assignee and move it from the active status
  * (default `in_progress`) back to the unclaim status (`unclaimStatus`,
- * default `todo`); other statuses are kept. Throws `already_claimed` if it is someone else's (unless `force`)
- * and `issue_closed` if it is closed.
+ * default `todo`); other statuses are kept. Judged by the issue's effective
+ * state (here, in other worktrees, or on other branches; see
+ * `src/core/elsewhere.ts`): a claim held elsewhere is released by writing a
+ * newer local version, which supersedes it (`elsewhere` in the result says
+ * where it was). Throws `already_claimed` if it is someone else's (unless
+ * `force`; `details.claimedElsewhere` says where, if not here) and
+ * `issue_closed` if it is closed here or in the effective state.
  */
 export async function unclaimIssue(
   ctx: ServiceContext,
@@ -157,23 +178,52 @@ export async function unclaimIssue(
     const config = await loadConfig(ctx);
     const stored = await loadStoredIssue(ctx.dir, id);
     const { issue } = stored;
+    // Under the (shared) repo lock, like claim.
+    const elsewhere = (await issueStatesElsewhere(ctx.dir, { ids: [id] })).get(
+      id,
+    );
 
     const decision = decideUnclaim(issue, user, config, {
       force: options.force,
       inClosedDir: stored.closed,
+      elsewhere,
     });
     if (decision.action === 'not-yours') {
+      const where = decision.elsewhere;
       throw new GitracError(
         'already_claimed',
-        `Issue #${id} is claimed by ${decision.assignee}, not you.`,
-        { details: { id, assignee: decision.assignee } },
+        where
+          ? `Issue #${id} is claimed by ${where.assignee} ${describeLocation(where)}, not you.`
+          : `Issue #${id} is claimed by ${decision.assignee}, not you.`,
+        {
+          details: where
+            ? { id, assignee: where.assignee, claimedElsewhere: where }
+            : { id, assignee: decision.assignee },
+        },
       );
     }
     if (decision.action === 'closed') {
+      const where = decision.elsewhere;
       throw new GitracError(
         'issue_closed',
-        `Issue #${id} is closed (${issue.status}); nothing to release.`,
-        { details: { id, status: issue.status } },
+        where
+          ? `Issue #${id} is closed (${decision.status}) ${describeLocation(where)}; nothing to release.`
+          : `Issue #${id} is closed (${decision.status}); nothing to release.`,
+        {
+          details: where
+            ? {
+                id,
+                status: decision.status,
+                closedElsewhere: {
+                  ref: where.ref,
+                  ...(where.worktree === undefined
+                    ? {}
+                    : { worktree: where.worktree }),
+                  updated: where.updated,
+                },
+              }
+            : { id, status: decision.status },
+        },
       );
     }
     if (decision.action === 'noop') {
@@ -181,9 +231,7 @@ export async function unclaimIssue(
     }
 
     issue.assignee = '';
-    if (issue.status === activeStatus(config)) {
-      issue.status = unclaimStatus(config);
-    }
+    issue.status = decision.status;
     const now = new Date().toISOString();
     issue.updated = now;
     addClaimComment(issue, user.name, options.comment, now);
@@ -200,6 +248,13 @@ export async function unclaimIssue(
       paths,
       message: commitMessage(config, `unclaim #${id} ${issue.title}`),
     });
-    return { changed: true, issue, paths, config, commit };
+    return {
+      changed: true,
+      issue,
+      paths,
+      config,
+      commit,
+      ...(decision.elsewhere ? { elsewhere: decision.elsewhere } : {}),
+    };
   });
 }

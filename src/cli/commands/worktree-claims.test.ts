@@ -6,11 +6,11 @@ import {
   setDefaultTimeout,
   test,
 } from 'bun:test';
-import { mkdtemp, realpath, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import simpleGit from 'simple-git';
-import { EXIT_ALREADY_CLAIMED } from '../../core/claim.ts';
+import { EXIT_ALREADY_CLAIMED, EXIT_ISSUE_CLOSED } from '../../core/claim.ts';
 import { readIssue } from '../../fs/issue-store.ts';
 
 /**
@@ -189,5 +189,102 @@ describe('claims across worktrees', () => {
       (await json<Listed[]>(main, 'Ada', 'ready')).map((i) => i.id),
     ).toEqual([1, 2]);
     expect((await cli(main, 'Ada', 'next')).code).toBe(5);
+  });
+});
+
+/** Regression tests for #65: unclaim judges by the effective state too. */
+describe('unclaim across worktrees', () => {
+  test('releasing my own claim from main makes it ready again for others', async () => {
+    await ok(wt1, 'Bob', 'claim', '1', '--no-commit');
+    // Not ready for Ada while Bob holds it in wt-1.
+    expect(
+      (await json<Listed[]>(wt2, 'Ada', 'ready')).map((i) => i.id),
+    ).toEqual([2]);
+
+    const res = await cli(main, 'Bob', 'unclaim', '1');
+    expect(res.code).toBe(0);
+    expect(res.stderr).toContain(
+      `Released the claim by Bob in worktree ${wt1} (branch agent-1)`,
+    );
+    expect(await readIssue(main, 1)).toMatchObject({
+      status: 'todo',
+      assignee: '',
+    });
+    // The other worktree's file is untouched, but superseded.
+    expect((await readIssue(wt1, 1)).assignee).toBe('Bob');
+    expect(await ok(main, 'Ada', 'ls')).not.toContain('[claimed');
+
+    expect(
+      (await json<Listed[]>(wt2, 'Ada', 'ready')).map((i) => i.id),
+    ).toEqual([1, 2]);
+    expect((await json<Listed>(wt2, 'Ada', 'next')).id).toBe(1);
+    await ok(wt2, 'Ada', 'claim', '1');
+  });
+
+  test("releasing someone else's claim elsewhere requires --force", async () => {
+    await ok(wt1, 'Bob', 'claim', '1', '--no-commit');
+    const where = `in worktree ${wt1} (branch agent-1)`;
+
+    const res = await cli(main, 'Ada', 'unclaim', '1');
+    expect(res.code).toBe(EXIT_ALREADY_CLAIMED);
+    expect(res.stderr).toContain(
+      `Error: Issue #1 is claimed by Bob ${where}, not you. Use --force to release it anyway.`,
+    );
+    const err = await cli(main, 'Ada', '-o', 'json', 'unclaim', '1');
+    expect(err.code).toBe(EXIT_ALREADY_CLAIMED);
+    expect(JSON.parse(err.stderr).error).toMatchObject({
+      code: 'already_claimed',
+      assignee: 'Bob',
+      claimedElsewhere: { ref: 'agent-1', worktree: wt1, assignee: 'Bob' },
+    });
+    expect(
+      (await json<Listed[]>(wt2, 'Ada', 'ready')).map((i) => i.id),
+    ).toEqual([2]);
+
+    await ok(main, 'Ada', 'unclaim', '1', '--force');
+    expect(
+      (await json<Listed[]>(wt2, 'Ada', 'ready')).map((i) => i.id),
+    ).toEqual([1, 2]);
+    await ok(wt2, 'Ada', 'claim', '1');
+  });
+
+  test('a committed claim on a branch can be released without its worktree', async () => {
+    await ok(wt1, 'Bob', 'claim', '1');
+    await simpleGit(main).raw(['worktree', 'remove', wt1]);
+    expect((await cli(main, 'Ada', 'claim', '1')).code).toBe(
+      EXIT_ALREADY_CLAIMED,
+    );
+    const res = await cli(main, 'Bob', 'unclaim', '1');
+    expect(res.code).toBe(0);
+    expect(res.stderr).toContain('Released the claim by Bob on branch agent-1');
+    await ok(main, 'Ada', 'claim', '1');
+  });
+
+  test('unclaiming an issue closed in a newer version elsewhere fails', async () => {
+    // git doesn't track the empty closed/ dir, and close doesn't create it.
+    await mkdir(join(wt1, '.issues', 'closed'), { recursive: true });
+    await ok(wt1, 'Bob', 'close', '1', '--no-commit');
+    const res = await cli(main, 'Bob', 'unclaim', '1');
+    expect(res.code).toBe(EXIT_ISSUE_CLOSED);
+    expect(res.stderr).toContain(
+      `Error: Issue #1 is closed (done) in worktree ${wt1} (branch agent-1); nothing to release.`,
+    );
+    expect((await readIssue(main, 1)).status).toBe('todo');
+  });
+
+  test('claim warns when you already hold the issue in another worktree', async () => {
+    await ok(wt1, 'Bob', 'claim', '1', '--no-commit');
+    const res = await cli(wt2, 'Bob', 'claim', '1', '--no-commit');
+    expect(res.code).toBe(0);
+    expect(res.stderr).toContain(
+      `Warning: you already hold issue #1 in worktree ${wt1} (branch agent-1); claimed it here too.`,
+    );
+    expect(await readIssue(wt2, 1)).toMatchObject({
+      status: 'in_progress',
+      assignee: 'Bob',
+    });
+    // No warning for a plain claim.
+    const plain = await cli(wt2, 'Bob', 'claim', '2', '--no-commit');
+    expect(plain.stderr).not.toContain('Warning');
   });
 });

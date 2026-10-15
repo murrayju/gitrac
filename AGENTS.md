@@ -16,7 +16,7 @@ This project uses gitrac to track its own issues. The `.issues/` directory conta
 ./gitrac ready                 # open, unassigned-or-mine, unblocked issues (priority, then ID; -o json)
 ./gitrac next --claim          # atomically pick + claim the top ready issue (exit 5 if none)
 ./gitrac link <id> --blocked-by 3,4 [--parent 2]   # dependencies (unlink <id> -b 3 / --parent removes)
-./gitrac unclaim <id>          # give it back (alias: release)
+./gitrac unclaim <id>          # give it back (alias: release; also releases a claim held in another worktree/branch)
 ./gitrac comment <id> "text"    # add a comment (or --body-file <path|->)
 ./gitrac close <id>            # close an issue
 ./gitrac delete <id> --yes     # delete an issue + assets only it uses, unlink it from others (--dry-run to preview)

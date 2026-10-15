@@ -90,7 +90,14 @@ export function claimedElsewhere(
   ) {
     return undefined;
   }
-  const { ref, worktree, assignee, updated } = newest;
+  return toClaimedElsewhere(newest);
+}
+
+/** Where and by whom `state` is held (its location, assignee and `updated`). */
+export function toClaimedElsewhere(
+  state: IssueStateElsewhere,
+): ClaimedElsewhere {
+  const { ref, worktree, assignee, updated } = state;
   return worktree === undefined
     ? { ref, assignee, updated }
     : { ref, worktree, assignee, updated };

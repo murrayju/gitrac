@@ -4,11 +4,14 @@ import {
   effectiveState,
   type IssueStateElsewhere,
   newestElsewhere,
+  toClaimedElsewhere,
 } from './elsewhere.ts';
-import type { Issue } from './types.ts';
+import type { Issue, Status } from './types.ts';
 import {
   activeStatus,
+  findStatus,
   isClosedStatus,
+  unclaimStatus,
   type WorkflowConfig,
 } from './workflow.ts';
 
@@ -54,8 +57,13 @@ export function isAssignedTo(
 }
 
 export type ClaimDecision =
-  /** Proceed: assign to the user and set the active status. */
-  | { action: 'claim'; reopen: boolean }
+  /**
+   * Proceed: assign to the user and set the active status. `heldElsewhere`
+   * is set when the effective state is already the user's own claim on
+   * another branch or worktree (claiming here too is allowed, but worth a
+   * warning).
+   */
+  | { action: 'claim'; reopen: boolean; heldElsewhere?: ClaimedElsewhere }
   /** Already active and assigned to the user: nothing to do. */
   | { action: 'noop' }
   /**
@@ -99,7 +107,8 @@ export interface ClaimOptions {
  *   `force`.
  * - An issue that is active and already assigned to the user here, with no
  *   newer version elsewhere, is a no-op.
- * - Anything else is claimed.
+ * - Anything else is claimed; if the effective state is the user's own claim
+ *   elsewhere, the decision says where (`heldElsewhere`).
  */
 export function decideClaim(
   issue: LocalState,
@@ -130,40 +139,76 @@ export function decideClaim(
         ? { action: 'already-claimed', assignee: elsewhere.assignee, elsewhere }
         : { action: 'already-claimed', assignee: effective.assignee };
     }
+    const heldElsewhere = isAssignedTo(effective.assignee, user)
+      ? claimedElsewhere(issue, config, options.elsewhere)
+      : undefined;
+    if (heldElsewhere) {
+      return { action: 'claim', reopen: false, heldElsewhere };
+    }
   }
   return { action: 'claim', reopen: false };
 }
 
 export type UnclaimDecision =
-  /** Proceed: clear the assignee (and move the active status back). */
-  | { action: 'unclaim' }
-  /** Not assigned to anyone: nothing to do. */
+  /**
+   * Proceed: clear the assignee and write `status` (the active status moved
+   * back to the unclaim status; other statuses kept). `elsewhere` is set when
+   * the claim being released is the effective version on another branch or
+   * worktree: the local release (with a newer `updated`) supersedes it.
+   */
+  | { action: 'unclaim'; status: Status; elsewhere?: ClaimedElsewhere }
+  /** Not assigned to anyone (in the effective state): nothing to do. */
   | { action: 'noop' }
-  /** Refused: assigned to someone else. */
-  | { action: 'not-yours'; assignee: string }
-  /** Refused: the issue is closed. */
-  | { action: 'closed' };
+  /** Refused: assigned to someone else — here, or (`elsewhere`) in a newer version elsewhere. */
+  | { action: 'not-yours'; assignee: string; elsewhere?: ClaimedElsewhere }
+  /**
+   * Refused: the issue is closed — here, or (`elsewhere`) in a newer version
+   * on another branch or worktree (releasing it would reopen it).
+   */
+  | { action: 'closed'; status: Status; elsewhere?: IssueStateElsewhere };
 
 /**
- * Decide what `unclaim` should do with `issue` (pure; no I/O).
+ * Decide what `unclaim` should do with `issue` (pure; no I/O), judged by its
+ * effective state (the newest version here or in `elsewhere`, see
+ * `src/core/elsewhere.ts`), so a claim held in another worktree or on
+ * another branch can be released from here.
  *
- * Releasing someone else's issue requires `force`. Closed issues are always
- * refused (reopen them first).
+ * - Closed issues (here, or in the effective state) are always refused
+ *   (reopen them first).
+ * - An issue that is unassigned in its effective state is a no-op.
+ * - Releasing someone else's claim requires `force`.
+ * - Otherwise it is released: the assignee is cleared and the effective
+ *   status is kept, except that the active status becomes the unclaim status.
  */
 export function decideUnclaim(
-  issue: Pick<Issue, 'status' | 'assignee'>,
+  issue: LocalState,
   user: ClaimUser,
   config: WorkflowConfig,
-  options: { force?: boolean; inClosedDir?: boolean } = {},
+  options: {
+    force?: boolean;
+    inClosedDir?: boolean;
+    elsewhere?: readonly IssueStateElsewhere[];
+  } = {},
 ): UnclaimDecision {
   if (options.inClosedDir === true || isClosedStatus(config, issue.status)) {
-    return { action: 'closed' };
+    return { action: 'closed', status: issue.status };
   }
-  if (!issue.assignee?.trim()) {
+  const newer = newestElsewhere(issue, options.elsewhere);
+  if (newer && isClosedStatus(config, newer.status)) {
+    return { action: 'closed', status: newer.status, elsewhere: newer };
+  }
+  const effective = newer ?? issue;
+  const assignee = effective.assignee?.trim() ? effective.assignee : '';
+  if (!assignee) {
     return { action: 'noop' };
   }
-  if (!isAssignedTo(issue.assignee, user) && !options.force) {
-    return { action: 'not-yours', assignee: issue.assignee };
+  const where = newer ? { elsewhere: toClaimedElsewhere(newer) } : {};
+  if (!isAssignedTo(assignee, user) && !options.force) {
+    return { action: 'not-yours', assignee, ...where };
   }
-  return { action: 'unclaim' };
+  // Keep the effective status (if this config knows it), except the active one.
+  const kept =
+    newer && findStatus(config, newer.status) ? newer.status : issue.status;
+  const status = kept === activeStatus(config) ? unclaimStatus(config) : kept;
+  return { action: 'unclaim', status, ...where };
 }

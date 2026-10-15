@@ -179,9 +179,16 @@ describe('decideClaim with versions elsewhere (#56)', () => {
 
   test('my own claim elsewhere: claimed here too (not a no-op)', () => {
     const mine = { ...bobsClaim, assignee: alice.email };
+    const heldElsewhere = {
+      ref: 'agent-1',
+      worktree: '/wt/agent-1',
+      assignee: alice.email,
+      updated: at(3),
+    };
     expect(decideClaim(todo, alice, CONFIG, { elsewhere: [mine] })).toEqual({
       action: 'claim',
       reopen: false,
+      heldElsewhere,
     });
     expect(
       decideClaim(
@@ -190,7 +197,7 @@ describe('decideClaim with versions elsewhere (#56)', () => {
         CONFIG,
         { elsewhere: [mine] },
       ),
-    ).toEqual({ action: 'claim', reopen: false });
+    ).toEqual({ action: 'claim', reopen: false, heldElsewhere });
     // With nothing newer elsewhere, my own local claim is still a no-op.
     expect(
       decideClaim(
@@ -219,7 +226,7 @@ describe('decideUnclaim', () => {
         alice,
         CONFIG,
       ),
-    ).toEqual({ action: 'unclaim' });
+    ).toEqual({ action: 'unclaim', status: 'todo' });
   });
 
   test("someone else's issue requires --force", () => {
@@ -239,7 +246,7 @@ describe('decideUnclaim', () => {
           force: true,
         },
       ),
-    ).toEqual({ action: 'unclaim' });
+    ).toEqual({ action: 'unclaim', status: 'todo' });
   });
 
   test('unassigned issue is a no-op', () => {
@@ -255,7 +262,17 @@ describe('decideUnclaim', () => {
       decideUnclaim({ status: 'done', assignee: alice.email }, alice, CONFIG, {
         force: true,
       }),
-    ).toEqual({ action: 'closed' });
+    ).toEqual({ action: 'closed', status: 'done' });
+  });
+
+  test('other statuses are kept', () => {
+    expect(
+      decideUnclaim(
+        { status: 'backlog', assignee: alice.email },
+        alice,
+        CONFIG,
+      ),
+    ).toEqual({ action: 'unclaim', status: 'backlog' });
   });
 });
 
@@ -298,6 +315,108 @@ describe('configured active status (#57)', () => {
         alice,
         custom,
       ),
-    ).toEqual({ action: 'closed' });
+    ).toEqual({ action: 'closed', status: 'shipped' });
+  });
+});
+
+describe('decideUnclaim with versions elsewhere (#65)', () => {
+  const at = (t: number) => `2026-01-0${t}T00:00:00Z`;
+  const todo = { status: 'todo' as const, assignee: '', updated: at(2) };
+  const claimBy = (assignee: string, updated = at(3)) => ({
+    ref: 'agent-1',
+    worktree: '/wt/agent-1',
+    status: 'in_progress' as const,
+    assignee,
+    updated,
+  });
+  const where = (assignee: string) => ({
+    ref: 'agent-1',
+    worktree: '/wt/agent-1',
+    assignee,
+    updated: at(3),
+  });
+
+  test('my newer claim elsewhere is released (back to the unclaim status)', () => {
+    expect(
+      decideUnclaim(todo, alice, CONFIG, {
+        elsewhere: [claimBy(alice.email)],
+      }),
+    ).toEqual({
+      action: 'unclaim',
+      status: 'todo',
+      elsewhere: where(alice.email),
+    });
+  });
+
+  test("someone else's newer claim elsewhere requires force", () => {
+    const elsewhere = [claimBy(bob.email)];
+    expect(decideUnclaim(todo, alice, CONFIG, { elsewhere })).toEqual({
+      action: 'not-yours',
+      assignee: bob.email,
+      elsewhere: where(bob.email),
+    });
+    expect(
+      decideUnclaim(todo, alice, CONFIG, { elsewhere, force: true }),
+    ).toEqual({
+      action: 'unclaim',
+      status: 'todo',
+      elsewhere: where(bob.email),
+    });
+  });
+
+  test('a newer release elsewhere makes it a no-op, even if assigned here', () => {
+    const local = {
+      status: 'in_progress' as const,
+      assignee: bob.email,
+      updated: at(2),
+    };
+    expect(
+      decideUnclaim(local, alice, CONFIG, {
+        elsewhere: [{ ...claimBy(''), status: 'todo' }],
+      }),
+    ).toEqual({ action: 'noop' });
+  });
+
+  test('an older claim elsewhere is superseded by the local version', () => {
+    expect(
+      decideUnclaim({ ...todo, updated: at(4) }, alice, CONFIG, {
+        elsewhere: [claimBy(bob.email)],
+      }),
+    ).toEqual({ action: 'noop' });
+    expect(
+      decideUnclaim(
+        { status: 'in_progress', assignee: alice.email, updated: at(4) },
+        alice,
+        CONFIG,
+        { elsewhere: [claimBy(bob.email)] },
+      ),
+    ).toEqual({ action: 'unclaim', status: 'todo' });
+  });
+
+  test("the effective version's status is kept unless it is the active one", () => {
+    expect(
+      decideUnclaim(
+        { status: 'in_progress', assignee: '', updated: at(2) },
+        alice,
+        CONFIG,
+        {
+          elsewhere: [{ ...claimBy(alice.email), status: 'backlog' }],
+        },
+      ),
+    ).toEqual({
+      action: 'unclaim',
+      status: 'backlog',
+      elsewhere: where(alice.email),
+    });
+  });
+
+  test('closed in a newer version elsewhere is refused (it would reopen it)', () => {
+    const closed = { ...claimBy(alice.email), status: 'done' as const };
+    expect(
+      decideUnclaim({ ...todo, assignee: alice.email }, alice, CONFIG, {
+        elsewhere: [closed],
+        force: true,
+      }),
+    ).toEqual({ action: 'closed', status: 'done', elsewhere: closed });
   });
 });

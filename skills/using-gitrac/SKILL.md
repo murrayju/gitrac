@@ -104,9 +104,9 @@ This sets `assignee` to your git user and `status` to `in_progress`, and commits
 
 - If the issue is already `in_progress` and assigned to someone else, `claim` fails with **exit code 3** and changes nothing. Pick another issue (or use `--force` only if you really mean to take it over). This includes claims made in **another worktree** (even uncommitted, `--no-commit`) or committed on **another branch**, local or fetched: gitrac compares the issue's versions everywhere and the one with the latest `updated` wins. The error says where (`… claimed by bob (in_progress) in worktree /path (branch agent-1)`); with `-o json` it has `claimedElsewhere: { ref, worktree?, assignee, updated }`.
 - If the issue is closed, `claim` fails with **exit code 4**. Use `gitrac reopen <id>` first, or `claim --force` to reopen and claim in one step.
-- Claiming an issue you already own is a no-op (exit 0, no commit).
+- Claiming an issue you already own is a no-op (exit 0, no commit). If you already hold it in **another worktree** (or on another branch), `claim` succeeds but warns on stderr (`Warning: you already hold issue #N in worktree /path …; claimed it here too.`) — you probably meant to work on it there.
 
-If you stop working on an issue without finishing it, give it back with `gitrac unclaim <id>` (alias `release`): it clears the assignee and moves `in_progress` back to `todo`. Releasing someone else's claim requires `--force`.
+If you stop working on an issue without finishing it, give it back with `gitrac unclaim <id>` (alias `release`): it clears the assignee and moves `in_progress` back to `todo`. Releasing someone else's claim requires `--force` (exit 3 otherwise). This works across worktrees and branches too: `unclaim` from `main` releases a claim made in an agent's worktree (or committed on its branch) by writing a newer local version that supersedes it, so the issue is ready again for everyone. The error (and its `-o json` `claimedElsewhere`) says where someone else's claim is.
 
 `ls`, `show` and `ready` flag issues claimed elsewhere: `[claimed on branch X by Y]` in the list, an `Elsewhere:` line in `show`, and a `claimedElsewhere` field in `-o json`. `ready`/`next` skip issues claimed (or closed) in another worktree or on an unmerged branch. A later unclaim or close anywhere supersedes the claim. A claim stuck on an abandoned branch stays visible until you delete that branch (`git branch -D <branch>`, or `git fetch --prune` for remote ones) or take it over with `claim --force`.
 
@@ -161,7 +161,8 @@ Recommended workflow when an orchestrator runs several agents at once:
 1. The orchestrator creates one worktree (and branch) per agent: `git worktree add -b agent-1 ../agent-1`.
 2. Each agent runs gitrac **inside its own worktree** and claims there: `gitrac claim <id>` (or `gitrac next --claim`). The claim is visible to every other worktree immediately — committed or not — so other agents' `claim` fails with exit 3 and their `ready`/`next` skip it. Agents sharing one git identity still get different issues from `next --claim`.
 3. When done, the agent closes with `gitrac close <id> --no-commit -c "summary"` and commits the code and the issue file together on its branch. Until that branch is merged, the issue no longer shows up in `ready`/`next` elsewhere.
-4. The orchestrator merges the branches; the gitrac merge driver (below) merges the `.issues/` files. Delete merged/abandoned agent branches so stale claims don't linger.
+4. If an agent gives up or dies, release its claim from anywhere (e.g. the main worktree): `gitrac unclaim <id>` (add `--force` if the agent used a different identity). The newer release supersedes the claim in its worktree, so `ready`/`next` offer the issue again.
+5. The orchestrator merges the branches; the gitrac merge driver (below) merges the `.issues/` files. Delete merged/abandoned agent branches so stale claims don't linger.
 
 ## Merging Branches
 

@@ -1,5 +1,6 @@
 import type { Command } from 'commander';
 import { EXIT_ALREADY_CLAIMED, EXIT_ISSUE_CLOSED } from '../../core/claim.ts';
+import { describeLocation } from '../../core/elsewhere.ts';
 import { parseIssueIdArg } from '../../core/errors.ts';
 import { claimIssue } from '../../service/claim.ts';
 import { withHint } from '../errors.ts';
@@ -35,6 +36,11 @@ export function registerClaimCommand(program: Command): void {
             issue_closed: `Use "gitrac reopen ${id}" first, or claim --force to reopen and claim it.`,
           });
         });
+        if (result.changed && result.elsewhere) {
+          console.warn(
+            `Warning: you already hold issue #${id} ${describeLocation(result.elsewhere)}; claimed it here too.`,
+          );
+        }
         if (!result.changed) {
           console.error(
             options.comment
