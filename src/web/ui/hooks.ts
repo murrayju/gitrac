@@ -7,8 +7,8 @@ import {
   useSyncExternalStore,
 } from 'react';
 import type { IssueDependencies } from '../../core/dependencies.ts';
-import type { Config, Issue } from '../../core/types.ts';
-import type { Draft, GitStatus, IssueFilters } from './api.ts';
+import type { Config } from '../../core/types.ts';
+import type { ApiIssue, Draft, GitStatus, IssueFilters } from './api.ts';
 import {
   fetchConfig,
   fetchDrafts,
@@ -18,6 +18,7 @@ import {
   fetchIssueVersioned,
 } from './api.ts';
 import { issueEvents } from './lib/event-stream.ts';
+import { elsewhereRefresh } from './lib/refresh-timer.ts';
 import { createSharedQuery } from './lib/shared-query.ts';
 import { type WorkflowView, workflowView } from './lib/workflow.ts';
 
@@ -32,13 +33,25 @@ export function useSSE(onEvent: () => void): void {
   useEffect(() => issueEvents().subscribe(() => onEventRef.current()), []);
 }
 
+/**
+ * Call `refetch` periodically while mounted (one tab-wide timer), so claims
+ * made in other worktrees / on other branches — which the server doesn't
+ * watch, so no SSE event announces them — show up.
+ */
+function usePeriodicRefresh(refetch: () => void): void {
+  const refetchRef = useRef(refetch);
+  refetchRef.current = refetch;
+
+  useEffect(() => elsewhereRefresh().subscribe(() => refetchRef.current()), []);
+}
+
 export function useIssues(filters?: IssueFilters): {
-  issues: Issue[];
+  issues: ApiIssue[];
   loading: boolean;
   error: string | null;
   refetch: () => void;
 } {
-  const [issues, setIssues] = useState<Issue[]>([]);
+  const [issues, setIssues] = useState<ApiIssue[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const filtersJson = JSON.stringify(filters ?? {});
@@ -60,22 +73,23 @@ export function useIssues(filters?: IssueFilters): {
   }, [refetch]);
 
   useSSE(refetch);
+  usePeriodicRefresh(refetch);
 
   return { issues, loading, error, refetch };
 }
 
 export function useIssue(id: number): {
-  issue: Issue | null;
+  issue: ApiIssue | null;
   /** ETag of `issue` as served; send it as `If-Match` to avoid clobbering. */
   version: string | null;
   loading: boolean;
   error: string | null;
   refetch: () => void;
   /** Adopt an issue returned by a mutation, discarding older in-flight fetches. */
-  applyIssue: (issue: Issue, version: string | null) => void;
+  applyIssue: (issue: ApiIssue, version: string | null) => void;
 } {
   const [state, setState] = useState<{
-    issue: Issue | null;
+    issue: ApiIssue | null;
     version: string | null;
   }>({ issue: null, version: null });
   const [loading, setLoading] = useState(true);
@@ -101,7 +115,7 @@ export function useIssue(id: number): {
       .finally(() => setLoading(false));
   }, [id]);
 
-  const applyIssue = useCallback((issue: Issue, version: string | null) => {
+  const applyIssue = useCallback((issue: ApiIssue, version: string | null) => {
     appliedRef.current = ++seqRef.current;
     setState({ issue, version });
     setError(null);
@@ -112,6 +126,7 @@ export function useIssue(id: number): {
   }, [refetch]);
 
   useSSE(refetch);
+  usePeriodicRefresh(refetch);
 
   return { ...state, loading, error, refetch, applyIssue };
 }

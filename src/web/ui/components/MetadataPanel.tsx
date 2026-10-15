@@ -1,15 +1,16 @@
 import { resolveAssigneeName } from '../../../core/config.ts';
-import type { Issue, Priority, Status } from '../../../core/types.ts';
-import { updateIssue } from '../api.ts';
+import type { Priority, Status } from '../../../core/types.ts';
+import { type ApiIssue, updateIssue } from '../api.ts';
 import { useConfig, useWorkflow } from '../hooks.ts';
 import { AssigneePicker } from './AssigneePicker.tsx';
+import { ClaimedElsewhereBadge } from './ClaimedElsewhereBadge.tsx';
 import { Dropdown } from './Dropdown.tsx';
 import { LabelBadge } from './LabelBadge.tsx';
 import { LabelPicker } from './LabelPicker.tsx';
 import { PriorityBadge } from './PriorityBadge.tsx';
 import { StatusBadge } from './StatusBadge.tsx';
 
-export function MetadataPanel({ issue }: { issue: Issue }) {
+export function MetadataPanel({ issue }: { issue: ApiIssue }) {
   const { config } = useConfig();
   const workflow = useWorkflow();
 
@@ -92,6 +93,18 @@ export function MetadataPanel({ issue }: { issue: Issue }) {
           }
         />
       </div>
+
+      {issue.claimedElsewhere && (
+        <div>
+          <div className="text-gray-500 text-xs uppercase tracking-wider mb-1">
+            Elsewhere
+          </div>
+          <ClaimedElsewhereBadge
+            claim={issue.claimedElsewhere}
+            variant="full"
+          />
+        </div>
+      )}
 
       <div>
         <div className="text-gray-500 text-xs uppercase tracking-wider mb-1">

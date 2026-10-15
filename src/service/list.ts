@@ -1,6 +1,10 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { type ClaimedElsewhere, claimedElsewhere } from '../core/elsewhere.ts';
+import {
+  type ClaimedElsewhere,
+  claimedElsewhere,
+  type IssueStateElsewhere,
+} from '../core/elsewhere.ts';
 import { parseIssueFile } from '../core/issue.ts';
 import {
   type IssueQuery,
@@ -92,21 +96,35 @@ export async function loadAllIssues(dir: string): Promise<IssueListing> {
 /**
  * Which of `issues` are claimed on another branch or in another worktree
  * (their newest version is a claim there; see `src/core/elsewhere.ts`), by
- * ID. Read-only; one scan of the repository's refs and worktrees.
+ * ID, given the versions found elsewhere (`issueStatesElsewhere`, possibly
+ * cached; extra IDs are ignored). Pure.
+ */
+export function claimsFromStates(
+  issues: readonly Issue[],
+  config: WorkflowConfig,
+  states: ReadonlyMap<number, readonly IssueStateElsewhere[]>,
+): Map<number, ClaimedElsewhere> {
+  const claims = new Map<number, ClaimedElsewhere>();
+  for (const issue of issues) {
+    const claim = claimedElsewhere(issue, config, states.get(issue.id));
+    if (claim) claims.set(issue.id, claim);
+  }
+  return claims;
+}
+
+/**
+ * Which of `issues` are claimed on another branch or in another worktree,
+ * by ID ({@link claimsFromStates}). Read-only; one scan of the repository's
+ * refs and worktrees.
  */
 export async function findClaimsElsewhere(
   dir: string,
   issues: readonly Issue[],
   config: WorkflowConfig,
 ): Promise<Map<number, ClaimedElsewhere>> {
-  const claims = new Map<number, ClaimedElsewhere>();
-  if (issues.length === 0) return claims;
+  if (issues.length === 0) return new Map();
   const states = await issueStatesElsewhere(dir, {
     ids: issues.map((i) => i.id),
   });
-  for (const issue of issues) {
-    const claim = claimedElsewhere(issue, config, states.get(issue.id));
-    if (claim) claims.set(issue.id, claim);
-  }
-  return claims;
+  return claimsFromStates(issues, config, states);
 }

@@ -14,6 +14,7 @@ export class IssueWatcher {
   private listeners: Set<ChangeListener> = new Set();
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private debounceMs = 100;
+  private changes = 0;
 
   constructor(dir: string) {
     this.dir = dir;
@@ -26,6 +27,7 @@ export class IssueWatcher {
     for (const watchDir of [issuesDir, closedDir]) {
       try {
         const watcher = watch(watchDir, { recursive: false }, () => {
+          this.changes++;
           this.debounceEmit();
         });
         this.watchers.push(watcher);
@@ -52,6 +54,14 @@ export class IssueWatcher {
 
   off(_event: 'change', listener: ChangeListener): void {
     this.listeners.delete(listener);
+  }
+
+  /**
+   * Count of raw file-system events seen so far (not debounced): a cheap
+   * "has anything changed since?" check for caches (see `ElsewhereCache`).
+   */
+  generation(): number {
+    return this.changes;
   }
 
   /** Number of registered change listeners (e.g. open SSE streams). */

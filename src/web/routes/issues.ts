@@ -1,5 +1,6 @@
 import { type Context, Hono } from 'hono';
 import { describeDependencies, indexIssues } from '../../core/dependencies.ts';
+import type { ClaimedElsewhere } from '../../core/elsewhere.ts';
 import { GitracError } from '../../core/errors.ts';
 import { parseIssueFile } from '../../core/issue.ts';
 import { type IssueQuery, parseIssueQuery } from '../../core/query.ts';
@@ -21,6 +22,7 @@ import {
 import { linkIssue, unlinkIssue } from '../../service/links.ts';
 import { listIssues, loadAllIssues } from '../../service/list.ts';
 import type { Precondition } from '../../service/load.ts';
+import { elsewhereCache } from '../elsewhere-cache.ts';
 import { ifMatchSatisfied, issueETag } from '../etag.ts';
 import { mutationLock } from '../lock.ts';
 import { asRecord, readJsonBody } from '../request-body.ts';
@@ -167,21 +169,48 @@ function errorResponse(
   throw err;
 }
 
+/** An issue as served: plus `claimedElsewhere` when set (as in the CLI's JSON). */
+type ServedIssue = Issue & { claimedElsewhere?: ClaimedElsewhere };
+
 /**
- * Respond with the issue as now on disk (exactly what a later GET returns)
- * plus its ETag, so clients can chain `If-Match` writes. Falls back to the
- * in-memory issue if it can't be re-read.
+ * `issues` with `claimedElsewhere` added where their effective state is a
+ * claim on another branch / in another worktree (same rules as `gitrac ls`;
+ * the scan is cached briefly, see `ElsewhereCache`).
+ */
+async function withClaims(
+  ctx: ServerContext,
+  issues: Issue[],
+): Promise<ServedIssue[]> {
+  const claims = await elsewhereCache(ctx).claims(issues, ctx.config);
+  return issues.map((issue) => {
+    const claim = claims.get(issue.id);
+    return claim ? { ...issue, claimedElsewhere: claim } : issue;
+  });
+}
+
+async function withClaim(
+  ctx: ServerContext,
+  issue: Issue,
+): Promise<ServedIssue> {
+  return (await withClaims(ctx, [issue]))[0] ?? issue;
+}
+
+/**
+ * Respond with the issue as now on disk (exactly what a later GET returns,
+ * `claimedElsewhere` included) plus its ETag, so clients can chain
+ * `If-Match` writes. Falls back to the in-memory issue if it can't be
+ * re-read.
  */
 async function respondWithIssue(
   c: Context,
-  dir: string,
+  ctx: ServerContext,
   issue: Issue,
   status: 200 | 201 = 200,
 ): Promise<Response> {
-  const loaded = await loadIssue(dir, issue.id).catch(() => null);
-  if (!loaded) return c.json(issue, status);
+  const loaded = await loadIssue(ctx.dir, issue.id).catch(() => null);
+  if (!loaded) return c.json(await withClaim(ctx, issue), status);
   c.header('ETag', loaded.etag);
-  return c.json(loaded.issue, status);
+  return c.json(await withClaim(ctx, loaded.issue), status);
 }
 
 export function issueRoutes(ctx: ServerContext): Hono {
@@ -216,7 +245,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
       return errorResponse(c, err);
     }
     const { issues } = await listIssues(dir, query, config);
-    return c.json(issues);
+    return c.json(await withClaims(ctx, issues));
   });
 
   // GET /issues/:id — get a single issue
@@ -240,7 +269,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
       return c.json({ error: `Issue #${id} not found` }, 404);
     }
     c.header('ETag', loaded.etag);
-    return c.json(loaded.issue);
+    return c.json(await withClaim(ctx, loaded.issue));
   });
 
   /**
@@ -256,7 +285,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
     try {
       const result = await run(guard.precondition);
       ctx.config = result.config;
-      return respondWithIssue(c, ctx.dir, result.issue, status);
+      return respondWithIssue(c, ctx, result.issue, status);
     } catch (err) {
       return errorResponse(c, err, guard.current());
     }

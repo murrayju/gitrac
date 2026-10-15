@@ -1,4 +1,5 @@
 import type { IssueDependencies } from '../../core/dependencies.ts';
+import type { ClaimedElsewhere } from '../../core/elsewhere.ts';
 import type {
   Assignee,
   Config,
@@ -6,6 +7,13 @@ import type {
   Priority,
   Status,
 } from '../../core/types.ts';
+
+/**
+ * An issue as served by `GET /api/issues` / `GET /api/issues/:id` (and
+ * mutation responses): plus `claimedElsewhere` when its newest version is a
+ * claim in another worktree or on another branch.
+ */
+export type ApiIssue = Issue & { claimedElsewhere?: ClaimedElsewhere };
 
 export interface Draft {
   filename: string;
@@ -131,7 +139,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return (await requestVersioned<T>(path, options)).data;
 }
 
-export async function fetchIssues(filters?: IssueFilters): Promise<Issue[]> {
+export async function fetchIssues(filters?: IssueFilters): Promise<ApiIssue[]> {
   const params = new URLSearchParams();
   if (filters?.status) params.set('status', filters.status);
   if (filters?.assignee) params.set('assignee', filters.assignee);
@@ -141,18 +149,18 @@ export async function fetchIssues(filters?: IssueFilters): Promise<Issue[]> {
   if (filters?.mine) params.set('mine', '1');
   if (filters?.sort) params.set('sort', filters.sort);
   const qs = params.toString();
-  return request<Issue[]>(`/api/issues${qs ? `?${qs}` : ''}`);
+  return request<ApiIssue[]>(`/api/issues${qs ? `?${qs}` : ''}`);
 }
 
-export async function fetchIssue(id: number): Promise<Issue> {
-  return request<Issue>(`/api/issues/${id}`);
+export async function fetchIssue(id: number): Promise<ApiIssue> {
+  return request<ApiIssue>(`/api/issues/${id}`);
 }
 
 /** Fetch an issue along with its current version (ETag). */
 export async function fetchIssueVersioned(
   id: number,
-): Promise<Versioned<Issue>> {
-  return requestVersioned<Issue>(`/api/issues/${id}`);
+): Promise<Versioned<ApiIssue>> {
+  return requestVersioned<ApiIssue>(`/api/issues/${id}`);
 }
 
 /** An issue's parent, sub-issues, blockers and the issues it blocks. */

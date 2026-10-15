@@ -1,15 +1,16 @@
 import { useNavigate } from 'react-router-dom';
 import { resolveAssigneeName } from '../../../core/config.ts';
-import type { Issue, Priority, Status } from '../../../core/types.ts';
-import { updateIssue } from '../api.ts';
+import type { Priority, Status } from '../../../core/types.ts';
+import { type ApiIssue, updateIssue } from '../api.ts';
 import { useConfig, useWorkflow } from '../hooks.ts';
 import { relativeTime } from '../lib/time.ts';
+import { ClaimedElsewhereBadge } from './ClaimedElsewhereBadge.tsx';
 import { Dropdown } from './Dropdown.tsx';
 import { LabelBadge } from './LabelBadge.tsx';
 import { PriorityBadge } from './PriorityBadge.tsx';
 import { StatusBadge } from './StatusBadge.tsx';
 
-export function IssueRow({ issue }: { issue: Issue }) {
+export function IssueRow({ issue }: { issue: ApiIssue }) {
   const navigate = useNavigate();
   const { config } = useConfig();
   const workflow = useWorkflow();
@@ -28,8 +29,15 @@ export function IssueRow({ issue }: { issue: Issue }) {
       onClick={() => navigate(`/issues/${issue.id}`)}
     >
       <td className="px-3 py-2 text-sm text-gray-500 w-16">#{issue.id}</td>
-      <td className="px-3 py-2 text-sm font-medium truncate max-w-md">
-        {issue.title}
+      <td className="px-3 py-2 text-sm font-medium max-w-md">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="truncate">{issue.title}</span>
+          {issue.claimedElsewhere && (
+            <span className="shrink-0">
+              <ClaimedElsewhereBadge claim={issue.claimedElsewhere} />
+            </span>
+          )}
+        </div>
       </td>
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: stopPropagation for dropdown interaction within clickable row */}
       <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>

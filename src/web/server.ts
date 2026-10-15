@@ -5,6 +5,7 @@ import type { Config } from '../core/types.ts';
 import { AmendTracker } from '../git/amend-tracker.ts';
 import { IdentityResolver } from '../git/identity.ts';
 import { getBranchWarning } from '../git/status.ts';
+import type { ElsewhereCache } from './elsewhere-cache.ts';
 import { freshConfig } from './live-config.ts';
 import { assetRoutes, MAX_UPLOAD_BYTES, serveAsset } from './routes/assets.ts';
 import { configRoutes } from './routes/config.ts';
@@ -37,6 +38,11 @@ export interface ServerContext {
    * `--author`). Created lazily from `dir` if omitted.
    */
   identity?: IdentityResolver;
+  /**
+   * Cached scan of other worktrees/branches for `claimedElsewhere` in read
+   * responses (see `elsewhereCache`). Created lazily if omitted.
+   */
+  elsewhere?: ElsewhereCache;
 }
 
 export interface AppOptions {
