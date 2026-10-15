@@ -1,8 +1,10 @@
 import { claimAssignee, decideClaim, decideUnclaim } from '../core/claim.ts';
 import { findAssigneeByEmail } from '../core/config.ts';
+import { describeLocation } from '../core/elsewhere.ts';
 import { GitracError } from '../core/errors.ts';
 import type { Config, Issue } from '../core/types.ts';
 import { relocateIssue, writeConfig } from '../fs/issue-store.ts';
+import { issueStatesElsewhere } from '../git/elsewhere.ts';
 import { withRepoLock } from '../git/lock.ts';
 import {
   assetPaths,
@@ -50,7 +52,9 @@ function addClaimComment(
 
 /**
  * Assign the issue to the context's identity (email if known, else name) and
- * set it `in_progress`. Throws `already_claimed` if someone else has it and
+ * set it `in_progress`. Throws `already_claimed` if someone else has it —
+ * here, or in a newer version on another branch or in another worktree
+ * (committed or not; `details.ref` / `details.worktree` say where) — and
  * `issue_closed` if it is closed (`force` overrides both; a closed issue is
  * reopened). Adds the user to `config.assignees` if their email is new.
  */
@@ -64,17 +68,30 @@ export async function claimIssue(
     const config = await loadConfig(ctx);
     const stored = await loadStoredIssue(ctx.dir, id);
     const { issue } = stored;
+    // Every worktree shares the repo lock, so a claim in another worktree
+    // can't slip in between this scan and our write.
+    const elsewhere = (await issueStatesElsewhere(ctx.dir, { ids: [id] })).get(
+      id,
+    );
 
     // Decided under the lock, on the freshly-read issue.
     const decision = decideClaim(issue, user, {
       force: options.force,
       inClosedDir: stored.closed,
+      elsewhere,
     });
     if (decision.action === 'already-claimed') {
+      const where = decision.elsewhere;
       throw new GitracError(
         'already_claimed',
-        `Issue #${id} is already claimed by ${decision.assignee} (in_progress).`,
-        { details: { id, assignee: decision.assignee } },
+        where
+          ? `Issue #${id} is already claimed by ${where.assignee} (in_progress) ${describeLocation(where)}.`
+          : `Issue #${id} is already claimed by ${decision.assignee} (in_progress).`,
+        {
+          details: where
+            ? { id, assignee: where.assignee, claimedElsewhere: where }
+            : { id, assignee: decision.assignee },
+        },
       );
     }
     if (decision.action === 'closed') {

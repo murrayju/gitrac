@@ -1,9 +1,11 @@
 import type { ClaimUser } from '../core/claim.ts';
 import { indexIssues } from '../core/dependencies.ts';
+import { type ClaimedElsewhere, claimedElsewhere } from '../core/elsewhere.ts';
 import { GitracError } from '../core/errors.ts';
 import type { IssueQuery } from '../core/query.ts';
 import { nextIssue, readyIssues } from '../core/ready.ts';
 import type { Config, Issue } from '../core/types.ts';
+import { issueStatesElsewhere } from '../git/elsewhere.ts';
 import { withRepoLock } from '../git/lock.ts';
 import { type ClaimResult, claimIssue } from './claim.ts';
 import { loadConfig, type ServiceContext } from './context.ts';
@@ -15,20 +17,48 @@ import { type IssueListing, loadAllIssues } from './list.ts';
  * blockers) and, for `next --claim`, picks and claims under the repo lock.
  */
 
+export interface ReadyListing extends IssueListing {
+  /** Ready issues (the user's own) claimed on another branch or worktree. */
+  claimedElsewhere: Map<number, ClaimedElsewhere>;
+  /** The issue `next` picks: the first ready one not in progress anywhere. */
+  next: Issue | undefined;
+}
+
 /**
  * The issues ready for `user` (read-only; no lock): open, unassigned or
  * theirs, and not blocked by an open issue; filtered and sorted per `query`.
+ * Judged by each issue's effective state, so issues claimed (or closed) on
+ * another branch or in another worktree are left out (see
+ * `src/core/elsewhere.ts`). `next` is the one `gitrac next` picks.
  */
 export async function listReadyIssues(
   dir: string,
   user: ClaimUser,
   query: IssueQuery,
   config: Pick<Config, 'assignees'>,
-): Promise<IssueListing> {
-  const { issues, unreadable } = await loadAllIssues(dir);
+): Promise<ReadyListing> {
+  const [{ issues, unreadable }, elsewhere] = await Promise.all([
+    loadAllIssues(dir),
+    issueStatesElsewhere(dir),
+  ]);
+  const ready = readyIssues(
+    issues,
+    indexIssues(issues),
+    user,
+    query,
+    config,
+    elsewhere,
+  );
+  const claims = new Map<number, ClaimedElsewhere>();
+  for (const issue of ready) {
+    const claim = claimedElsewhere(issue, elsewhere.get(issue.id));
+    if (claim) claims.set(issue.id, claim);
+  }
   return {
-    issues: readyIssues(issues, indexIssues(issues), user, query, config),
+    issues: ready,
     unreadable,
+    claimedElsewhere: claims,
+    next: nextIssue(ready, elsewhere),
   };
 }
 
@@ -39,7 +69,7 @@ export function noReadyIssues(): GitracError {
 
 /**
  * The issue `next` would pick for `user` (read-only): the first ready issue
- * that isn't already in progress. Throws `no_ready_issues` if there is none.
+ * that isn't already in progress (here or elsewhere). Throws `no_ready_issues` if there is none.
  */
 export async function findNextIssue(
   dir: string,
@@ -47,13 +77,12 @@ export async function findNextIssue(
   query: IssueQuery,
   config: Pick<Config, 'assignees'>,
 ): Promise<{ issue: Issue; unreadable: string[] }> {
-  const { issues, unreadable } = await listReadyIssues(
+  const { next: issue, unreadable } = await listReadyIssues(
     dir,
     user,
     query,
     config,
   );
-  const issue = nextIssue(issues);
   if (!issue) throw noReadyIssues();
   return { issue, unreadable };
 }

@@ -3,6 +3,12 @@ import { join, resolve } from 'node:path';
 import { parseIssueId } from '../core/slug.ts';
 import { listAllIssueFiles, readConfig } from '../fs/issue-store.ts';
 import { gitCommonDir } from './lock.ts';
+import {
+  gitText,
+  readObjects,
+  resolveObjects,
+  treeEntries,
+} from './objects.ts';
 
 /**
  * Path, relative to the git common dir, of the shared ID high-water mark.
@@ -22,65 +28,6 @@ function maxIdOf(filenames: Iterable<string>): number {
   return max;
 }
 
-/** Run git with `input` on stdin; resolves to raw stdout (null on failure). */
-async function gitBytes(
-  dir: string,
-  args: string[],
-  input?: string,
-): Promise<Uint8Array | null> {
-  try {
-    const proc = Bun.spawn(['git', ...args], {
-      cwd: dir,
-      stdin: input === undefined ? 'ignore' : new TextEncoder().encode(input),
-      stdout: 'pipe',
-      stderr: 'ignore',
-    });
-    const [out, code] = await Promise.all([
-      // (`.bytes()` sometimes yields an ArrayBuffer in Bun 1.3; normalize.)
-      new Response(proc.stdout).arrayBuffer(),
-      proc.exited,
-    ]);
-    return code === 0 ? new Uint8Array(out) : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Parse `git cat-file --batch` output for tree objects and return the names of
- * all their entries. Tree content is binary: `<mode> <name>\0<raw oid>` per
- * entry, where the raw oid is half as long as the hex oid in the header (so
- * SHA-1 and SHA-256 repositories both work).
- */
-function treeEntryNames(out: Uint8Array): string[] {
-  const decoder = new TextDecoder();
-  const names: string[] = [];
-  let pos = 0;
-  while (pos < out.length) {
-    const eol = out.indexOf(0x0a, pos);
-    if (eol < 0) break;
-    const [oid = '', type, size] = decoder
-      .decode(out.subarray(pos, eol))
-      .split(' ');
-    pos = eol + 1;
-    if (type === undefined || size === undefined) continue; // "<x> missing"
-    const end = pos + Number(size);
-    if (type === 'tree') {
-      const rawOidLength = oid.length / 2;
-      let p = pos;
-      while (p < end) {
-        const space = out.indexOf(0x20, p);
-        const nul = out.indexOf(0x00, space);
-        if (space < 0 || nul < 0 || nul >= end) break;
-        names.push(decoder.decode(out.subarray(space + 1, nul)));
-        p = nul + 1 + rawOidLength;
-      }
-    }
-    pos = end + 1; // content is followed by a newline
-  }
-  return names;
-}
-
 /**
  * Highest issue ID in `.issues/*.md` / `.issues/closed/*.md` across every ref
  * of the repository (local branches, remote-tracking branches, tags, ...) and
@@ -92,41 +39,24 @@ function treeEntryNames(out: Uint8Array): string[] {
  * read those trees. Best effort: returns 0 outside a git repo or on error.
  */
 export async function maxIssueIdInRefs(dir: string): Promise<number> {
-  const refsOut = await gitBytes(dir, [
-    'for-each-ref',
-    '--format=%(objectname)',
-  ]);
-  if (!refsOut) return 0;
-  const revs = new Set(
-    new TextDecoder().decode(refsOut).split('\n').filter(Boolean),
-  );
+  const refs = await gitText(dir, ['for-each-ref', '--format=%(objectname)']);
+  if (refs === null) return 0;
+  const revs = new Set(refs.split('\n').filter(Boolean));
   revs.add('HEAD');
 
   // `./` makes the path relative to `dir` rather than the repo root.
-  const lookups = [...revs].flatMap((rev) => [
-    `${rev}:./.issues`,
-    `${rev}:./.issues/closed`,
-  ]);
-  const checkOut = await gitBytes(
+  const resolved = await resolveObjects(
     dir,
-    ['cat-file', '--batch-check'],
-    `${lookups.join('\n')}\n`,
+    [...revs].flatMap((rev) => [`${rev}:./.issues`, `${rev}:./.issues/closed`]),
   );
-  if (!checkOut) return 0;
-  const trees = new Set<string>();
-  for (const line of new TextDecoder().decode(checkOut).split('\n')) {
-    const [oid, type] = line.split(' ');
-    if (oid && type === 'tree') trees.add(oid);
-  }
-  if (trees.size === 0) return 0;
-
-  const treesOut = await gitBytes(
-    dir,
-    ['cat-file', '--batch'],
-    `${[...trees].join('\n')}\n`,
+  if (!resolved) return 0;
+  const trees = resolved.flatMap((o) => (o?.type === 'tree' ? [o.oid] : []));
+  const objects = await readObjects(dir, trees);
+  return maxIdOf(
+    [...objects.values()].flatMap((tree) =>
+      treeEntries(tree).map((e) => e.name),
+    ),
   );
-  if (!treesOut) return 0;
-  return maxIdOf(treeEntryNames(treesOut));
 }
 
 /** Path of the shared high-water mark file, or null outside a git repo. */

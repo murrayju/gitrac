@@ -1,5 +1,6 @@
 import yaml from 'js-yaml';
 import type { IssueDependencies, IssueRef } from '../core/dependencies.ts';
+import { type ClaimedElsewhere, describeLocation } from '../core/elsewhere.ts';
 import type { Comment, Issue, OutputFormat } from '../core/types.ts';
 
 /**
@@ -25,10 +26,24 @@ function shortDate(iso: string): string {
   return iso.slice(0, 10);
 }
 
+/** Claims on other branches / worktrees, by issue ID (see `src/core/elsewhere.ts`). */
+export type ClaimsElsewhere = ReadonlyMap<number, ClaimedElsewhere>;
+
+/** `claimed on branch X by Y` / `claimed in worktree P (branch X) by Y`. */
+export function describeClaimElsewhere(claim: ClaimedElsewhere): string {
+  return `claimed ${describeLocation(claim)} by ${claim.assignee}`;
+}
+
+/** The issue as output by json/yaml: plus `claimedElsewhere` when set. */
+function issueData(issue: Issue, claims?: ClaimsElsewhere): object {
+  const claim = claims?.get(issue.id);
+  return claim ? { ...issue, claimedElsewhere: claim } : issue;
+}
+
 /**
  * Format a list of issues for human-readable table output.
  */
-function formatHumanList(issues: Issue[]): string {
+function formatHumanList(issues: Issue[], claims?: ClaimsElsewhere): string {
   if (issues.length === 0) {
     return 'No issues found.';
   }
@@ -51,8 +66,9 @@ function formatHumanList(issues: Issue[]): string {
 
   const separator = '-'.repeat(header.length);
 
-  const rows = issues.map((issue) =>
-    [
+  const rows = issues.map((issue) => {
+    const claim = claims?.get(issue.id);
+    return [
       pad(`#${issue.id}`, 6),
       pad(truncate(issue.title, 40), 42),
       pad(issue.status, 12),
@@ -60,8 +76,9 @@ function formatHumanList(issues: Issue[]): string {
       pad(issue.assignee || '-', assigneeWidth),
       pad(shortDate(issue.updated), 12),
       issue.labels.join(', ') || '-',
-    ].join(''),
-  );
+      claim ? `  [${describeClaimElsewhere(claim)}]` : '',
+    ].join('');
+  });
 
   return [header, separator, ...rows].join('\n');
 }
@@ -108,13 +125,20 @@ function dependencyLines(issue: Issue, deps?: IssueDependencies): string[] {
 /**
  * Format a single issue for human-readable detail output.
  */
-function formatHumanDetail(issue: Issue, deps?: IssueDependencies): string {
+function formatHumanDetail(
+  issue: Issue,
+  deps?: IssueDependencies,
+  claim?: ClaimedElsewhere,
+): string {
   const lines: string[] = [
     `# #${issue.id}: ${issue.title}`,
     '',
     `Status:     ${issue.status}`,
     `Priority:   ${issue.priority}`,
     `Assignee:   ${issue.assignee || '-'}`,
+    ...(claim
+      ? [`Elsewhere:  ${describeClaimElsewhere(claim)} (${claim.updated})`]
+      : []),
     `Labels:     ${issue.labels.length > 0 ? issue.labels.join(', ') : '-'}`,
     ...dependencyLines(issue, deps),
     `Created:    ${issue.created} by ${issue.createdBy}`,
@@ -136,35 +160,51 @@ function formatHumanDetail(issue: Issue, deps?: IssueDependencies): string {
 }
 
 /**
- * Format a list of issues in the specified output format.
+ * Format a list of issues in the specified output format. `claims` marks
+ * issues claimed on another branch or worktree (json/yaml: a
+ * `claimedElsewhere` field).
  */
-export function formatIssueList(issues: Issue[], format: OutputFormat): string {
+export function formatIssueList(
+  issues: Issue[],
+  format: OutputFormat,
+  claims?: ClaimsElsewhere,
+): string {
   switch (format) {
     case 'human':
-      return formatHumanList(issues);
+      return formatHumanList(issues, claims);
     case 'json':
-      return JSON.stringify(issues, null, 2);
+      return JSON.stringify(
+        issues.map((i) => issueData(i, claims)),
+        null,
+        2,
+      );
     case 'yaml':
-      return yaml.dump(issues, { lineWidth: -1 });
+      return yaml.dump(
+        issues.map((i) => issueData(i, claims)),
+        { lineWidth: -1 },
+      );
   }
 }
 
 /**
  * Format a single issue detail in the specified output format. `deps`
  * (resolved links) enriches the human output only; json/yaml are the issue
- * itself (`parent` / `blockedBy` included when set).
+ * itself (`parent` / `blockedBy` included when set), plus `claimedElsewhere`
+ * when `claim` says it is claimed on another branch or worktree.
  */
 export function formatIssueDetail(
   issue: Issue,
   format: OutputFormat,
   deps?: IssueDependencies,
+  claim?: ClaimedElsewhere,
 ): string {
+  const claims = claim ? new Map([[issue.id, claim]]) : undefined;
   switch (format) {
     case 'human':
-      return formatHumanDetail(issue, deps);
+      return formatHumanDetail(issue, deps, claim);
     case 'json':
-      return JSON.stringify(issue, null, 2);
+      return JSON.stringify(issueData(issue, claims), null, 2);
     case 'yaml':
-      return yaml.dump(issue, { lineWidth: -1 });
+      return yaml.dump(issueData(issue, claims), { lineWidth: -1 });
   }
 }

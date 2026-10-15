@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { ClaimUser } from './claim.ts';
 import { createDefaultConfig } from './config.ts';
 import { indexIssues } from './dependencies.ts';
+import type { IssueStateElsewhere } from './elsewhere.ts';
 import { parseIssueQuery } from './query.ts';
 import { isAvailableTo, nextIssue, readyIssues } from './ready.ts';
 import type { Issue } from './types.ts';
@@ -126,5 +127,62 @@ describe('nextIssue', () => {
     ];
     expect(nextIssue(list)?.id).toBe(2);
     expect(nextIssue([list[0] as Issue])).toBeUndefined();
+  });
+});
+
+describe('with versions elsewhere (#56)', () => {
+  const claimElsewhere = (
+    overrides: Partial<IssueStateElsewhere> = {},
+  ): IssueStateElsewhere => ({
+    ref: 'agent-1',
+    worktree: '/wt/agent-1',
+    status: 'in_progress',
+    assignee: 'bob@example.com',
+    updated: '2025-01-02T00:00:00Z',
+    ...overrides,
+  });
+
+  test('isAvailableTo uses the effective (newest) state', () => {
+    expect(isAvailableTo(issue(1), ME, [claimElsewhere()])).toBe(false);
+    // Closed on another branch that isn't merged yet.
+    expect(
+      isAvailableTo(issue(1), ME, [claimElsewhere({ status: 'done' })]),
+    ).toBe(false);
+    // Mine elsewhere: still available to me.
+    expect(
+      isAvailableTo(issue(1), ME, [claimElsewhere({ assignee: ME.email })]),
+    ).toBe(true);
+    // Older than the local version: ignored.
+    expect(
+      isAvailableTo(issue(1, { updated: '2025-01-03T00:00:00Z' }), ME, [
+        claimElsewhere(),
+      ]),
+    ).toBe(true);
+    // A newer release elsewhere frees a local claim.
+    expect(
+      isAvailableTo(issue(1, { status: 'in_progress', assignee: 'bob' }), ME, [
+        claimElsewhere({ status: 'todo', assignee: '' }),
+      ]),
+    ).toBe(true);
+  });
+
+  test('ready skips issues claimed elsewhere; next skips my claims elsewhere', () => {
+    const issues = [issue(1), issue(2), issue(3)];
+    const elsewhere = new Map([
+      [1, [claimElsewhere()]],
+      [2, [claimElsewhere({ assignee: ME.email })]],
+    ]);
+    const query = parseIssueQuery({ sort: 'priority' }, config);
+    const list = readyIssues(
+      issues,
+      indexIssues(issues),
+      ME,
+      query,
+      config,
+      elsewhere,
+    );
+    expect(list.map((i) => i.id)).toEqual([2, 3]);
+    expect(nextIssue(list, elsewhere)?.id).toBe(3);
+    expect(nextIssue(list)?.id).toBe(2);
   });
 });

@@ -86,7 +86,7 @@ When installed as a binary, replace `./bun index.ts` with `gitrac` in all exampl
 
 ```bash
 gitrac ls        # everything open
-gitrac ready     # only what you can start now (unblocked, not someone else's)
+gitrac ready     # only what you can start now (unblocked, not someone else's — in any worktree/branch)
 ```
 
 Review the open issues. Pick one that matches the task at hand. To just take the most important unblocked issue, `gitrac next --claim` picks and claims it in one step (under the repo lock, so parallel agents never get the same one) — then skip step 2.
@@ -101,11 +101,13 @@ gitrac claim <id>
 
 This sets `assignee` to your git user and `status` to `in_progress`, and commits the change. Claims are exclusive:
 
-- If the issue is already `in_progress` and assigned to someone else, `claim` fails with **exit code 3** and changes nothing. Pick another issue (or use `--force` only if you really mean to take it over).
+- If the issue is already `in_progress` and assigned to someone else, `claim` fails with **exit code 3** and changes nothing. Pick another issue (or use `--force` only if you really mean to take it over). This includes claims made in **another worktree** (even uncommitted, `--no-commit`) or committed on **another branch**, local or fetched: gitrac compares the issue's versions everywhere and the one with the latest `updated` wins. The error says where (`… claimed by bob (in_progress) in worktree /path (branch agent-1)`); with `-o json` it has `claimedElsewhere: { ref, worktree?, assignee, updated }`.
 - If the issue is closed, `claim` fails with **exit code 4**. Use `gitrac reopen <id>` first, or `claim --force` to reopen and claim in one step.
 - Claiming an issue you already own is a no-op (exit 0, no commit).
 
 If you stop working on an issue without finishing it, give it back with `gitrac unclaim <id>` (alias `release`): it clears the assignee and moves `in_progress` back to `todo`. Releasing someone else's claim requires `--force`.
+
+`ls`, `show` and `ready` flag issues claimed elsewhere: `[claimed on branch X by Y]` in the list, an `Elsewhere:` line in `show`, and a `claimedElsewhere` field in `-o json`. `ready`/`next` skip issues claimed (or closed) in another worktree or on an unmerged branch. A later unclaim or close anywhere supersedes the claim. A claim stuck on an abandoned branch stays visible until you delete that branch (`git branch -D <branch>`, or `git fetch --prune` for remote ones) or take it over with `claim --force`.
 
 ### 3. Implement the fix/feature
 
@@ -150,6 +152,15 @@ This creates a single commit that contains both the code fix and the issue state
 gitrac ls              # issue should no longer appear
 gitrac show <id>       # should show status: done, in .issues/closed/
 ```
+
+## Parallel Agents in Worktrees
+
+Recommended workflow when an orchestrator runs several agents at once:
+
+1. The orchestrator creates one worktree (and branch) per agent: `git worktree add -b agent-1 ../agent-1`.
+2. Each agent runs gitrac **inside its own worktree** and claims there: `gitrac claim <id>` (or `gitrac next --claim`). The claim is visible to every other worktree immediately — committed or not — so other agents' `claim` fails with exit 3 and their `ready`/`next` skip it. Agents sharing one git identity still get different issues from `next --claim`.
+3. When done, the agent closes with `gitrac close <id> --no-commit -c "summary"` and commits the code and the issue file together on its branch. Until that branch is merged, the issue no longer shows up in `ready`/`next` elsewhere.
+4. The orchestrator merges the branches; the gitrac merge driver (below) merges the `.issues/` files. Delete merged/abandoned agent branches so stale claims don't linger.
 
 ## Merging Branches
 

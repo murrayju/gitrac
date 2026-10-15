@@ -130,7 +130,7 @@ Two optional relations, stored only in the dependent issue's frontmatter (one ed
 
 **Validation** (`validateLinks`, `src/core/dependencies.ts`, run by `linkIssue` under the repo lock against every open and closed issue): an issue can't be blocked by itself or be its own parent, every target must exist, a new `blockedBy` edge must not close a cycle (directly or transitively), and a new parent must not make the issue its own ancestor. Violations are `invalid_input` (exit 2 / HTTP 400 `{ error, errors }`) and nothing is written. Unlinking needs no validation (links to deleted issues can be removed). Links that two branches add independently can still form a cycle after a merge; such issues are simply never ready until one link is removed.
 
-**Ready.** An issue is *ready* for a user when it is available to them (`isAvailableTo`, `src/core/ready.ts`: open, and unassigned or assigned to them — issues assigned to someone else are skipped in any status) and none of its blockers is open. `gitrac ready` lists them (default sort: priority, then ID); `gitrac next` picks the first one that isn't already `in_progress` (so several agents sharing one git identity each get a different issue) and `next --claim` claims it with the normal claim rules, choosing and claiming under one hold of the repo lock so concurrent `next --claim`s never get the same issue.
+**Ready.** An issue is *ready* for a user when it is available to them (`isAvailableTo`, `src/core/ready.ts`: open, and unassigned or assigned to them — issues assigned to someone else are skipped in any status; judged by the issue's effective state across worktrees and branches, see [Claims on other branches and worktrees](#claims-on-other-branches-and-worktrees)) and none of its blockers is open. `gitrac ready` lists them (default sort: priority, then ID); `gitrac next` picks the first one that isn't already `in_progress` (so several agents sharing one git identity each get a different issue) and `next --claim` claims it with the normal claim rules, choosing and claiming under one hold of the repo lock so concurrent `next --claim`s never get the same issue.
 
 ### Issue ID Scheme
 
@@ -242,6 +242,21 @@ The claimer's identity is their git `user.email` (falling back to `user.name`), 
 `unclaim <id>` (alias `release`) clears `assignee` and moves `in_progress` back to `todo` (other statuses are kept). It fails with exit **3** if the issue is assigned to someone else (`--force` overrides), exits **4** for closed issues, and is a no-op if the issue is unassigned. Accepts `-c, --comment`.
 
 Exit codes: `3` claimed by someone else, `4` issue is closed (see [Errors and Exit Codes](#errors-and-exit-codes)).
+
+#### Claims on other branches and worktrees
+
+Each worktree has its own checkout of `.issues/`, so a claim made in one worktree — or committed on a branch that isn't merged yet — isn't in the others' files. `claim`, `ready`, `next`, `ls` and `show` therefore judge an issue by its **effective state**: the version with the latest `updated` among this working tree's file and the issue's file (by ID, in `.issues/` or `.issues/closed/`) in
+
+- every other worktree's working tree (from `git worktree list --porcelain`; uncommitted `--no-commit` claims included), and
+- every local and remote-tracking branch (`refs/heads/*`, `refs/remotes/*`) other than the one checked out here.
+
+Ties go to this working tree, then other worktrees, then local branches, then remote-tracking ones. `issueStatesElsewhere` (`src/git/elsewhere.ts`) gathers the versions with a constant number of git processes (`for-each-ref`, `worktree list`, one `cat-file --batch-check`, two `cat-file --batch`; branch blobs identical to this worktree's `HEAD` are skipped) plus plain reads of the other worktrees' files. The rules are pure functions in `src/core/elsewhere.ts`, used by `decideClaim` (`src/core/claim.ts`) and `isAvailableTo` / `nextIssue` (`src/core/ready.ts`):
+
+- `claim` fails with `already_claimed` (exit **3**) if the effective state is `in_progress` and assigned to someone else; when that version is elsewhere, the message says where (`… claimed by bob (in_progress) in worktree /path (branch agent-1)` / `on branch origin/agent-1`) and the JSON error has `claimedElsewhere: { ref, worktree?, assignee, updated }`. `--force` takes it over (the new local claim is then the newest version). Your own claim elsewhere doesn't block you. A local closed issue is still `issue_closed` (exit 4). The scan runs under the repo lock, which all worktrees share, so a claim in another worktree can't slip in between the check and the write.
+- `ready` skips issues whose effective state is closed or assigned to someone else (e.g. claimed in another worktree, or closed on a branch that isn't merged yet); `next` also skips those whose effective state is `in_progress`, even yours — so agents sharing one identity in different worktrees get different issues. Blockers are judged by their local state.
+- `ls`, `show` and `ready` mark issues whose effective state is a claim elsewhere: human output appends `[claimed on branch X by Y]` (list) or an `Elsewhere:` line (detail); `-o json`/`yaml` add a `claimedElsewhere` field (`ref`: short branch name, or `HEAD` for a detached worktree; `worktree`: set when found in another worktree's working tree). The web API doesn't include it.
+
+A later unclaim or close anywhere (with a newer `updated`) supersedes a claim automatically, as does any newer edit of the issue — the newest version wins whatever it says. A claim left on an abandoned branch stays visible until the branch is deleted (`git branch -D`, or `git fetch --prune` / `git push --delete` for remote ones) or someone claims with `--force`. Work in other clones is seen only once fetched.
 
 ### Deleting
 
