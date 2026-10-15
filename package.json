@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "./bun run scripts/build.ts",
+    "release": "./bun run scripts/release.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check",
     "test": "./bun test",
