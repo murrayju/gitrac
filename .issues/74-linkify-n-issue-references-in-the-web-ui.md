@@ -1,14 +1,14 @@
 ---
 id: 74
 title: 'Linkify #N issue references in the web UI'
-status: todo
+status: in_progress
 priority: low
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - feature
 created: '2026-10-15T16:06:58.415Z'
 createdBy: Justin Murray
-updated: '2026-10-15T16:06:58.415Z'
+updated: '2026-10-15T16:51:50.561Z'
 ---
 
 The spec says cross-references use `#N` syntax, but the web UI renders `#3` as plain text in descriptions and comments.
