@@ -1,4 +1,5 @@
 import yaml from 'js-yaml';
+import type { IssueDependencies, IssueRef } from '../core/dependencies.ts';
 import type { Comment, Issue, OutputFormat } from '../core/types.ts';
 
 /**
@@ -72,10 +73,42 @@ function formatComment(comment: Comment): string {
   return `--- ${comment.author} (${comment.timestamp}) ---\n${comment.body}`;
 }
 
+/** `#3 Title (done)`, or `#3 (missing)` for a deleted issue. */
+function formatRef(ref: IssueRef): string {
+  return ref.status === null
+    ? `#${ref.id} (missing)`
+    : `#${ref.id} ${ref.title} (${ref.status})`;
+}
+
+/**
+ * The dependency lines of the detail view: from the resolved `deps` when
+ * given (titles, statuses, derived "blocks" / sub-issues), else just the
+ * issue's own `parent` / `blockedBy` IDs. Lines without links are omitted.
+ */
+function dependencyLines(issue: Issue, deps?: IssueDependencies): string[] {
+  const lines: string[] = [];
+  const add = (label: string, refs: string[]) => {
+    if (refs.length > 0) lines.push(`${label.padEnd(12)}${refs.join(', ')}`);
+  };
+  if (deps) {
+    add('Parent:', deps.parent ? [formatRef(deps.parent)] : []);
+    add('Sub-issues:', deps.children.map(formatRef));
+    add('Blocked by:', deps.blockedBy.map(formatRef));
+    add('Blocks:', deps.blocks.map(formatRef));
+  } else {
+    add('Parent:', issue.parent === undefined ? [] : [`#${issue.parent}`]);
+    add(
+      'Blocked by:',
+      (issue.blockedBy ?? []).map((id) => `#${id}`),
+    );
+  }
+  return lines;
+}
+
 /**
  * Format a single issue for human-readable detail output.
  */
-function formatHumanDetail(issue: Issue): string {
+function formatHumanDetail(issue: Issue, deps?: IssueDependencies): string {
   const lines: string[] = [
     `# #${issue.id}: ${issue.title}`,
     '',
@@ -83,6 +116,7 @@ function formatHumanDetail(issue: Issue): string {
     `Priority:   ${issue.priority}`,
     `Assignee:   ${issue.assignee || '-'}`,
     `Labels:     ${issue.labels.length > 0 ? issue.labels.join(', ') : '-'}`,
+    ...dependencyLines(issue, deps),
     `Created:    ${issue.created} by ${issue.createdBy}`,
     `Updated:    ${issue.updated}`,
   ];
@@ -116,12 +150,18 @@ export function formatIssueList(issues: Issue[], format: OutputFormat): string {
 }
 
 /**
- * Format a single issue detail in the specified output format.
+ * Format a single issue detail in the specified output format. `deps`
+ * (resolved links) enriches the human output only; json/yaml are the issue
+ * itself (`parent` / `blockedBy` included when set).
  */
-export function formatIssueDetail(issue: Issue, format: OutputFormat): string {
+export function formatIssueDetail(
+  issue: Issue,
+  format: OutputFormat,
+  deps?: IssueDependencies,
+): string {
   switch (format) {
     case 'human':
-      return formatHumanDetail(issue);
+      return formatHumanDetail(issue, deps);
     case 'json':
       return JSON.stringify(issue, null, 2);
     case 'yaml':

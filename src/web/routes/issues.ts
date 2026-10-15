@@ -1,4 +1,5 @@
 import { type Context, Hono } from 'hono';
+import { describeDependencies, indexIssues } from '../../core/dependencies.ts';
 import { GitracError } from '../../core/errors.ts';
 import { parseIssueFile } from '../../core/issue.ts';
 import { type IssueQuery, parseIssueQuery } from '../../core/query.ts';
@@ -17,7 +18,8 @@ import {
   reopenIssue,
   updateIssue,
 } from '../../service/issues.ts';
-import { listIssues } from '../../service/list.ts';
+import { linkIssue, unlinkIssue } from '../../service/links.ts';
+import { listIssues, loadAllIssues } from '../../service/list.ts';
 import type { Precondition } from '../../service/load.ts';
 import { ifMatchSatisfied, issueETag } from '../etag.ts';
 import { mutationLock } from '../lock.ts';
@@ -382,6 +384,56 @@ export function issueRoutes(ctx: ServerContext): Hono {
         status: status ?? undefined,
         precondition,
       }),
+    );
+  });
+
+  // GET /issues/:id/dependencies — the issue's parent, sub-issues, blockers
+  // and the issues it blocks (derived), each `{ id, title, status, resolved }`
+  // (`status: null` for a missing issue), plus `blocked`.
+  app.get('/issues/:id/dependencies', async (c) => {
+    const id = Number.parseInt(c.req.param('id'), 10);
+    if (Number.isNaN(id)) {
+      return c.json({ error: 'Invalid issue ID' }, 400);
+    }
+    let loaded: LoadedIssue | null;
+    try {
+      loaded = await loadIssue(ctx.dir, id);
+    } catch (err) {
+      if (isDuplicateIssue(err)) return duplicateResponse(c, err);
+      throw err;
+    }
+    if (!loaded) {
+      return c.json({ error: `Issue #${id} not found` }, 404);
+    }
+    const byId = indexIssues((await loadAllIssues(ctx.dir)).issues);
+    byId.set(id, loaded.issue);
+    return c.json(describeDependencies(loaded.issue, byId));
+  });
+
+  // POST /issues/:id/link — `{ blockedBy?: id | id[], parent?: id }`: add
+  // blockers / set the parent. 400 if a target is missing, the issue itself,
+  // or the link would create a cycle. Honors `If-Match`.
+  app.post('/issues/:id/link', locked, async (c) => {
+    const id = Number.parseInt(c.req.param('id'), 10);
+    if (Number.isNaN(id)) {
+      return c.json({ error: 'Invalid issue ID' }, 400);
+    }
+    const body = await readJsonBody(c);
+    return mutateIssue(c, (precondition) =>
+      linkIssue(webServiceContext(ctx), id, body, { precondition }),
+    );
+  });
+
+  // POST /issues/:id/unlink — `{ blockedBy?: id | id[], parent?: true }`:
+  // remove blockers / clear the parent. Honors `If-Match`.
+  app.post('/issues/:id/unlink', locked, async (c) => {
+    const id = Number.parseInt(c.req.param('id'), 10);
+    if (Number.isNaN(id)) {
+      return c.json({ error: 'Invalid issue ID' }, 400);
+    }
+    const body = await readJsonBody(c);
+    return mutateIssue(c, (precondition) =>
+      unlinkIssue(webServiceContext(ctx), id, body, { precondition }),
     );
   });
 

@@ -65,6 +65,47 @@ function toLabelsField(value: unknown): string[] {
   return items.map(toStringField).filter((label) => label !== '');
 }
 
+/** A positive integer issue ID, or undefined (absent / not an ID). */
+function toOptionalIdField(value: unknown): number | undefined {
+  const id = toIdField(value);
+  return Number.isInteger(id) && id > 0 ? id : undefined;
+}
+
+/**
+ * Coerce a list of issue IDs (`blockedBy`): a single scalar becomes a
+ * one-element list, numeric strings are accepted, anything that isn't a
+ * positive integer is dropped, and the result is sorted and de-duplicated.
+ */
+function toIdListField(value: unknown): number[] {
+  if (value === null || value === undefined) return [];
+  const items = Array.isArray(value) ? value : [value];
+  const ids = items
+    .map(toOptionalIdField)
+    .filter((id): id is number => id !== undefined);
+  return normalizeIdList(ids);
+}
+
+/** Sort ascending and drop duplicates (the canonical `blockedBy` form). */
+export function normalizeIdList(ids: readonly number[]): number[] {
+  return [...new Set(ids)].sort((a, b) => a - b);
+}
+
+/**
+ * The optional dependency fields, in frontmatter order, present only when
+ * set (`parent`) / non-empty (`blockedBy`, normalized) so files without them
+ * round-trip unchanged.
+ */
+export function dependencyFields(
+  issue: Pick<Issue, 'parent' | 'blockedBy'>,
+): Pick<Issue, 'parent' | 'blockedBy'> {
+  const fields: Pick<Issue, 'parent' | 'blockedBy'> = {};
+  if (issue.parent !== undefined) fields.parent = issue.parent;
+  if (issue.blockedBy && issue.blockedBy.length > 0) {
+    fields.blockedBy = normalizeIdList(issue.blockedBy);
+  }
+  return fields;
+}
+
 /**
  * Parse a markdown issue file into an Issue object.
  *
@@ -97,6 +138,10 @@ export function parseIssue(markdown: string): Issue {
     priority: toStringField(fm.priority) as Priority,
     assignee: toStringField(fm.assignee),
     labels: toLabelsField(fm.labels),
+    ...dependencyFields({
+      parent: toOptionalIdField(fm.parent),
+      blockedBy: toIdListField(fm.blockedBy),
+    }),
     created: toStringField(fm.created),
     createdBy: toStringField(fm.createdBy),
     updated: toStringField(fm.updated),
@@ -155,6 +200,7 @@ export function serializeIssue(issue: Issue): string {
     priority: issue.priority,
     assignee: issue.assignee,
     labels: issue.labels,
+    ...dependencyFields(issue),
     created: issue.created,
     createdBy: issue.createdBy,
     updated: issue.updated,

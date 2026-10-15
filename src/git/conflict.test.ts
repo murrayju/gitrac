@@ -454,6 +454,73 @@ describe('mergeIssueFiles', () => {
   });
 });
 
+/** Regression tests for #55: dependency fields in the merge driver. */
+describe('merging dependency fields', () => {
+  test('blockedBy merges as a set', () => {
+    const base = makeFrontmatter({ blockedBy: [1, 2] });
+    const ours = makeFrontmatter({
+      blockedBy: [1, 2, 3],
+      updated: '2025-01-03T00:00:00Z',
+    });
+    const theirs = makeFrontmatter({
+      blockedBy: [2, 4],
+      updated: '2025-01-02T00:00:00Z',
+    });
+    // ours added 3, theirs added 4 and removed 1.
+    expect(mergeIssueFrontmatter(ours, theirs, base).blockedBy).toEqual([
+      2, 3, 4,
+    ]);
+  });
+
+  test('blockedBy removed on both sides is not written', () => {
+    const base = makeFrontmatter({ blockedBy: [1] });
+    const ours = makeFrontmatter({ labels: ['bug'] });
+    const theirs = makeFrontmatter();
+    const merged = mergeIssueFrontmatter(ours, theirs, base);
+    expect('blockedBy' in merged).toBe(false);
+  });
+
+  test('parent is per-field (one side wins, both: newer side)', () => {
+    const base = makeFrontmatter();
+    const ours = makeFrontmatter({ priority: 'high' });
+    const theirs = makeFrontmatter({ parent: 7 });
+    expect(mergeIssueFrontmatter(ours, theirs, base).parent).toBe(7);
+
+    const newer = makeFrontmatter({
+      parent: 8,
+      updated: '2025-01-05T00:00:00Z',
+    });
+    expect(mergeIssueFrontmatter(newer, theirs, base).parent).toBe(8);
+    // Cleared on one side.
+    expect(
+      'parent' in
+        mergeIssueFrontmatter(
+          makeFrontmatter(),
+          makeFrontmatter({ labels: ['x'] }),
+          makeFrontmatter({ parent: 3 }),
+        ),
+    ).toBe(false);
+  });
+
+  test('mergeIssueFiles merges and round-trips the fields', async () => {
+    const base = issueFile({ blockedBy: [1] });
+    const ours = issueFile({
+      blockedBy: [1, 2],
+      updated: '2025-01-02T00:00:00Z',
+    });
+    const theirs = issueFile({
+      blockedBy: [1, 3],
+      parent: 9,
+      updated: '2025-01-03T00:00:00Z',
+    });
+    const result = await mergeIssueFiles(base, ours, theirs);
+    expect(result.conflict).toBe(false);
+    const merged = parseIssue(result.content);
+    expect(merged.blockedBy).toEqual([1, 2, 3]);
+    expect(merged.parent).toBe(9);
+  });
+});
+
 describe('mergeConfigFiles', () => {
   const baseConfig: Config = {
     ...createDefaultConfig(),

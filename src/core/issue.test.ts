@@ -592,3 +592,65 @@ describe('parseIssueFile', () => {
     );
   });
 });
+
+/** Regression tests for #55: optional `parent` / `blockedBy` frontmatter. */
+describe('dependency fields', () => {
+  const BASE = `---
+id: 7
+title: Sub task
+status: todo
+priority: medium
+assignee: ''
+labels: []
+created: '2025-01-01T00:00:00Z'
+createdBy: tester
+updated: '2025-01-01T00:00:00Z'
+---
+
+Body
+`;
+
+  test('are absent when not in the file, and not written', () => {
+    const issue = parseIssue(BASE);
+    expect('parent' in issue).toBe(false);
+    expect('blockedBy' in issue).toBe(false);
+    expect(serializeIssue(issue)).toBe(BASE);
+  });
+
+  test('round-trip byte-for-byte, after labels', () => {
+    const raw = BASE.replace(
+      'labels: []\n',
+      'labels: []\nparent: 3\nblockedBy:\n  - 1\n  - 2\n',
+    );
+    const issue = parseIssue(raw);
+    expect(issue.parent).toBe(3);
+    expect(issue.blockedBy).toEqual([1, 2]);
+    expect(serializeIssue(issue)).toBe(raw);
+  });
+
+  test('are coerced: scalars, numeric strings, duplicates, junk', () => {
+    const raw = BASE.replace(
+      'labels: []\n',
+      "labels: []\nparent: '4'\nblockedBy: [5, '2', 5, x, 0, -1]\n",
+    );
+    const issue = parseIssue(raw);
+    expect(issue.parent).toBe(4);
+    expect(issue.blockedBy).toEqual([2, 5]);
+    expect(
+      parseIssue(BASE.replace('labels: []\n', 'labels: []\nblockedBy: 9\n'))
+        .blockedBy,
+    ).toEqual([9]);
+    expect(
+      'parent' in
+        parseIssue(BASE.replace('labels: []\n', 'labels: []\nparent: nope\n')),
+    ).toBe(false);
+  });
+
+  test('empty blockedBy is not written; blockedBy is written sorted', () => {
+    const issue = parseIssue(BASE);
+    expect(serializeIssue({ ...issue, blockedBy: [] })).toBe(BASE);
+    expect(serializeIssue({ ...issue, blockedBy: [3, 1, 3] })).toContain(
+      'blockedBy:\n  - 1\n  - 3\n',
+    );
+  });
+});

@@ -19,6 +19,8 @@ export type Operation =
   | 'delete'
   | 'claim'
   | 'unclaim'
+  | 'link'
+  | 'unlink'
   | 'label-colors'
   | 'assignees'
   | 'merge-driver';

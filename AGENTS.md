@@ -13,6 +13,9 @@ This project uses gitrac to track its own issues. The `.issues/` directory conta
 ./gitrac create -t "title" --description-file desc.md   # with a description (-d "text"; `-` = stdin)
 ./gitrac edit <id> -d "text"   # replace the description (or --description-file <path|->)
 ./gitrac claim <id>            # assign to yourself + set in_progress (exit 3 if someone else has it)
+./gitrac ready                 # open, unassigned-or-mine, unblocked issues (priority, then ID; -o json)
+./gitrac next --claim          # atomically pick + claim the top ready issue (exit 5 if none)
+./gitrac link <id> --blocked-by 3,4 [--parent 2]   # dependencies (unlink <id> -b 3 / --parent removes)
 ./gitrac unclaim <id>          # give it back (alias: release)
 ./gitrac comment <id> "text"    # add a comment (or --body-file <path|->)
 ./gitrac close <id>            # close an issue
@@ -49,7 +52,7 @@ scripts/
 .issues/      # Project issues (managed by gitrac itself)
 ```
 
-The architecture is layered: `core` (pure functions, no I/O) -> `fs` (filesystem) -> `git` (git operations) -> `service` (one function per mutation: `createIssue`, `updateIssue`, `addComment`, `editComment`, `deleteComment`, `closeIssue`, `reopenIssue`, `deleteIssue`, `claimIssue`, `unclaimIssue`, `initProject`, `updateLabelColors`, `updateAssignees`, `installMergeDriver`) -> `cli`/`web` (thin adapters: parse input -> call the service -> format output, mapping `GitracError`s to exit codes / HTTP statuses). Each layer only depends on layers below it.
+The architecture is layered: `core` (pure functions, no I/O) -> `fs` (filesystem) -> `git` (git operations) -> `service` (one function per mutation: `createIssue`, `updateIssue`, `addComment`, `editComment`, `deleteComment`, `closeIssue`, `reopenIssue`, `deleteIssue`, `claimIssue`, `unclaimIssue`, `claimNextIssue`, `linkIssue`, `unlinkIssue`, `initProject`, `updateLabelColors`, `updateAssignees`, `installMergeDriver`) -> `cli`/`web` (thin adapters: parse input -> call the service -> format output, mapping `GitracError`s to exit codes / HTTP statuses). Each layer only depends on layers below it.
 
 ## Development
 
@@ -130,6 +133,9 @@ priority: high
 assignee: murrayju
 labels:
   - bug
+parent: 12          # optional: sub-issue of #12
+blockedBy:          # optional: can't start until these are closed
+  - 3
 created: 2026-03-28T12:00:00Z
 createdBy: murrayju
 updated: 2026-03-28T14:30:00Z
@@ -146,8 +152,8 @@ Comment body here. Headings in comments are escaped with `\#`.
 
 ## Working on Issues
 
-1. Run `./gitrac ls` to see open issues
-2. Pick one and claim it: `./gitrac claim <id>`
+1. Run `./gitrac ls` (or `./gitrac ready`) to see open issues
+2. Pick one and claim it: `./gitrac claim <id>` (or `./gitrac next --claim` to take the top ready one)
 3. Implement the fix/feature
 4. Add a comment summarizing what was done: `./gitrac comment <id> "text"` — or use `--comment` flag on close
 5. Close the issue: `./gitrac close <id> --no-commit --comment "summary of changes"` (use `--no-commit` so you can commit the code changes, comment, and close together)

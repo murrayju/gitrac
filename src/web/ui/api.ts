@@ -1,3 +1,4 @@
+import type { IssueDependencies } from '../../core/dependencies.ts';
 import type {
   Assignee,
   Config,
@@ -152,6 +153,13 @@ export async function fetchIssueVersioned(
   id: number,
 ): Promise<Versioned<Issue>> {
   return requestVersioned<Issue>(`/api/issues/${id}`);
+}
+
+/** An issue's parent, sub-issues, blockers and the issues it blocks. */
+export async function fetchIssueDependencies(
+  id: number,
+): Promise<IssueDependencies> {
+  return request<IssueDependencies>(`/api/issues/${id}/dependencies`);
 }
 
 export async function createIssue(input: CreateIssueInput): Promise<Issue> {

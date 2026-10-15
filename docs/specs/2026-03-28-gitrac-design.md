@@ -71,6 +71,9 @@ assignee: murrayju
 labels:
   - bug
   - auth
+parent: 12
+blockedBy:
+  - 3
 created: 2026-03-28T12:00:00Z
 createdBy: murrayju
 updated: 2026-03-28T14:30:00Z
@@ -106,7 +109,7 @@ Found that the timeout defaults to 30s instead of 300s.
 ### Parsing Rules
 
 - YAML frontmatter between first `---` pair -> metadata
-- Frontmatter is parsed with the YAML core schema (no timestamp type), so `created`/`updated` are always strings whether or not they are quoted (`created: 2026-03-28T12:00:00Z` and `created: "2026-03-28T12:00:00Z"` are equivalent). Fields are coerced defensively: `id` to a number (numeric strings accepted), `title`/`assignee`/`createdBy`/`status`/`priority` to strings (missing -> `''`), `labels` to an array of strings (a single scalar becomes a one-element list)
+- Frontmatter is parsed with the YAML core schema (no timestamp type), so `created`/`updated` are always strings whether or not they are quoted (`created: 2026-03-28T12:00:00Z` and `created: "2026-03-28T12:00:00Z"` are equivalent). Fields are coerced defensively: `id` to a number (numeric strings accepted), `title`/`assignee`/`createdBy`/`status`/`priority` to strings (missing -> `''`), `labels` to an array of strings (a single scalar becomes a one-element list). The optional `parent` (an issue ID) and `blockedBy` (issue IDs; a scalar becomes a one-element list, numeric strings are accepted, non-IDs are dropped, sorted and de-duplicated) are only written when set / non-empty, so files without them round-trip unchanged — see [Dependencies](#dependencies)
 - Content after frontmatter, up to the separator -> description (supports full markdown including headings and horizontal rules)
 - The separator is the first `---` line outside a fenced code block whose next non-blank line is a comment header. Any other `---` (or `***`, `___`) is an ordinary horizontal rule and stays in the description. Content after the separator -> comments section, which therefore always starts with a comment header.
 - Each comment starts with `### {author} — {ISO8601 timestamp}` (em dash, U+2014)
@@ -115,6 +118,19 @@ Found that the timeout defaults to 30s instead of 300s.
 - Escaping is reversible: a line that already starts with backslashes gets one more, and the parser removes exactly one.
 - Fenced code blocks may use ```` ``` ```` or `~~~` (3+ characters, optionally indented); a fence closes only with the same character at least as long as the opener. If a description ends inside an unclosed fence and the issue has comments, the serializer closes the fence so it cannot swallow the comments.
 - Cross-references use `#N` syntax (e.g., `#45`)
+
+### Dependencies
+
+Two optional relations, stored only in the dependent issue's frontmatter (one edit to one file per link; the inverses are derived by scanning, so they can't go out of sync):
+
+- `blockedBy: [ids]` — this issue can't start until those are closed. The inverse, "blocks", is derived.
+- `parent: id` — this issue is a sub-issue of that one (inverse: sub-issues). Informational only: it doesn't affect readiness.
+
+**Resolved blockers.** A blocker is resolved when it is closed with either `done` **or** `cancelled`, or no longer exists (deleted). A cancelled blocker will never be done, so treating it as blocking would strand its dependents forever; re-plan them instead (e.g. `unlink`, or cancel them too).
+
+**Validation** (`validateLinks`, `src/core/dependencies.ts`, run by `linkIssue` under the repo lock against every open and closed issue): an issue can't be blocked by itself or be its own parent, every target must exist, a new `blockedBy` edge must not close a cycle (directly or transitively), and a new parent must not make the issue its own ancestor. Violations are `invalid_input` (exit 2 / HTTP 400 `{ error, errors }`) and nothing is written. Unlinking needs no validation (links to deleted issues can be removed). Links that two branches add independently can still form a cycle after a merge; such issues are simply never ready until one link is removed.
+
+**Ready.** An issue is *ready* for a user when it is available to them (`isAvailableTo`, `src/core/ready.ts`: open, and unassigned or assigned to them — issues assigned to someone else are skipped in any status) and none of its blockers is open. `gitrac ready` lists them (default sort: priority, then ID); `gitrac next` picks the first one that isn't already `in_progress` (so several agents sharing one git identity each get a different issue) and `next --claim` claims it with the normal claim rules, choosing and claiming under one hold of the repo lock so concurrent `next --claim`s never get the same issue.
 
 ### Issue ID Scheme
 
@@ -133,7 +149,7 @@ The high-water mark is then bumped. Creating an issue therefore only writes (and
 
 Issues are looked up by ID prefix match on the filename (`{id}-*.md`). Renaming a title changes the slug portion of the filename but the ID prefix remains the canonical identifier. Lookup searches both `.issues/` and `.issues/closed/`.
 
-Every write of an existing issue (edit, comment, comment edit/delete, close, reopen, claim, unclaim) writes it under the filename its current title gives, in the directory its state requires; if that differs from the file it was read from (title edited by hand, older slug rules, moved between `.issues/` and `.issues/closed/`), the old file is renamed onto the new path and both paths are committed, so an issue is always exactly one file.
+Every write of an existing issue (edit, comment, comment edit/delete, close, reopen, claim, unclaim, link, unlink) writes it under the filename its current title gives, in the directory its state requires; if that differs from the file it was read from (title edited by hand, older slug rules, moved between `.issues/` and `.issues/closed/`), the old file is renamed onto the new path and both paths are committed, so an issue is always exactly one file.
 
 If more than one file has the same ID (across both directories), lookup fails with `duplicate_issue` (exit **3**; HTTP **409** `{ error, code: "duplicate_issue", files }`) listing the repo-relative paths, rather than picking one. Nothing is written; merge the copies by hand and delete all but one.
 
@@ -186,6 +202,10 @@ src/
 | `gitrac claim <id>` | | Assign to self + set status to `in_progress`. Exclusive: see [Claiming](#claiming). |
 | `gitrac delete <id>` | `rm` | Delete an issue (open or closed): removes its file plus any `.issues/assets/` files no other issue or draft references, and commits the removal (`issue: delete #N <title>`). See [Deleting](#deleting). |
 | `gitrac unclaim <id>` | `release` | Give an issue back: clear `assignee`, and set `in_progress` back to `todo`. See [Claiming](#claiming). |
+| `gitrac link <id>` | | Add dependencies: `-b, --blocked-by <ids>` (comma-separated, repeatable) adds blockers, `--parent <id>` sets the parent. Exit 2 (nothing written) for a missing target, a self-link or a cycle; re-adding existing links is a no-op (exit 0, no commit). Commit: `issue: link #N <title>`. See [Dependencies](#dependencies). |
+| `gitrac unlink <id>` | | Remove dependencies: `-b, --blocked-by <ids>`, `--parent` (clears it). Removing links that aren't there is a no-op. |
+| `gitrac ready` | | List ready issues (see [Dependencies](#dependencies)): open, unassigned or yours, no open blockers; sorted by priority, then ID. Filters `--status` (open statuses; default all of them), `--priority`, `--label`, `--mine`, `--search`, `--sort` as in [List Filters](#list-filters). |
+| `gitrac next` | | Show the top ready issue that isn't already `in_progress`; `--claim` claims it atomically (`-c` adds a comment). Same filters as `ready`. Exit **5** (`no_ready_issues`) if there is none. |
 | `gitrac install-merge-driver` | | Install the git merge driver: write `.issues/.gitattributes` (committed if changed) and `merge.gitrac.*` in the local git config. `--command <cmd>` sets what git runs. Idempotent; run once per clone. See [Conflict Resolution](#conflict-resolution). |
 | `gitrac merge-driver <base> <ours> <theirs> [path]` | | The merge driver itself (run by git as `%O %A %B %P`, `--marker-size %L`). Writes the result to `<ours>`; exits 0 if clean, 1 if conflicts remain. |
 
@@ -204,7 +224,7 @@ src/
 
 **Project root resolution:** every command (including `serve` / bare `gitrac`) resolves the project root once, via `git rev-parse --show-toplevel` starting from `--dir` (or the cwd), so gitrac works from any subdirectory of the repo. `.issues/` always lives at that root. Outside a git repo, commands exit 8 (`not_a_git_repo`) with `Error: Not inside a git repository`; if `.issues/config.yaml` is missing, every command except `init` exits 8 (`not_initialized`) with a message to run `gitrac init`.
 
-Global flags may appear before or after the subcommand (`gitrac --no-commit close 1` and `gitrac close 1 --no-commit` are equivalent). `--no-commit` applies to every mutating command (`init`, `create`, `edit`, `comment`, `close`, `reopen`, `claim`, `unclaim`, `delete`) and also suppresses push. If both `--push` and `--no-push` are given, the last one wins.
+Global flags may appear before or after the subcommand (`gitrac --no-commit close 1` and `gitrac close 1 --no-commit` are equivalent). `--no-commit` applies to every mutating command (`init`, `create`, `edit`, `comment`, `close`, `reopen`, `claim`, `unclaim`, `next --claim`, `link`, `unlink`, `delete`) and also suppresses push. If both `--push` and `--no-push` are given, the last one wins.
 
 Because global flags are matched anywhere on the command line, they must not define short flags that subcommands also use. In particular `-p` belongs to the subcommands (`create -p high`, `edit -p high`, `serve -p 4000`); the global port option is long-only (`--port`).
 
@@ -251,7 +271,7 @@ Errors always go to **stderr**; stdout carries only the command's result (so wit
 | 2 | `invalid_input`, `usage`, `confirmation_required` | Bad issue ID, field value, text input, flag, or missing argument; or `delete` without confirmation (no `--yes` and no terminal, or the prompt was declined); nothing written |
 | 3 | `already_claimed`, `already_initialized`, `invalid_state`, `duplicate_issue` | Conflicts with current state: claimed by someone else (`claim`/`unclaim`), `init` on an initialized repo, `close` of a closed issue, `reopen` of an open issue, several files for one issue ID (`files` lists them) |
 | 4 | `issue_closed` | `claim`/`unclaim` on a closed issue |
-| 5 | `not_found` | The issue doesn't exist |
+| 5 | `not_found`, `no_ready_issues` | The issue doesn't exist; `next` found no ready issue |
 | 6 | `lock_timeout` | Timed out waiting for the repo lock (safe to retry) |
 | 7 | `git_error` | A git command (commit, push) failed. The issue file may already be written (and its result printed) |
 | 8 | `not_a_git_repo`, `not_initialized` | Not inside a git work tree, or `gitrac init` hasn't been run |
@@ -384,7 +404,7 @@ Issue files have predictable structure, enabling smarter-than-default merge. git
 
 **Issue files** (`.issues/**/*.md`, `mergeIssueFiles` in `src/git/conflict.ts`):
 
-1. **Frontmatter:** per field. A field changed on one side takes that change; a field both sides changed differently goes to the side whose `updated` is later (ties: ours) — per-field last-writer-wins, not whole-block replacement. `labels` merges as a set (additions and removals from both sides). `updated` is the later of the two.
+1. **Frontmatter:** per field. A field changed on one side takes that change; a field both sides changed differently goes to the side whose `updated` is later (ties: ours) — per-field last-writer-wins, not whole-block replacement. `labels` and `blockedBy` merge as sets (additions and removals from both sides); `parent` is an ordinary field. `updated` is the later of the two.
 2. **Description:** unchanged on a side → the other side's; changed on both → line-based three-way merge (`git merge-file`). If that conflicts, the file is still written with merged frontmatter and comments, the conflict markers are left inside the description, and the driver exits 1 so git reports the conflict for manual resolution.
 3. **Comments:** keyed by author + timestamp. Additions from both sides are kept; a comment deleted on one side stays deleted unless the other side edited it; an edit on one side wins (both: ours). Sorted by timestamp.
 
@@ -437,6 +457,9 @@ The server has no authentication, so exposure is limited instead (`src/web/secur
 | POST | `/api/issues/:id/comments` | Add comment (`body`; optional `author`) |
 | PUT | `/api/issues/:id/comments/:index` | Edit comment |
 | DELETE | `/api/issues/:id/comments/:index` | Delete comment |
+| GET | `/api/issues/:id/dependencies` | `{ parent, children, blockedBy, blocks, blocked }`: the linked issues as `{ id, title, status, resolved }` (`status: null`, `resolved: true` for a missing issue); `blocks`/`children` are derived. The issue itself (`GET /api/issues/:id`) carries `parent` / `blockedBy` when set |
+| POST | `/api/issues/:id/link` | `{ blockedBy?: id \| id[], parent?: id }`: add blockers / set the parent. **400** `{ error, errors }` for a missing target, a self-link or a cycle. Honors `If-Match` |
+| POST | `/api/issues/:id/unlink` | `{ blockedBy?: id \| id[], parent?: true }`: remove blockers / clear the parent. Honors `If-Match` |
 | PATCH | `/api/issues/:id/close` | Close issue (status `done`). **409** `{ error, code: "invalid_state", current }` if already closed |
 | PATCH | `/api/issues/:id/reopen` | Reopen issue with `defaultStatus` (optional body `{ status }`: a non-closed status, else 400). **409** `invalid_state` if already open |
 | GET | `/api/config` | Get project config |
@@ -453,7 +476,7 @@ The server has no authentication, so exposure is limited instead (`src/web/secur
 
 **List View:** Sortable/filterable table with columns: ID, Title, Status, Priority, Assignee, Labels, Updated. Colored status/priority badges. Click row to open detail view. Inline status/assignee quick-edit.
 
-**Detail View:** Tiptap WYSIWYG editor for description (auto-save on change; external changes are loaded into the editor or flagged as a conflict — see "Concurrency"). Inline metadata editing (dropdowns for status, priority, assignee, labels). Comments rendered below with author/timestamp. Tiptap "add comment" editor at bottom. "Delete issue" at the bottom of the sidebar asks for confirmation, deletes with `If-Match` (a 409 shows the latest version instead), then returns to the list. All changes trigger commit (with amend-until-pushed logic).
+**Detail View:** Tiptap WYSIWYG editor for description (auto-save on change; external changes are loaded into the editor or flagged as a conflict — see "Concurrency"). Inline metadata editing (dropdowns for status, priority, assignee, labels). Below the metadata, a read-only dependencies panel lists the parent, sub-issues, blockers and the issues this one blocks (linked, with status; closed/missing ones struck through; refreshed on every change); links are edited with `gitrac link` / `unlink` or the API. Comments rendered below with author/timestamp. Tiptap "add comment" editor at bottom. "Delete issue" at the bottom of the sidebar asks for confirmation, deletes with `If-Match` (a 409 shows the latest version instead), then returns to the list. All changes trigger commit (with amend-until-pushed logic).
 
 **Visual Style:** Dark theme by default (with light theme option). Status colors: backlog=gray, todo=blue, in_progress=yellow, done=green, cancelled=red. Clean sans-serif typography, minimal chrome.
 

@@ -6,6 +6,7 @@ import { useIssue } from '../hooks.ts';
 import { relativeTime } from '../lib/time.ts';
 import { CommentEditor } from './CommentEditor.tsx';
 import { CommentList } from './CommentList.tsx';
+import { DependenciesPanel } from './DependenciesPanel.tsx';
 import { DescriptionEditor } from './DescriptionEditor.tsx';
 import { MetadataPanel } from './MetadataPanel.tsx';
 
@@ -160,6 +161,7 @@ export function IssueDetail() {
         {/* Metadata sidebar */}
         <div className="w-56 shrink-0">
           <MetadataPanel issue={issue} />
+          <DependenciesPanel issueId={issue.id} />
           <div className="mt-8 pt-4 border-t border-gray-200 dark:border-gray-800">
             <button
               type="button"

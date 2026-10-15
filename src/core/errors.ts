@@ -26,7 +26,10 @@ export const EXIT_CONFLICT = 3;
 export const EXIT_ALREADY_CLAIMED = EXIT_CONFLICT;
 /** `claim` / `unclaim` on a closed (`done` / `cancelled`) issue. */
 export const EXIT_ISSUE_CLOSED = 4;
-/** The issue (or other named thing) does not exist. */
+/**
+ * The issue (or other named thing) does not exist; also `next` when no issue
+ * is ready (`no_ready_issues`).
+ */
 export const EXIT_NOT_FOUND = 5;
 /** Timed out waiting for the repo-wide gitrac lock (safe to retry). */
 export const EXIT_LOCK_TIMEOUT = 6;
@@ -50,6 +53,7 @@ export const ERROR_EXIT_CODES = {
   duplicate_issue: EXIT_CONFLICT,
   issue_closed: EXIT_ISSUE_CLOSED,
   not_found: EXIT_NOT_FOUND,
+  no_ready_issues: EXIT_NOT_FOUND,
   lock_timeout: EXIT_LOCK_TIMEOUT,
   git_error: EXIT_GIT,
   not_a_git_repo: EXIT_NOT_A_PROJECT,

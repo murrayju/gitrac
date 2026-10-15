@@ -20,6 +20,17 @@ export interface Issue {
   priority: Priority;
   assignee: string; // empty string if unassigned
   labels: string[]; // empty array if none
+  /**
+   * The parent issue's ID (sub-issue of). Absent = no parent; only present
+   * in the file when set.
+   */
+  parent?: number;
+  /**
+   * IDs of the issues this one is blocked by (ascending, no duplicates). The
+   * inverse ("blocks") is derived, never stored. Absent or empty = not
+   * blocked; only present in the file when non-empty.
+   */
+  blockedBy?: number[];
   created: string; // ISO 8601
   createdBy: string;
   updated: string; // ISO 8601
@@ -34,6 +45,8 @@ export interface IssueFrontmatter {
   priority: Priority;
   assignee: string; // empty string if unassigned
   labels: string[]; // empty array if none
+  parent?: number;
+  blockedBy?: number[];
   created: string;
   createdBy: string;
   updated: string;

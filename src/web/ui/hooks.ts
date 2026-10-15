@@ -5,12 +5,14 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
+import type { IssueDependencies } from '../../core/dependencies.ts';
 import type { Config, Issue } from '../../core/types.ts';
 import type { Draft, GitStatus, IssueFilters } from './api.ts';
 import {
   fetchConfig,
   fetchDrafts,
   fetchGitStatus,
+  fetchIssueDependencies,
   fetchIssues,
   fetchIssueVersioned,
 } from './api.ts';
@@ -110,6 +112,40 @@ export function useIssue(id: number): {
   useSSE(refetch);
 
   return { ...state, loading, error, refetch, applyIssue };
+}
+
+/**
+ * An issue's resolved links (parent, sub-issues, blocked by, blocks),
+ * refetched on every change — linked issues can change status or title
+ * without this issue changing.
+ */
+export function useIssueDependencies(id: number): {
+  dependencies: IssueDependencies | null;
+} {
+  const [dependencies, setDependencies] = useState<IssueDependencies | null>(
+    null,
+  );
+  const seqRef = useRef(0);
+
+  const refetch = useCallback(() => {
+    const seq = ++seqRef.current;
+    fetchIssueDependencies(id)
+      .then((data) => {
+        if (seq === seqRef.current) setDependencies(data);
+      })
+      .catch(() => {
+        // Shown as "no links"; the issue view reports load errors.
+      });
+  }, [id]);
+
+  useEffect(() => {
+    setDependencies(null);
+    refetch();
+  }, [refetch]);
+
+  useSSE(refetch);
+
+  return { dependencies };
 }
 
 // Config is shared by every component (each list row reads label colors), so

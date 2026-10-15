@@ -59,6 +59,10 @@ When installed as a binary, replace `./bun index.ts` with `gitrac` in all exampl
 | `gitrac show <id>` | View issue details |
 | `gitrac create -t "title"` | Create an issue |
 | `gitrac claim <id>` | Assign to yourself + set in_progress (fails if someone else has it) |
+| `gitrac ready` | Issues you can start now: open, unassigned or yours, no open blockers; by priority, then ID (`-o json`; filters `--status`, `--priority`, `--label`, `--mine`, `--search`, `--sort`) |
+| `gitrac next --claim` | Pick the top ready issue that isn't already in progress and claim it, atomically (exit 5 `no_ready_issues` if none). Without `--claim` it just shows it |
+| `gitrac link <id> --blocked-by 3,4` | `<id>` can't start until #3 and #4 are closed (`--parent <n>` makes it a sub-issue of #n). Rejects self-links, missing issues and cycles (exit 2) |
+| `gitrac unlink <id> --blocked-by 3` | Remove a blocker (`--parent` clears the parent) |
 | `gitrac unclaim <id>` | Give an issue back (alias `release`) |
 | `gitrac close <id>` | Close an issue (moves to closed/) |
 | `gitrac close <id> --no-commit` | Close without committing (for atomic commits) |
@@ -81,10 +85,13 @@ When installed as a binary, replace `./bun index.ts` with `gitrac` in all exampl
 ### 1. Find work
 
 ```bash
-gitrac ls
+gitrac ls        # everything open
+gitrac ready     # only what you can start now (unblocked, not someone else's)
 ```
 
-Review the open issues. Pick one that matches the task at hand.
+Review the open issues. Pick one that matches the task at hand. To just take the most important unblocked issue, `gitrac next --claim` picks and claims it in one step (under the repo lock, so parallel agents never get the same one) — then skip step 2.
+
+**Dependencies.** `blockedBy` lists issues that must be closed first; `ready`/`next` skip an issue while any blocker is open. A blocker counts as resolved when it is `done` **or** `cancelled` (or deleted). `parent` is informational (sub-issues), it doesn't block. `gitrac show <id>` lists the parent, sub-issues, blockers and the issues it blocks. When you discover that an issue depends on another, record it: `gitrac link <id> --blocked-by <other>`.
 
 ### 2. Claim it
 
@@ -146,7 +153,7 @@ gitrac show <id>       # should show status: done, in .issues/closed/
 
 ## Merging Branches
 
-With the gitrac merge driver installed (`gitrac init` installs it; in an existing clone run `gitrac install-merge-driver` once — the git config part isn't versioned), git merges issue files field by field instead of line by line: comments from both branches are kept, a field changed on one side wins, a field changed on both goes to the side updated last, labels merge as a set, and `config.yaml` labels/assignees are unioned. A rename (title change) or close on one branch plus edits on the other merges into the renamed file. Only these need you:
+With the gitrac merge driver installed (`gitrac init` installs it; in an existing clone run `gitrac install-merge-driver` once — the git config part isn't versioned), git merges issue files field by field instead of line by line: comments from both branches are kept, a field changed on one side wins, a field changed on both goes to the side updated last, labels and `blockedBy` merge as sets, and `config.yaml` labels/assignees are unioned. A rename (title change) or close on one branch plus edits on the other merges into the renamed file. Only these need you:
 
 - **Both branches edited the same lines of a description:** the merge stops with conflict markers inside the description (frontmatter and comments are already merged). Edit them out, `git add`, continue.
 - **Both branches changed the title:** git reports a rename/rename conflict and leaves two files with the same merged content. Keep the one matching the title, `git rm` the other.
@@ -162,7 +169,7 @@ Issues are plain markdown. You can read them without the CLI:
 .issues/closed/<id>-<slug>.md  # closed issues
 ```
 
-Format: YAML frontmatter (id, title, status, priority, assignee, labels, dates) followed by a markdown description, then optionally a `---` separator and comments. Each comment starts with `### author — timestamp`. Only a `---` immediately followed (after blank lines) by a comment header is the separator; other horizontal rules in the description are preserved.
+Format: YAML frontmatter (id, title, status, priority, assignee, labels, optional `parent` / `blockedBy`, dates) followed by a markdown description, then optionally a `---` separator and comments. Each comment starts with `### author — timestamp`. Only a `---` immediately followed (after blank lines) by a comment header is the separator; other horizontal rules in the description are preserved.
 
 When reading comment bodies, headings are escaped (`\## Heading` means `## Heading`). A comment-header-like line right after a `---` in a description is likewise escaped (`\### a — b`).
 
@@ -175,6 +182,8 @@ gitrac ls -o json                    # all open issues as JSON array
 gitrac show <id> -o json             # single issue as JSON
 gitrac ls -o json --status all       # include closed issues
 gitrac ls -o json --mine --status todo,in_progress  # my active work
+gitrac ready -o json                 # what can be started now
+gitrac next --claim -o json          # claim the top ready issue (exit 5 if none)
 ```
 
 This is useful for programmatic decision-making about which issue to work on.
@@ -196,7 +205,7 @@ stdout only ever holds the result. Errors and warnings (e.g. "not on the default
 | 2 | `invalid_input`, `usage`, `confirmation_required` | Bad ID / field value / flag / missing argument, or `delete` without `--yes` (stdin not a terminal) — nothing was written |
 | 3 | `already_claimed`, `already_initialized`, `invalid_state`, `duplicate_issue` | Conflict: claimed by someone else, already initialized, closing a closed / reopening an open issue, or several files on disk for one issue ID (`files` lists them — merge them by hand and delete all but one, or renumber one if they are different issues) |
 | 4 | `issue_closed` | `claim`/`unclaim` on a closed issue |
-| 5 | `not_found` | No such issue |
+| 5 | `not_found`, `no_ready_issues` | No such issue; `next` found no ready issue |
 | 6 | `lock_timeout` | Another gitrac process held the repo lock too long — retry |
 | 7 | `git_error` | git commit/push failed (the issue file may already be changed — check `git status`) |
 | 8 | `not_a_git_repo`, `not_initialized` | Not in a git repo, or run `gitrac init` |

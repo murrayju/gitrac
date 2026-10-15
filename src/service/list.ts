@@ -63,3 +63,20 @@ export async function listIssues(
     unreadable,
   };
 }
+
+/**
+ * Every issue, open and closed (read-only; no lock unless the caller holds
+ * it). Unreadable files are skipped and reported.
+ */
+export async function loadAllIssues(dir: string): Promise<IssueListing> {
+  const unreadable: string[] = [];
+  const [openFiles, closedFiles] = await Promise.all([
+    listIssueFiles(dir),
+    listClosedIssueFiles(dir),
+  ]);
+  const [open, closed] = await Promise.all([
+    loadDir(dir, [], openFiles, unreadable),
+    loadDir(dir, ['closed'], closedFiles, unreadable),
+  ]);
+  return { issues: [...open, ...closed], unreadable };
+}

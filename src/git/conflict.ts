@@ -4,7 +4,7 @@ import {
   serializeConfig,
   validateConfig,
 } from '../core/config.ts';
-import { parseIssue, serializeIssue } from '../core/issue.ts';
+import { dependencyFields, parseIssue, serializeIssue } from '../core/issue.ts';
 import type {
   Assignee,
   Comment,
@@ -80,16 +80,16 @@ function compareTimestamps(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-/** Three-way merge of a set of strings: additions and removals from both sides. */
-function mergeStringSet(
-  base: string[] | null,
-  ours: string[],
-  theirs: string[],
-): string[] {
+/** Three-way merge of a set (labels, blockedBy): additions and removals from both sides. */
+function mergeSet<T extends string | number>(
+  base: T[] | null,
+  ours: T[],
+  theirs: T[],
+): T[] {
   const baseSet = new Set(base ?? []);
   const oursSet = new Set(ours);
   const theirsSet = new Set(theirs);
-  const result: string[] = [];
+  const result: T[] = [];
   for (const item of [...ours, ...theirs]) {
     if (result.includes(item)) continue;
     // Removed by a side that had it in base: drop it.
@@ -108,8 +108,9 @@ function mergeStringSet(
  * - A field both sides changed differently takes the value of the side that
  *   was updated last (`updated`; ties and unparsable dates: ours) — per-field
  *   last-writer-wins.
- * - `labels` is merged as a set: labels added on either side are kept,
- *   labels removed on either side are dropped.
+ * - `labels` and `blockedBy` are merged as sets: items added on either side
+ *   are kept, items removed on either side are dropped. `parent` is an
+ *   ordinary field.
  * - `updated` is the later of the two.
  *
  * `base` is null when both sides added the file independently.
@@ -133,7 +134,16 @@ export function mergeIssueFrontmatter(
     status: field('status'),
     priority: field('priority'),
     assignee: field('assignee'),
-    labels: mergeStringSet(base?.labels ?? null, ours.labels, theirs.labels),
+    labels: mergeSet(base?.labels ?? null, ours.labels, theirs.labels),
+    // Only present when set, like in parsed issues (so it round-trips).
+    ...dependencyFields({
+      parent: field('parent'),
+      blockedBy: mergeSet(
+        base ? (base.blockedBy ?? []) : null,
+        ours.blockedBy ?? [],
+        theirs.blockedBy ?? [],
+      ),
+    }),
     created: field('created'),
     createdBy: field('createdBy'),
     updated: newer === 'theirs' ? theirs.updated : ours.updated,
@@ -222,6 +232,7 @@ function frontmatterOf(issue: Issue): IssueFrontmatter {
     priority: issue.priority,
     assignee: issue.assignee,
     labels: issue.labels,
+    ...dependencyFields(issue),
     created: issue.created,
     createdBy: issue.createdBy,
     updated: issue.updated,

@@ -1,7 +1,9 @@
 import type { Command } from 'commander';
+import { describeDependencies, indexIssues } from '../../core/dependencies.ts';
 import { parseIssueIdArg } from '../../core/errors.ts';
 import { readConfig, readIssue } from '../../fs/issue-store.ts';
 import { getBranchWarning } from '../../git/status.ts';
+import { loadAllIssues } from '../../service/list.ts';
 import { resolveProjectOptions } from '../global-options.ts';
 import { formatIssueDetail } from '../output.ts';
 
@@ -24,6 +26,14 @@ export function registerShowCommand(program: Command): void {
       }
 
       const issue = await readIssue(dir, id);
-      console.log(formatIssueDetail(issue, globalOpts.output));
+      // The human view lists linked issues (and the derived "blocks" /
+      // sub-issues), which needs every issue; json/yaml are the issue only.
+      let deps: ReturnType<typeof describeDependencies> | undefined;
+      if (globalOpts.output === 'human') {
+        const byId = indexIssues((await loadAllIssues(dir)).issues);
+        byId.set(issue.id, issue);
+        deps = describeDependencies(issue, byId);
+      }
+      console.log(formatIssueDetail(issue, globalOpts.output, deps));
     });
 }
