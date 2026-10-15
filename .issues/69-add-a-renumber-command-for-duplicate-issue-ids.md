@@ -1,14 +1,14 @@
 ---
 id: 69
 title: Add a renumber command for duplicate issue IDs
-status: todo
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - feature
 created: '2026-10-15T13:15:04.607Z'
 createdBy: Justin Murray
-updated: '2026-10-15T13:15:04.607Z'
+updated: '2026-10-15T13:15:18.780Z'
 ---
 
 Two separate clones that create issues without fetching each other can still allocate the same ID (#54 limitation). After merging, gitrac reports `duplicate_issue` (#63) and the fix is manual.
