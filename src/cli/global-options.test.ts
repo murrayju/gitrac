@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Command } from 'commander';
 import simpleGit from 'simple-git';
+import { EXIT_INVALID_INPUT, GitracError } from '../core/errors.ts';
 import { readConfig, readIssue, writeConfig } from '../fs/issue-store.ts';
 import { resolveServeOptions } from './commands/serve.ts';
 import { getGlobalOptions } from './global-options.ts';
@@ -196,6 +197,50 @@ describe('serve / bare gitrac port resolution', () => {
     expect(resolve(['--author', 'Bot', 'serve']).author).toBe('Bot');
     expect(resolve([]).author).toBe('');
   });
+
+  test('accepts the full port range 0-65535', () => {
+    expect(resolve(['serve', '-p', '0']).port).toBe(0);
+    expect(resolve(['serve', '-p', '65535']).port).toBe(65535);
+    expect(resolve(['--port', '65535']).port).toBe(65535);
+  });
+
+  // #85: invalid ports echo the original input as an invalid_input error.
+  const badPorts = [
+    'abc',
+    '99999',
+    '65536',
+    '-1',
+    '4000abc',
+    '40.5',
+    '0x10',
+    '',
+    ' 80',
+  ];
+  for (const bad of badPorts) {
+    for (const args of [
+      ['serve', `--port=${bad}`],
+      ['serve', `-p${bad}`],
+      [`--port=${bad}`],
+    ]) {
+      if (args[1] === '-p' && bad === '') continue;
+      test(`rejects ${JSON.stringify(args)}`, () => {
+        let error: unknown;
+        try {
+          resolve(args);
+        } catch (err) {
+          error = err;
+        }
+        expect(error).toBeInstanceOf(GitracError);
+        const e = error as GitracError;
+        expect(e.code).toBe('invalid_input');
+        expect(e.exitCode).toBe(EXIT_INVALID_INPUT);
+        expect(e.message).toBe(
+          `Invalid port "${bad}": must be an integer from 0 to 65535.`,
+        );
+        expect(e.message).not.toContain('NaN');
+      });
+    }
+  }
 });
 
 // --- End-to-end: run real commands through Commander in a scratch repo ---

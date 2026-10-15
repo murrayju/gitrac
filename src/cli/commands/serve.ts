@@ -21,6 +21,10 @@ export interface ServeOptions {
  * Commander consumes it at the program level even when written after `serve`.
  * The subcommand's value wins when both are present. `--host` works the same
  * way (long-only at both levels).
+ *
+ * The port is validated here from the raw option string (not
+ * `GlobalOptions.port`, which is already `parseInt`ed and can't tell `abc`
+ * from `NaN`), so the error echoes what the user typed (#85).
  */
 export function resolveServeOptions(
   program: Command,
@@ -28,23 +32,40 @@ export function resolveServeOptions(
 ): ServeOptions {
   const globalOpts = getGlobalOptions(program);
   const local = serveCommand?.opts<{ port?: string; host?: string }>() ?? {};
+  const globalPort = program.opts<{ port?: string }>().port;
   return {
     dir: globalOpts.dir,
-    port: local.port !== undefined ? parsePort(local.port) : globalOpts.port,
+    port: parsePort(local.port ?? globalPort ?? String(DEFAULT_PORT)),
     host: local.host ?? globalOpts.host,
     author: globalOpts.author,
   };
 }
 
-function parsePort(value: string): number {
-  return Number.parseInt(value, 10);
+const DEFAULT_PORT = 3000;
+const MAX_PORT = 65535;
+
+function invalidPort(value: string | number) {
+  return invalidInput(
+    `Invalid port "${value}": must be an integer from 0 to ${MAX_PORT}.`,
+  );
+}
+
+/**
+ * Parse a `--port` / `-p` value strictly: only plain decimal digits in
+ * 0-65535 are accepted (no `4000abc`, `40.5`, `-1`, `0x10`, or blanks).
+ * Throws an `invalid_input` error (exit 2) that echoes the original input.
+ */
+export function parsePort(value: string): number {
+  const port = /^\d+$/.test(value) ? Number(value) : Number.NaN;
+  if (!Number.isInteger(port) || port > MAX_PORT) throw invalidPort(value);
+  return port;
 }
 
 /** Start the web server, throwing a `GitracError` on failure. */
 export async function runServe(options: ServeOptions): Promise<void> {
   const { port, host } = options;
-  if (!Number.isInteger(port) || port < 0 || port > 65535) {
-    throw invalidInput(`Invalid port "${port}".`);
+  if (!Number.isInteger(port) || port < 0 || port > MAX_PORT) {
+    throw invalidPort(port);
   }
   const dir = await resolveProjectRoot(options.dir);
   const config = await readConfig(dir);

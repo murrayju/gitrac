@@ -230,7 +230,7 @@ src/
 | Command | Aliases | Description |
 |---------|---------|------------|
 | `gitrac` | | Start web UI (default; alias for `gitrac serve`). Accepts `--port <port>` and `--host <host>`. |
-| `gitrac serve` | | Start web UI. `-p, --port <port>` (default: 3000), `--host <host>` (default: `127.0.0.1`). |
+| `gitrac serve` | | Start web UI. `-p, --port <port>` (default: 3000), `--host <host>` (default: `127.0.0.1`). The port must be a plain integer from 0 to 65535; anything else (`abc`, `99999`, `4000abc`) is an `invalid_input` error (exit 2) that echoes the value given, checked before anything else. |
 | `gitrac init` | | Initialize `.issues/` in current repo (`config.yaml`, plus `.gitignore` ignoring web UI `drafts/`) and install the merge driver (see [Conflict Resolution](#conflict-resolution)); commits all three. Sets `git.defaultBranch` to the repo's default branch: the branch `origin/HEAD` points at, else the current (possibly unborn) branch, else git's `init.defaultBranch`, else `main`. Errors if already exists (use `--force` to reinitialize). Errors if not in a git repo. |
 | `gitrac create` | `new`, `add` | Create a new issue (interactive or via flags); one created with a closed status (`-s done`, or `POST /api/issues`) is written straight into `.issues/closed/` |
 | `gitrac list` | `ls` | List issues with filters (`--status`, `--priority`, `--label`, `--assignee`, `--mine`, `--search`, `--sort`; see [List Filters](#list-filters)). Default: open issues, sorted by ID ascending. |
