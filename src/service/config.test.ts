@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import simpleGit from 'simple-git';
 import type { GitracError } from '../core/errors.ts';
 import { readConfig } from '../fs/issue-store.ts';
 import { initProject, updateAssignees, updateLabelColors } from './config.ts';
@@ -50,6 +51,16 @@ describe('initProject', () => {
       issueId: null,
       message: 'issue: initialize issue tracker',
     });
+  });
+
+  test("writes the repo's detected default branch (#83)", async () => {
+    await rm(join(fx.dir, '.issues'), { recursive: true });
+    const git = simpleGit(fx.dir);
+    await git.init();
+    await git.raw(['symbolic-ref', 'HEAD', 'refs/heads/master']);
+    const result = await initProject(fx.context());
+    expect(result.config.git.defaultBranch).toBe('master');
+    expect((await readConfig(fx.dir)).git.defaultBranch).toBe('master');
   });
 
   test('an initialized repo is already_initialized unless forced', async () => {

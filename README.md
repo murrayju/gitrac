@@ -182,7 +182,7 @@ Root cause: `getSessionTimeout()` reads a renamed env var.
   - files the driver can't parse (it falls back to git's normal merge).
 
   If both sides retitle an issue, git keeps two files, which gitrac then reports as a duplicate.
-- **Branch warning.** If you're not on `git.defaultBranch` (default `main`; edit it in `config.yaml` if your repo uses another name), `ls` / `show` / `ready` / `next` warn on stderr and the web UI shows a banner.
+- **Branch warning.** If you're not on `git.defaultBranch` (`init` detects it: `origin/HEAD`, else the current branch, else git's `init.defaultBranch`, else `main`; edit it in `config.yaml` to change it), `ls` / `show` / `ready` / `next` warn on stderr and the web UI shows a banner.
 
 ### Architecture
 

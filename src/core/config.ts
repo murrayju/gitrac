@@ -113,10 +113,39 @@ export function ensureLabelColors(
   return result;
 }
 
+/** The `git.defaultBranch` used when nothing better is known. */
+export const FALLBACK_DEFAULT_BRANCH = DEFAULT_GIT.defaultBranch;
+
+/** What git says about a repo's branches, for {@link chooseDefaultBranch}. */
+export interface BranchHints {
+  /** The branch `refs/remotes/origin/HEAD` points at (without `origin/`). */
+  originHead?: string | null;
+  /** The checked-out (possibly unborn) branch; absent when HEAD is detached. */
+  current?: string | null;
+  /** `init.defaultBranch` from git config. */
+  initDefault?: string | null;
+}
+
 /**
- * Create a default Config with sensible defaults.
+ * Pick the default branch for a new config: `origin/HEAD` if set, else the
+ * current branch, else `init.defaultBranch`, else `main`. Blank hints are
+ * ignored.
  */
-export function createDefaultConfig(): Config {
+export function chooseDefaultBranch(hints: BranchHints): string {
+  for (const hint of [hints.originHead, hints.current, hints.initDefault]) {
+    const name = hint?.trim();
+    if (name) return name;
+  }
+  return FALLBACK_DEFAULT_BRANCH;
+}
+
+/**
+ * Create a default Config with sensible defaults (`defaultBranch` overrides
+ * `git.defaultBranch`, which is otherwise `main`).
+ */
+export function createDefaultConfig(
+  options: { defaultBranch?: string } = {},
+): Config {
   const defaultLabelNames = ['bug', 'feature', 'enhancement', 'docs', 'chore'];
   return {
     version: 1,
@@ -126,7 +155,12 @@ export function createDefaultConfig(): Config {
     priorities: defaultPriorityDefinitions(),
     defaultStatus: DEFAULT_STATUS,
     defaultPriority: DEFAULT_PRIORITY,
-    git: { ...DEFAULT_GIT },
+    git: {
+      ...DEFAULT_GIT,
+      ...(options.defaultBranch
+        ? { defaultBranch: options.defaultBranch }
+        : {}),
+    },
   };
 }
 

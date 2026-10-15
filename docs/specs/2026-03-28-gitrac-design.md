@@ -230,7 +230,7 @@ src/
 |---------|---------|------------|
 | `gitrac` | | Start web UI (default; alias for `gitrac serve`). Accepts `--port <port>` and `--host <host>`. |
 | `gitrac serve` | | Start web UI. `-p, --port <port>` (default: 3000), `--host <host>` (default: `127.0.0.1`). |
-| `gitrac init` | | Initialize `.issues/` in current repo (`config.yaml`, plus `.gitignore` ignoring web UI `drafts/`) and install the merge driver (see [Conflict Resolution](#conflict-resolution)); commits all three. Errors if already exists (use `--force` to reinitialize). Errors if not in a git repo. |
+| `gitrac init` | | Initialize `.issues/` in current repo (`config.yaml`, plus `.gitignore` ignoring web UI `drafts/`) and install the merge driver (see [Conflict Resolution](#conflict-resolution)); commits all three. Sets `git.defaultBranch` to the repo's default branch: the branch `origin/HEAD` points at, else the current (possibly unborn) branch, else git's `init.defaultBranch`, else `main`. Errors if already exists (use `--force` to reinitialize). Errors if not in a git repo. |
 | `gitrac create` | `new`, `add` | Create a new issue (interactive or via flags); one created with a closed status (`-s done`, or `POST /api/issues`) is written straight into `.issues/closed/` |
 | `gitrac list` | `ls` | List issues with filters (`--status`, `--priority`, `--label`, `--assignee`, `--mine`, `--search`, `--sort`; see [List Filters](#list-filters)). Default: open issues, sorted by ID ascending. |
 | `gitrac show <id>` | `view` | Show full issue detail |
@@ -490,7 +490,7 @@ Issue files have predictable structure, enabling smarter-than-default merge. git
 
 ### Branch Warning
 
-When current branch != `config.git.defaultBranch`, display prominent warning in CLI output and persistent yellow banner in web UI.
+When current branch != `config.git.defaultBranch` (detected by `init`, see the command table), display prominent warning in CLI output and persistent yellow banner in web UI.
 
 ---
 

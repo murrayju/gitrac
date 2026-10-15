@@ -6,6 +6,7 @@ import simpleGit from 'simple-git';
 import { createDefaultConfig } from '../core/config.ts';
 import type { Config } from '../core/types.ts';
 import {
+  detectDefaultBranch,
   getBranchWarning,
   getCurrentBranch,
   getDefaultBranch,
@@ -162,6 +163,65 @@ describe('getGitRoot', () => {
     const nonGitDir = await mkdtemp(join(tmpdir(), 'gitrac-no-git-'));
     try {
       expect(getGitRoot(nonGitDir)).rejects.toThrow();
+    } finally {
+      await rm(nonGitDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('detectDefaultBranch', () => {
+  async function commitOnce(): Promise<void> {
+    const git = simpleGit(dir);
+    await Bun.write(join(dir, 'README.md'), 'hello');
+    await git.add('.');
+    await git.commit('initial');
+  }
+
+  test('uses the branch origin/HEAD points at', async () => {
+    const git = simpleGit(dir);
+    await git.raw(['symbolic-ref', 'HEAD', 'refs/heads/feature']);
+    await commitOnce();
+    await git.raw(['update-ref', 'refs/remotes/origin/develop', 'HEAD']);
+    await git.raw([
+      'symbolic-ref',
+      'refs/remotes/origin/HEAD',
+      'refs/remotes/origin/develop',
+    ]);
+    await git.addConfig('init.defaultBranch', 'trunk');
+    expect(await detectDefaultBranch(dir)).toBe('develop');
+  });
+
+  test('else the current branch (even unborn)', async () => {
+    const git = simpleGit(dir);
+    await git.addConfig('init.defaultBranch', 'trunk');
+    await git.raw(['symbolic-ref', 'HEAD', 'refs/heads/master']);
+    expect(await detectDefaultBranch(dir)).toBe('master');
+    await commitOnce();
+    expect(await detectDefaultBranch(dir)).toBe('master');
+  });
+
+  test('else init.defaultBranch when HEAD is detached', async () => {
+    const git = simpleGit(dir);
+    await commitOnce();
+    await git.raw(['checkout', '--quiet', '--detach']);
+    await git.addConfig('init.defaultBranch', 'trunk');
+    expect(await detectDefaultBranch(dir)).toBe('trunk');
+  });
+
+  test('else main', async () => {
+    const git = simpleGit(dir);
+    await commitOnce();
+    await git.raw(['checkout', '--quiet', '--detach']);
+    // An empty local value shadows any global/system init.defaultBranch.
+    await git.addConfig('init.defaultBranch', '');
+    expect(await detectDefaultBranch(dir)).toBe('main');
+  });
+
+  test('does not throw outside a git repo', async () => {
+    const nonGitDir = await mkdtemp(join(tmpdir(), 'gitrac-nongit-'));
+    try {
+      const branch = await detectDefaultBranch(nonGitDir);
+      expect(branch.length).toBeGreaterThan(0);
     } finally {
       await rm(nonGitDir, { recursive: true, force: true });
     }

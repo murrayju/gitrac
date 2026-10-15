@@ -61,6 +61,13 @@ describe('initIssuesDir', () => {
     expect(configYaml).not.toContain('nextId');
   });
 
+  test('defaultBranch sets git.defaultBranch (default main)', async () => {
+    await initIssuesDir(dir);
+    expect((await readConfig(dir)).git.defaultBranch).toBe('main');
+    await initIssuesDir(dir, { force: true, defaultBranch: 'master' });
+    expect((await readConfig(dir)).git.defaultBranch).toBe('master');
+  });
+
   test('creates closed subdirectory', async () => {
     await initIssuesDir(dir);
     const info = await stat(join(dir, '.issues', 'closed'));

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { fileURLToPath } from 'node:url';
 import {
+  chooseDefaultBranch,
   createDefaultConfig,
   ensureLabelColors,
   findAssigneeByEmail,
@@ -353,12 +354,48 @@ describe('createDefaultConfig', () => {
     expect(validateConfig(config)).toBe(true);
   });
 
+  test('defaultBranch overrides git.defaultBranch', () => {
+    const config = createDefaultConfig({ defaultBranch: 'master' });
+    expect(config.git.defaultBranch).toBe('master');
+    expect(config.git.commitPrefix).toBe('issue:');
+    expect(createDefaultConfig({}).git.defaultBranch).toBe('main');
+  });
+
   test('assigns colors to all default labels', () => {
     const config = createDefaultConfig();
     for (const [_label, color] of Object.entries(config.labels)) {
       expect(color).toBeDefined();
       expect(color).toMatch(/^#[0-9a-f]{6}$/);
     }
+  });
+});
+
+describe('chooseDefaultBranch', () => {
+  test('prefers origin/HEAD, then the current branch, then init.defaultBranch', () => {
+    expect(
+      chooseDefaultBranch({
+        originHead: 'develop',
+        current: 'feature',
+        initDefault: 'trunk',
+      }),
+    ).toBe('develop');
+    expect(
+      chooseDefaultBranch({ current: 'master', initDefault: 'trunk' }),
+    ).toBe('master');
+    expect(
+      chooseDefaultBranch({
+        originHead: null,
+        current: null,
+        initDefault: 'trunk',
+      }),
+    ).toBe('trunk');
+  });
+
+  test('falls back to main; blank hints are ignored', () => {
+    expect(chooseDefaultBranch({})).toBe('main');
+    expect(
+      chooseDefaultBranch({ originHead: ' ', current: '', initDefault: '' }),
+    ).toBe('main');
   });
 });
 

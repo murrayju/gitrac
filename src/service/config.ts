@@ -7,6 +7,7 @@ import {
 } from '../fs/gitignore.ts';
 import { initIssuesDir, readConfig, writeConfig } from '../fs/issue-store.ts';
 import { withRepoLock } from '../git/lock.ts';
+import { detectDefaultBranch } from '../git/status.ts';
 import {
   CONFIG_PATH,
   commitChange,
@@ -27,7 +28,9 @@ export interface ConfigChange {
 }
 
 /**
- * Create `.issues/` with a default config (`force` overwrites an existing
+ * Create `.issues/` with a default config (`git.defaultBranch` detected from
+ * the repo: `origin/HEAD`, else the current branch, else
+ * `init.defaultBranch`, else `main`; `force` overwrites an existing
  * one; otherwise that is `already_initialized`) and `.issues/.gitignore`
  * (web UI drafts), install the git merge driver (`.issues/.gitattributes` +
  * local git config; `mergeDriverCommand` overrides the command it runs) and
@@ -38,7 +41,8 @@ export async function initProject(
   options: { force?: boolean; mergeDriverCommand?: string } = {},
 ): Promise<ConfigChange> {
   return withRepoLock(ctx.dir, async () => {
-    await initIssuesDir(ctx.dir, { force: options.force });
+    const defaultBranch = await detectDefaultBranch(ctx.dir);
+    await initIssuesDir(ctx.dir, { force: options.force, defaultBranch });
     const ignored = await writeIssuesGitignore(ctx.dir);
     const driver = await setUpMergeDriver(ctx.dir, options.mergeDriverCommand);
     const paths = [

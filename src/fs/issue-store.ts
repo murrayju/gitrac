@@ -311,12 +311,13 @@ export async function moveToReopen(dir: string, id: number): Promise<void> {
 }
 
 /**
- * Initialize the .issues directory structure with a default config.
+ * Initialize the .issues directory structure with a default config
+ * (`defaultBranch` sets `git.defaultBranch`; default `main`).
  * Throws if it already exists (unless force is true).
  */
 export async function initIssuesDir(
   dir: string,
-  options?: { force?: boolean },
+  options?: { force?: boolean; defaultBranch?: string },
 ): Promise<void> {
   const issDir = issuesDir(dir);
   const exists = await Bun.file(join(issDir, 'config.yaml')).exists();
@@ -328,6 +329,8 @@ export async function initIssuesDir(
   }
   await mkdir(issDir, { recursive: true });
   await mkdir(closedDir(dir), { recursive: true });
-  const config = createDefaultConfig();
+  const config = createDefaultConfig({
+    defaultBranch: options?.defaultBranch,
+  });
   await writeConfig(dir, config);
 }
