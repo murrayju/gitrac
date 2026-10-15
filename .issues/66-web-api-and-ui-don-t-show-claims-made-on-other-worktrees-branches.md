@@ -1,14 +1,14 @@
 ---
 id: 66
 title: Web API and UI don't show claims made on other worktrees/branches
-status: todo
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - feature
 created: '2026-10-15T13:15:02.044Z'
 createdBy: Justin Murray
-updated: '2026-10-15T13:15:02.044Z'
+updated: '2026-10-15T13:46:19.876Z'
 ---
 
 `claimedElsewhere` (#56) is exposed by the CLI (`ls`/`show`/`ready`, JSON field) but not by the web API or UI, so someone watching the board can't see what agents in other worktrees are working on.
