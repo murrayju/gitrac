@@ -8,10 +8,12 @@ import { Markdown } from 'tiptap-markdown';
 import { addComment } from '../api.ts';
 import { ImageUpload } from '../lib/image-upload-plugin.ts';
 import { getEditorMarkdown } from '../lib/markdown.ts';
+import { useIdentityStore } from '../stores/identityStore.ts';
 
 export function CommentEditor({ issueId }: { issueId: number }) {
   const [submitting, setSubmitting] = useState(false);
   const submitRef = useRef<() => void>(null);
+  const author = useIdentityStore((s) => s.author);
 
   const SubmitShortcut = Extension.create({
     name: 'submitShortcut',
@@ -54,12 +56,12 @@ export function CommentEditor({ issueId }: { issueId: number }) {
 
     setSubmitting(true);
     try {
-      await addComment(issueId, md);
+      await addComment(issueId, md, author || undefined);
       editor.commands.clearContent();
     } finally {
       setSubmitting(false);
     }
-  }, [editor, issueId]);
+  }, [editor, issueId, author]);
 
   submitRef.current = handleSubmit;
 

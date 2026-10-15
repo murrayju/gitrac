@@ -12,6 +12,7 @@ import {
   writeIssue,
 } from '../../fs/issue-store.ts';
 import { AmendTracker } from '../../git/amend-tracker.ts';
+import { IdentityResolver } from '../../git/identity.ts';
 import type { ServerContext } from '../server.ts';
 import { IssueWatcher } from '../watcher.ts';
 import { issueRoutes } from './issues.ts';
@@ -49,6 +50,9 @@ beforeEach(async () => {
     config,
     amendTracker: new AmendTracker(),
     watcher: new IssueWatcher(dir),
+    identity: new IdentityResolver(dir, {
+      read: async () => ({ name: 'Ada Lovelace', email: 'ada@example.com' }),
+    }),
   };
 
   app = new Hono();
@@ -209,6 +213,48 @@ describe('POST /api/issues', () => {
     expect(data.description).toBe('Some description');
   });
 
+  test("records createdBy as the server's git identity", async () => {
+    const res = await req('/issues', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Mine' }),
+    });
+
+    expect(res.status).toBe(201);
+    const data = (await res.json()) as Issue;
+    expect(data.createdBy).toBe('Ada Lovelace');
+  });
+
+  test('records createdBy as an explicit author', async () => {
+    const res = await req('/issues', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Theirs', author: '  Grace Hopper ' }),
+    });
+
+    expect(res.status).toBe(201);
+    const data = (await res.json()) as Issue;
+    expect(data.createdBy).toBe('Grace Hopper');
+  });
+
+  test('returns 400 for an invalid author without allocating an ID', async () => {
+    for (const author of ['  ', 42, null]) {
+      const res = await req('/issues', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Bad', author }),
+      });
+      expect(res.status).toBe(400);
+    }
+    expect(await listIssueFiles(dir)).toEqual([]);
+    const ok = await req('/issues', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Good' }),
+    });
+    expect(((await ok.json()) as Issue).id).toBe(1);
+  });
+
   test('returns 400 when title is missing', async () => {
     const res = await req('/issues', {
       method: 'POST',
@@ -316,7 +362,7 @@ describe('POST /api/issues/:id/comments', () => {
     expect(data.comments[0]?.author).toBe('alice');
   });
 
-  test('defaults author to web', async () => {
+  test("defaults author to the server's git identity", async () => {
     await writeIssue(dir, makeIssue({ id: 1, title: 'Issue' }));
 
     const res = await req('/issues/1/comments', {
@@ -326,7 +372,7 @@ describe('POST /api/issues/:id/comments', () => {
     });
 
     const data = (await res.json()) as Issue;
-    expect(data.comments[0]?.author).toBe('web');
+    expect(data.comments[0]?.author).toBe('Ada Lovelace');
   });
 
   test('returns 400 when body is missing', async () => {

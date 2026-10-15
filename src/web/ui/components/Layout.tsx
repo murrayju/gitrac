@@ -12,6 +12,7 @@ import { useDrafts, useGitStatus } from '../hooks.ts';
 import { BranchWarning } from './BranchWarning.tsx';
 import type { CreateIssueModalProps } from './CreateIssueModal.tsx';
 import { CreateIssueModal } from './CreateIssueModal.tsx';
+import { IdentityPicker } from './IdentityPicker.tsx';
 import { ImageLightbox } from './ImageLightbox.tsx';
 import { ShortcutsModal } from './ShortcutsModal.tsx';
 import { ThemeToggle } from './ThemeToggle.tsx';
@@ -179,6 +180,7 @@ export function Layout({ children }: { children: ReactNode }) {
           </nav>
 
           <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-800 space-y-2">
+            <IdentityPicker />
             <ThemeToggle />
             <button
               type="button"

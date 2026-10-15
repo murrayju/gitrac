@@ -23,6 +23,7 @@ import { commitIssueChange } from '../../git/operations.ts';
 import { ifMatchSatisfied, issueETag } from '../etag.ts';
 import { mutationLock } from '../lock.ts';
 import type { ServerContext } from '../server.ts';
+import { resolveAuthor } from './identity.ts';
 
 /**
  * Ensure any new labels used on an issue get assigned colors in the config.
@@ -213,11 +214,18 @@ export function issueRoutes(ctx: ServerContext): Hono {
 
     // Validate everything before touching disk (allocating the ID bumps
     // nextId in config.yaml).
-    const fields = validateIssueFields(await readJsonBody(c), config, {
+    const body = await readJsonBody(c);
+    const fields = validateIssueFields(body, config, {
       requireTitle: true,
     });
     if (!fields.valid) {
       return validationError(c, fields.errors);
+    }
+    // `author` (optional) is the identity picked in the UI; default to the
+    // server's git identity.
+    const createdBy = await resolveAuthor(ctx, asRecord(body).author);
+    if (createdBy === null) {
+      return validationError(c, ['Invalid author: must be a non-empty string']);
     }
     const values = fields.values;
     const now = new Date().toISOString();
@@ -230,7 +238,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
       assignee: values.assignee ?? '',
       labels: values.labels ?? [],
       created: now,
-      createdBy: 'web',
+      createdBy,
       updated: now,
       description: values.description ?? '',
       comments: [],
@@ -370,10 +378,8 @@ export function issueRoutes(ctx: ServerContext): Hono {
     ) {
       return c.json({ error: 'body is required' }, 400);
     }
-    if (
-      author !== undefined &&
-      (typeof author !== 'string' || !author.trim())
-    ) {
+    const commentAuthor = await resolveAuthor(ctx, author);
+    if (commentAuthor === null) {
       return c.json(
         { error: 'Invalid author: must be a non-empty string' },
         400,
@@ -381,7 +387,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
     }
 
     issue.comments.push({
-      author: typeof author === 'string' ? author.trim() : 'web',
+      author: commentAuthor,
       timestamp: new Date().toISOString(),
       body: commentBody.trim(),
     });

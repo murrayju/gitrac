@@ -176,7 +176,7 @@ src/
 | `-o json` / `-o yaml` | Output format (default: human-readable) |
 | `--push` / `--no-push` | Override configured push behavior |
 | `--no-commit` | Skip git commit entirely |
-| `--author <name>` | Override comment author (default: `git config user.name`) |
+| `--author <name>` | Override comment author / `createdBy` (default: `git config user.name`); with `serve`, the default author for web changes |
 | `--dir <path>` | Directory to locate the project from (default: cwd). Any path inside the repo works. |
 | `--port <port>` | Web server port for bare `gitrac` (long form only; `serve` also accepts `-p`) |
 | `--host <host>` | Web server bind interface (default `127.0.0.1`; e.g. `0.0.0.0` for all interfaces) |
@@ -315,6 +315,8 @@ When current branch != `config.git.defaultBranch`, display prominent warning in 
 
 Bun HTTP server with Hono router. Serves REST API and pre-built React SPA static assets. File watcher (`fs.watch`) on `.issues/` directory detects external changes; events pushed to UI via SSE for live updates. The SSE stream (`GET /api/events`) is long-lived: the route lifts Bun's idle timeout for that request only and writes a `: keep-alive` comment every 5s (so proxies don't drop it either). It sends a `connected` event on every (re)connect and an `issues-changed` event on each change; the UI refetches on both, so changes made while it was disconnected are never missed.
 
+**Identity.** Web writes are attributed like the CLI's: the server resolves `git config user.name` / `user.email` (as seen from the project root) at startup and re-reads it at most every few seconds, so `git config` changes are picked up without a restart; `gitrac --author <name> serve` pins a fixed name instead. `createdBy` on `POST /api/issues` and the comment author on `POST /api/issues/:id/comments` default to that name (`unknown` if git has none). Either request may send `author` (non-empty string, else 400) to override it — the UI's "Acting as" picker in the sidebar lets the user choose a name from `config.assignees` (remembered in `localStorage`). `GET /api/identity` returns the default `{ name, email }`. Assignee semantics are unchanged.
+
 ### Security
 
 The server has no authentication, so exposure is limited instead (`src/web/security.ts`):
@@ -334,14 +336,15 @@ The server has no authentication, so exposure is limited instead (`src/web/secur
 |--------|-------|------------|
 | GET | `/api/issues` | List issues (supports query params for filtering) |
 | GET | `/api/issues/:id` | Get single issue |
-| POST | `/api/issues` | Create issue |
+| POST | `/api/issues` | Create issue (optional `author` sets `createdBy`) |
 | PATCH | `/api/issues/:id` | Update issue metadata |
-| POST | `/api/issues/:id/comments` | Add comment |
+| POST | `/api/issues/:id/comments` | Add comment (`body`; optional `author`) |
 | PUT | `/api/issues/:id/comments/:index` | Edit comment |
 | DELETE | `/api/issues/:id/comments/:index` | Delete comment |
 | PATCH | `/api/issues/:id/close` | Close issue |
 | PATCH | `/api/issues/:id/reopen` | Reopen issue |
 | GET | `/api/config` | Get project config |
+| GET | `/api/identity` | Default author for web writes (`{ name, email }` from git config / `--author`) |
 | GET | `/api/git/status` | Branch, push state, warnings |
 | GET | `/api/events` | SSE stream for live updates: `connected` on (re)connect, `issues-changed` on file changes, `: keep-alive` comments every 5s |
 | POST | `/api/issues/assets` | Upload an image (multipart `file`; no SVG; max 10 MiB) |

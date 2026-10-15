@@ -40,6 +40,8 @@ export interface CreateIssueInput {
   assignee?: string;
   status?: Status;
   description?: string;
+  /** Recorded as `createdBy`; omitted = the server's git identity. */
+  author?: string;
 }
 
 export interface UpdateIssueInput {
@@ -224,6 +226,16 @@ export async function reopenIssue(id: number): Promise<Issue> {
 
 export async function fetchConfig(): Promise<Config> {
   return request<Config>('/api/config');
+}
+
+/** The server's default identity (git `user.name` / `user.email`). */
+export interface Identity {
+  name: string;
+  email: string;
+}
+
+export async function fetchIdentity(): Promise<Identity> {
+  return request<Identity>('/api/identity');
 }
 
 export async function updateLabels(

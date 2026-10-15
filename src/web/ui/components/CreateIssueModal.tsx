@@ -5,6 +5,7 @@ import type { Priority, Status } from '../../../core/types.ts';
 import type { Draft } from '../api.ts';
 import { createIssue, deleteDraft, saveDraft, uploadAsset } from '../api.ts';
 import { useConfig } from '../hooks.ts';
+import { useIdentityStore } from '../stores/identityStore.ts';
 import { AssigneePicker } from './AssigneePicker.tsx';
 import { Dropdown } from './Dropdown.tsx';
 import { IssueEditor, type IssueEditorHandle } from './IssueEditor.tsx';
@@ -41,6 +42,7 @@ export function CreateIssueModal({
 }: CreateIssueModalProps) {
   const navigate = useNavigate();
   const { config } = useConfig();
+  const author = useIdentityStore((s) => s.author);
   const [title, setTitle] = useState(initialDraft?.title ?? '');
   const [status, setStatus] = useState<Status>(
     (initialDraft?.status as Status) ?? config?.defaultStatus ?? 'backlog',
@@ -186,6 +188,7 @@ export function CreateIssueModal({
         labels,
         assignee: assignee.trim() || undefined,
         description,
+        author: author || undefined,
       });
       // Clean up draft on successful creation
       try {

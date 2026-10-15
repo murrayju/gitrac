@@ -11,6 +11,8 @@ export interface ServeOptions {
   port: number;
   /** Interface to bind (default: 127.0.0.1, loopback only). */
   host: string;
+  /** Default author for web changes (`--author`); '' = git config. */
+  author?: string;
 }
 
 /**
@@ -32,6 +34,7 @@ export function resolveServeOptions(
     dir: globalOpts.dir,
     port: local.port !== undefined ? parsePort(local.port) : globalOpts.port,
     host: local.host ?? globalOpts.host,
+    author: globalOpts.author,
   };
 }
 
@@ -56,7 +59,7 @@ export async function runServe(options: ServeOptions): Promise<void> {
     process.exit(1);
   }
   try {
-    await startServer({ dir, port, host, config });
+    await startServer({ dir, port, host, config, author: options.author });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(

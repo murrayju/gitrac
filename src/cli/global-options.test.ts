@@ -191,6 +191,11 @@ describe('serve / bare gitrac port resolution', () => {
   test('serve --host 0.0.0.0', () => {
     expect(resolve(['serve', '--host', '0.0.0.0']).host).toBe('0.0.0.0');
   });
+
+  test('--author sets the default web author', () => {
+    expect(resolve(['--author', 'Bot', 'serve']).author).toBe('Bot');
+    expect(resolve([]).author).toBe('');
+  });
 });
 
 // --- End-to-end: run real commands through Commander in a scratch repo ---

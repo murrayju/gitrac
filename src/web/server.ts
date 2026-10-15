@@ -4,12 +4,14 @@ import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
 import type { Config } from '../core/types.ts';
 import { AmendTracker } from '../git/amend-tracker.ts';
+import { IdentityResolver } from '../git/identity.ts';
 import { getBranchWarning } from '../git/status.ts';
 import { assetRoutes, MAX_UPLOAD_BYTES, serveAsset } from './routes/assets.ts';
 import { configRoutes } from './routes/config.ts';
 import { draftRoutes } from './routes/drafts.ts';
 import { eventsRoute } from './routes/events.ts';
 import { gitRoutes } from './routes/git.ts';
+import { identityRoutes } from './routes/identity.ts';
 import { issueRoutes } from './routes/issues.ts';
 import {
   DEFAULT_HOST,
@@ -24,6 +26,11 @@ export interface ServerContext {
   config: Config;
   amendTracker: AmendTracker;
   watcher: IssueWatcher;
+  /**
+   * Default identity for `createdBy` / comment authors (git config, or
+   * `--author`). Created lazily from `dir` if omitted.
+   */
+  identity?: IdentityResolver;
 }
 
 export interface AppOptions {
@@ -51,6 +58,8 @@ export async function startServer(options: {
   port?: number;
   host?: string;
   config: Config;
+  /** Fixed default author name (`--author`); otherwise git config is used. */
+  author?: string;
 }): Promise<RunningServer> {
   const { dir, config } = options;
   const port = options.port ?? 3000;
@@ -59,7 +68,10 @@ export async function startServer(options: {
   const amendTracker = new AmendTracker();
   const watcher = new IssueWatcher(dir);
 
-  const ctx: ServerContext = { dir, config, amendTracker, watcher };
+  const identity = new IdentityResolver(dir, { author: options.author });
+  await identity.refresh();
+
+  const ctx: ServerContext = { dir, config, amendTracker, watcher, identity };
 
   const app = createApp(ctx, { host });
 
@@ -82,6 +94,10 @@ export async function startServer(options: {
 
   console.log(
     `\n  gitrac server running at ${displayUrl(host, server.port)}\n`,
+  );
+  const who = await identity.get();
+  console.log(
+    `  Attributing web changes to ${who.name}${who.email ? ` <${who.email}>` : ''}\n`,
   );
   if (!isLoopbackHost(host)) {
     console.warn(
@@ -142,6 +158,7 @@ export function createApp(ctx: ServerContext, options: AppOptions = {}): Hono {
   app.route('/api', assetRoutes(ctx));
   app.route('/api', configRoutes(ctx));
   app.route('/api', gitRoutes(ctx));
+  app.route('/api', identityRoutes(ctx));
   app.route('/api', eventsRoute(ctx));
 
   // Serve issue assets at their repo path (/.issues/assets/:filename)
