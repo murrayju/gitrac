@@ -17,6 +17,7 @@ export type Operation =
   | 'close'
   | 'reopen'
   | 'delete'
+  | 'renumber'
   | 'claim'
   | 'unclaim'
   | 'link'

@@ -68,6 +68,7 @@ When installed as a binary, replace `./bun index.ts` with `gitrac` in all exampl
 | `gitrac close <id> --no-commit` | Close without committing (for atomic commits) |
 | `gitrac close <id> -c "text"` | Close with an inline comment |
 | `gitrac delete <id> --yes` | Delete an issue (duplicates, test issues) and the assets only it uses, and drop it from other issues' `blockedBy`/`parent`, in one commit. Without `--yes` and no terminal it only prints what would be deleted and exits 2; `--dry-run` previews (exit 0) |
+| `gitrac renumber <id> --file <path>` | Give one copy of a duplicated issue ID (`duplicate_issue`) a fresh ID: renames the file, updates its `id`, commits (`-o json`: `oldId`, `newId`, `from`, `to`, `references`). Without `--file` it lists the files (exit 3). Issues linking to / mentioning the old ID are listed, not changed; `--update-refs` repoints their `blockedBy`/`parent`. `--force` for a non-duplicated ID |
 | `gitrac reopen <id>` | Reopen a closed issue (status = config `defaultStatus`; `-s todo` to pick) |
 | `gitrac create -t "title" --description-file desc.md` | Create with a markdown description (`-` = stdin; or `-d "text"`) |
 | `gitrac comment <id> "text"` | Add a comment (or `--body-file <path\|->`) |
@@ -169,7 +170,7 @@ With the gitrac merge driver installed (`gitrac init` installs it; in an existin
 - **Both branches edited the same lines of a description:** the merge stops with conflict markers inside the description (frontmatter and comments are already merged). Edit them out, `git add`, continue.
 - **Both branches changed the title:** git reports a rename/rename conflict and leaves two files with the same merged content. Keep the one matching the title, `git rm` the other.
 - **A file the driver can't parse** (hand-broken YAML, leftover markers): you get git's normal conflict markers for the whole file.
-- **Same ID created in two clones** (`12-a.md` and `12-b.md`): not a merge conflict; gitrac then fails with `duplicate_issue` (exit 3). Renumber one copy by hand (rename the file and its `id:`).
+- **Same ID created in two clones** (`12-a.md` and `12-b.md`): not a merge conflict; gitrac then fails with `duplicate_issue` (exit 3). Run `gitrac renumber 12 --file .issues/12-b.md` to give one copy a new ID, then check the issues it lists as referencing #12 (the old links/mentions could mean either issue; `--update-refs` points their `blockedBy`/`parent` at the new ID).
 
 ## Reading Issues Directly
 
@@ -214,7 +215,7 @@ stdout only ever holds the result. Errors and warnings (e.g. "not on the default
 | 0 | | Success |
 | 1 | `error`, `invalid_config`, `invalid_issue` | Unexpected error, unparseable `.issues/config.yaml`, or a malformed issue file (no frontmatter, bad YAML, `id` not matching the file name; `file` names it, nothing is written — fix the file by hand) |
 | 2 | `invalid_input`, `usage`, `confirmation_required` | Bad ID / field value / flag / missing argument, or `delete` without `--yes` (stdin not a terminal) — nothing was written |
-| 3 | `already_claimed`, `already_initialized`, `invalid_state`, `duplicate_issue` | Conflict: claimed by someone else, already initialized, closing a closed / reopening an open issue, or several files on disk for one issue ID (`files` lists them — merge them by hand and delete all but one, or renumber one if they are different issues) |
+| 3 | `already_claimed`, `already_initialized`, `invalid_state`, `duplicate_issue` | Conflict: claimed by someone else, already initialized, closing a closed / reopening an open issue, or several files on disk for one issue ID (`files` lists them — merge them by hand and delete all but one, or `gitrac renumber <id> --file <path>` if they are different issues); `renumber` of a non-duplicated ID without `--force` |
 | 4 | `issue_closed` | `claim`/`unclaim` on a closed issue |
 | 5 | `not_found`, `no_ready_issues` | No such issue; `next` found no ready issue |
 | 6 | `lock_timeout` | Another gitrac process held the repo lock too long — retry |

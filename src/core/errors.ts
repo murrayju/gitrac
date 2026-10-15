@@ -96,13 +96,14 @@ export function issueNotFound(id: number): GitracError {
 
 /**
  * More than one file on disk claims issue `id` (`files`: repo-relative paths,
- * e.g. a hand-renamed title left the old file behind). Reported instead of
- * silently picking one ({@link EXIT_CONFLICT}).
+ * e.g. a hand-renamed title left the old file behind, or two clones created
+ * the same ID). Reported instead of silently picking one
+ * ({@link EXIT_CONFLICT}). The CLI appends how to renumber one.
  */
 export function duplicateIssue(id: number, files: string[]): GitracError {
   return new GitracError(
     'duplicate_issue',
-    `Issue #${id} has ${files.length} files: ${files.join(', ')}. Keep one (merge any changes into it) and delete the others.`,
+    `Issue #${id} has ${files.length} files: ${files.join(', ')}. If they are copies of one issue, keep one (merge any changes into it) and delete the others; if they are different issues, renumber one of them.`,
     { details: { id, files } },
   );
 }

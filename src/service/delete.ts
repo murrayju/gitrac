@@ -2,7 +2,6 @@ import { readdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { extractAssetRefs, isAssetFilename } from '../core/assets.ts';
 import { blockersOf } from '../core/dependencies.ts';
-import { issueFilename } from '../core/slug.ts';
 import type { Config, Issue } from '../core/types.ts';
 import {
   listClosedIssueFiles,
@@ -18,12 +17,12 @@ import {
   loadConfig,
   type ServiceContext,
 } from './context.ts';
-import { loadAllIssues } from './list.ts';
 import {
   loadStoredIssue,
   type Precondition,
   type StoredIssue,
 } from './load.ts';
+import { linkingIssues, rewritePaths } from './references.ts';
 
 /**
  * Another issue whose links to the deleted issue are removed (or would be)
@@ -156,38 +155,18 @@ interface Relink {
 /**
  * Every other issue (open or closed) whose `blockedBy` or `parent` points at
  * `id`, loaded fresh (callers hold the lock) with those links removed in
- * memory. Unreadable files are skipped (they can't be fixed anyway); a
- * duplicate or malformed file for a referencing issue fails the delete
- * before anything is written.
+ * memory (see {@link linkingIssues}).
  */
 async function referencingIssues(dir: string, id: number): Promise<Relink[]> {
-  const { issues } = await loadAllIssues(dir);
-  const ids = new Set<number>();
-  for (const other of issues) {
-    if (other.id === id) continue;
-    if (other.parent === id || blockersOf(other).includes(id)) {
-      ids.add(other.id);
-    }
-  }
   const relinks: Relink[] = [];
-  for (const otherId of [...ids].sort((a, b) => a - b)) {
-    const stored = await loadStoredIssue(dir, otherId);
+  for (const { stored, blockedBy, parent } of await linkingIssues(dir, id)) {
     const { issue } = stored;
-    const blockers = blockersOf(issue);
-    const blockedBy = blockers.includes(id);
-    const parent = issue.parent === id;
-    if (!blockedBy && !parent) continue;
     if (blockedBy) {
-      const kept = blockers.filter((b) => b !== id);
+      const kept = blockersOf(issue).filter((b) => b !== id);
       if (kept.length > 0) issue.blockedBy = kept;
       else delete issue.blockedBy;
     }
     if (parent) delete issue.parent;
-    const newPath = issuePath(
-      issueFilename(issue.id, issue.title),
-      stored.closed,
-    );
-    const oldPath = issuePath(stored.filename, stored.closed);
     relinks.push({
       stored,
       unlinked: {
@@ -195,7 +174,7 @@ async function referencingIssues(dir: string, id: number): Promise<Relink[]> {
         title: issue.title,
         blockedBy,
         parent,
-        paths: newPath === oldPath ? [newPath] : [newPath, oldPath],
+        paths: rewritePaths(stored),
       },
     });
   }

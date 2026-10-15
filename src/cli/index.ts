@@ -13,6 +13,7 @@ import {
   registerMergeDriverCommand,
 } from './commands/merge-driver.ts';
 import { registerReadyCommands } from './commands/ready.ts';
+import { registerRenumberCommand } from './commands/renumber.ts';
 import { registerReopenCommand } from './commands/reopen.ts';
 import {
   registerServeCommand,
@@ -73,6 +74,7 @@ export function createProgram(): Command {
   registerLinkCommands(program);
   registerReadyCommands(program);
   registerDeleteCommand(program);
+  registerRenumberCommand(program);
   registerInstallMergeDriverCommand(program);
   registerMergeDriverCommand(program);
 

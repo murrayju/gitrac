@@ -20,6 +20,7 @@ This project uses gitrac to track its own issues. The `.issues/` directory conta
 ./gitrac comment <id> "text"    # add a comment (or --body-file <path|->)
 ./gitrac close <id>            # close an issue
 ./gitrac delete <id> --yes     # delete an issue + assets only it uses, unlink it from others (--dry-run to preview)
+./gitrac renumber <id> --file <path>   # give one copy of a duplicated ID a fresh ID (--update-refs repoints links)
 ./gitrac install-merge-driver  # once per clone: issue-aware git merges (`init` does it too)
 ./gitrac                       # start the web UI at http://localhost:3000
 ./gitrac serve -p 4000         # same, on another port (or: ./gitrac --port 4000)
@@ -52,7 +53,7 @@ scripts/
 .issues/      # Project issues (managed by gitrac itself)
 ```
 
-The architecture is layered: `core` (pure functions, no I/O) -> `fs` (filesystem) -> `git` (git operations) -> `service` (one function per mutation: `createIssue`, `updateIssue`, `addComment`, `editComment`, `deleteComment`, `closeIssue`, `reopenIssue`, `deleteIssue`, `claimIssue`, `unclaimIssue`, `claimNextIssue`, `linkIssue`, `unlinkIssue`, `initProject`, `updateLabelColors`, `updateAssignees`, `installMergeDriver`) -> `cli`/`web` (thin adapters: parse input -> call the service -> format output, mapping `GitracError`s to exit codes / HTTP statuses). Each layer only depends on layers below it.
+The architecture is layered: `core` (pure functions, no I/O) -> `fs` (filesystem) -> `git` (git operations) -> `service` (one function per mutation: `createIssue`, `updateIssue`, `addComment`, `editComment`, `deleteComment`, `closeIssue`, `reopenIssue`, `deleteIssue`, `renumberIssue`, `claimIssue`, `unclaimIssue`, `claimNextIssue`, `linkIssue`, `unlinkIssue`, `initProject`, `updateLabelColors`, `updateAssignees`, `installMergeDriver`) -> `cli`/`web` (thin adapters: parse input -> call the service -> format output, mapping `GitracError`s to exit codes / HTTP statuses). Each layer only depends on layers below it.
 
 ## Development
 

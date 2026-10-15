@@ -125,6 +125,31 @@ export async function listAllIssueFiles(dir: string): Promise<string[]> {
 }
 
 /**
+ * Every issue file with the numeric ID prefix `id`, in `.issues/` then
+ * `.issues/closed/`, each by filename (normally zero or one; several after
+ * e.g. two clones created the same ID).
+ */
+export async function findIssueFiles(
+  dir: string,
+  id: number,
+): Promise<{ filename: string; closed: boolean; path: string }[]> {
+  const [openFiles, closedFiles] = await Promise.all([
+    listIssueFiles(dir),
+    listClosedIssueFiles(dir),
+  ]);
+  return [
+    ...openFiles
+      .filter((f) => parseIssueId(f) === id)
+      .sort()
+      .map((filename) => ({ filename, closed: false })),
+    ...closedFiles
+      .filter((f) => parseIssueId(f) === id)
+      .sort()
+      .map((filename) => ({ filename, closed: true })),
+  ].map((m) => ({ ...m, path: issueRelPath(m.filename, m.closed) }));
+}
+
+/**
  * Find an issue file by its numeric ID prefix, in `.issues/` or
  * `.issues/closed/`. Throws `duplicate_issue` (listing the files) if more
  * than one file has the ID, rather than silently picking one.
@@ -133,25 +158,15 @@ export async function findIssueFile(
   dir: string,
   id: number,
 ): Promise<{ filename: string; closed: boolean } | null> {
-  const [openFiles, closedFiles] = await Promise.all([
-    listIssueFiles(dir),
-    listClosedIssueFiles(dir),
-  ]);
-  const matches = [
-    ...openFiles
-      .filter((f) => parseIssueId(f) === id)
-      .map((filename) => ({ filename, closed: false })),
-    ...closedFiles
-      .filter((f) => parseIssueId(f) === id)
-      .map((filename) => ({ filename, closed: true })),
-  ];
+  const matches = await findIssueFiles(dir, id);
   if (matches.length > 1) {
     throw duplicateIssue(
       id,
-      matches.map((m) => issueRelPath(m.filename, m.closed)),
+      matches.map((m) => m.path),
     );
   }
-  return matches[0] ?? null;
+  const [match] = matches;
+  return match ? { filename: match.filename, closed: match.closed } : null;
 }
 
 /**

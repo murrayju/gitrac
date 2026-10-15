@@ -58,6 +58,25 @@ export function withHint(
   });
 }
 
+/**
+ * CLI hints added to every command's errors (by {@link reportError}), on top
+ * of any a command adds itself with {@link withHint}: a `duplicate_issue`
+ * points at `gitrac renumber` (unless the message already does).
+ */
+export function withCliHints(err: GitracError): GitracError {
+  const id = err.details?.id;
+  if (
+    err.code === 'duplicate_issue' &&
+    typeof id === 'number' &&
+    !err.message.includes('gitrac renumber')
+  ) {
+    return withHint(err, {
+      duplicate_issue: `To give one of them a new ID: gitrac renumber ${id} --file <path>.`,
+    }) as GitracError;
+  }
+  return err;
+}
+
 /** The machine-readable error object for json/yaml output. */
 export function errorPayload(err: GitracError): ErrorPayload {
   // code and message come first and are never overridden by details.
@@ -153,7 +172,7 @@ export function reportError(
     // Help / version output was already written by Commander.
     return err.exitCode;
   }
-  const typed = toGitracError(err);
+  const typed = withCliHints(toGitracError(err));
   process.stderr.write(`${formatError(typed, options.format, options)}\n`);
   return typed.exitCode;
 }

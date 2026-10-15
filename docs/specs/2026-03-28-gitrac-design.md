@@ -181,7 +181,7 @@ Sequential integers, allocated without touching `config.yaml` so parallel branch
 
 The high-water mark is then bumped. Creating an issue therefore only writes (and commits) the issue file, plus `config.yaml` when it registers new labels. A legacy `nextId` is left in place rather than stripped — it is harmless once frozen (no one bumps it, so it can't conflict) and removing it could lower the floor for clones that still rely on it; delete it by hand if you like. Outside a git repo only sources 2 and 4 apply.
 
-**Limitation:** work in another clone that hasn't been fetched yet can still get the same ID (e.g. two machines both create #12 before either pushes). Fetch before creating to minimize this. Such a collision is not a merge conflict (the files have different names, e.g. `12-a.md` and `12-b.md`), so the merge driver doesn't see it; it surfaces on the next read as `duplicate_issue` (see [File Lookup](#file-lookup)) and must be fixed by hand: give one of the copies a new ID (rename the file and change its `id:`) and update references to it.
+**Limitation:** work in another clone that hasn't been fetched yet can still get the same ID (e.g. two machines both create #12 before either pushes). Fetch before creating to minimize this. Such a collision is not a merge conflict (the files have different names, e.g. `12-a.md` and `12-b.md`), so the merge driver doesn't see it; it surfaces on the next read as `duplicate_issue` (see [File Lookup](#file-lookup)) and is fixed with `gitrac renumber <id> --file <path>` (see [Renumbering](#renumbering)).
 
 ### File Lookup
 
@@ -189,7 +189,7 @@ Issues are looked up by ID prefix match on the filename (`{id}-*.md`). Renaming 
 
 Every write of an existing issue (edit, comment, comment edit/delete, close, reopen, claim, unclaim, link, unlink) writes it under the filename its current title gives, in the directory its state requires; if that differs from the file it was read from (title edited by hand, older slug rules, moved between `.issues/` and `.issues/closed/`), the old file is renamed onto the new path and both paths are committed, so an issue is always exactly one file. A new issue is likewise written in the directory its status requires (`.issues/closed/` for a closed status); `.issues/closed/` is created on demand, since git doesn't keep the empty directory in a clone.
 
-If more than one file has the same ID (across both directories), lookup fails with `duplicate_issue` (exit **3**; HTTP **409** `{ error, code: "duplicate_issue", files }`) listing the repo-relative paths, rather than picking one. Nothing is written; merge the copies by hand and delete all but one.
+If more than one file has the same ID (across both directories), lookup fails with `duplicate_issue` (exit **3**; HTTP **409** `{ error, code: "duplicate_issue", files }`) listing the repo-relative paths, rather than picking one. Nothing is written. If they are copies of one issue (e.g. a hand rename left the old file), merge them by hand and delete all but one; if they are different issues (two clones created the same ID), renumber one with `gitrac renumber` (see [Renumbering](#renumbering)) — the CLI appends `To give one of them a new ID: gitrac renumber <id> --file <path>.` to the message.
 
 ---
 
@@ -213,7 +213,7 @@ src/
 
 **Git layer** — all git operations. Commit, amend-until-pushed, push, pull, rebase, conflict resolution for issue files. Tracks "amendable" commit state. Uses simple-git or shells out to git.
 
-**Service layer** — one function per mutation (`createIssue`, `updateIssue`, `addComment`, `editComment`, `deleteComment`, `closeIssue`, `reopenIssue`, `deleteIssue`, `claimIssue`, `unclaimIssue`, `initProject`, `updateLabelColors`, `updateAssignees`, `installMergeDriver`). Each takes an explicit context — project root, identity, a config loader, commit options (`noCommit`, `push`) and a commit strategy (the CLI makes plain commits; the web plugs in the amend-until-pushed `AmendTracker`) — and returns the resulting issue/config plus the changed paths. It owns the repo lock, input validation, the close/reopen and claim rules, label registration, moving files between `.issues/` and `.issues/closed/`, the commit file set (incl. referenced assets) and commit messages. Errors are `GitracError`s with surface-neutral messages (no CLI flags; the CLI appends hints such as `Use --force to take it over.` by error code). Input is validated before the issue is loaded, so a bad field/status/comment body is `invalid_input` (400) even when the issue is also missing or in the wrong state. The CLI and web share one behavior; the only differences are context options (identity, commit strategy, `--no-commit`/`--push`).
+**Service layer** — one function per mutation (`createIssue`, `updateIssue`, `addComment`, `editComment`, `deleteComment`, `closeIssue`, `reopenIssue`, `deleteIssue`, `renumberIssue`, `claimIssue`, `unclaimIssue`, `initProject`, `updateLabelColors`, `updateAssignees`, `installMergeDriver`). Each takes an explicit context — project root, identity, a config loader, commit options (`noCommit`, `push`) and a commit strategy (the CLI makes plain commits; the web plugs in the amend-until-pushed `AmendTracker`) — and returns the resulting issue/config plus the changed paths. It owns the repo lock, input validation, the close/reopen and claim rules, label registration, moving files between `.issues/` and `.issues/closed/`, the commit file set (incl. referenced assets) and commit messages. Errors are `GitracError`s with surface-neutral messages (no CLI flags; the CLI appends hints such as `Use --force to take it over.` by error code). Input is validated before the issue is loaded, so a bad field/status/comment body is `invalid_input` (400) even when the issue is also missing or in the wrong state. The CLI and web share one behavior; the only differences are context options (identity, commit strategy, `--no-commit`/`--push`).
 
 **CLI layer** — thin command adapters using Commander.js. Reads args/flags/stdin, calls the service, formats output; errors become exit codes.
 
@@ -239,6 +239,7 @@ src/
 | `gitrac reopen <id>` | | Reopen issue (moves back to `.issues/`) with status `defaultStatus` from the config, or `-s, --status <status>` (any configured non-closed status). Fails with exit **3** (`invalid_state`) if the issue is already open. |
 | `gitrac claim <id>` | | Assign to self + set status to the configured `activeStatus` (default `in_progress`). Exclusive: see [Claiming](#claiming). |
 | `gitrac delete <id>` | `rm` | Delete an issue (open or closed): removes its file plus any `.issues/assets/` files no other issue or draft references, and commits the removal (`issue: delete #N <title>`). See [Deleting](#deleting). |
+| `gitrac renumber <id>` | | Give one file of a duplicated issue ID a fresh ID (`-f, --file <path>`; asked on a terminal). `--force` for a non-duplicated ID, `--update-refs` to repoint other issues' links. See [Renumbering](#renumbering). |
 | `gitrac unclaim <id>` | `release` | Give an issue back: clear `assignee`, and set the active status (`in_progress`) back to `unclaimStatus` (`todo`). See [Claiming](#claiming). |
 | `gitrac link <id>` | | Add dependencies: `-b, --blocked-by <ids>` (comma-separated, repeatable) adds blockers, `--parent <id>` sets the parent. Exit 2 (nothing written) for a missing target, a self-link or a cycle; re-adding existing links is a no-op (exit 0, no commit). Commit: `issue: link #N <title>`. See [Dependencies](#dependencies). |
 | `gitrac unlink <id>` | | Remove dependencies: `-b, --blocked-by <ids>`, `--parent` (clears it). Removing links that aren't there is a no-op. |
@@ -262,7 +263,7 @@ src/
 
 **Project root resolution:** every command (including `serve` / bare `gitrac`) resolves the project root once, via `git rev-parse --show-toplevel` starting from `--dir` (or the cwd), so gitrac works from any subdirectory of the repo. `.issues/` always lives at that root. Outside a git repo, commands exit 8 (`not_a_git_repo`) with `Error: Not inside a git repository`; if `.issues/config.yaml` is missing, every command except `init` exits 8 (`not_initialized`) with a message to run `gitrac init`.
 
-Global flags may appear before or after the subcommand (`gitrac --no-commit close 1` and `gitrac close 1 --no-commit` are equivalent). `--no-commit` applies to every mutating command (`init`, `create`, `edit`, `comment`, `close`, `reopen`, `claim`, `unclaim`, `next --claim`, `link`, `unlink`, `delete`) and also suppresses push. If both `--push` and `--no-push` are given, the last one wins.
+Global flags may appear before or after the subcommand (`gitrac --no-commit close 1` and `gitrac close 1 --no-commit` are equivalent). `--no-commit` applies to every mutating command (`init`, `create`, `edit`, `comment`, `close`, `reopen`, `claim`, `unclaim`, `next --claim`, `link`, `unlink`, `delete`, `renumber`) and also suppresses push. If both `--push` and `--no-push` are given, the last one wins.
 
 Because global flags are matched anywhere on the command line, they must not define short flags that subcommands also use. In particular `-p` belongs to the subcommands (`create -p high`, `edit -p high`, `serve -p 4000`); the global port option is long-only (`--port`).
 
@@ -310,6 +311,16 @@ It also finds every other issue (open or closed) that links to the deleted one: 
 - Output (stdout): human `Deleted #N: <title>` (or `Would delete …`) followed by the paths, then `Removed links to #N from:` (or `Would remove …`) with one `#M: <title> (blockedBy, parent)` line per unlinked issue; `-o json`/`yaml` `{ deleted, issue, paths, assets, unlinked }`, where `paths` is the issue file followed by the removed assets, and `unlinked` is `[{ id, title, blockedBy, parent, paths }]` (`blockedBy`/`parent`: whether that link was removed; `paths`: the rewritten file, plus its old path if renamed).
 - The ID is not reused: new IDs come from the shared high-water mark, which already counted it.
 
+### Renumbering
+
+`gitrac renumber <id> --file <path>` fixes a duplicate ID (two clones created the same one before fetching each other; see [Issue ID Scheme](#issue-id-scheme)): under the repo lock it allocates a fresh ID the normal way (so it is unique across worktrees and every known ref), rewrites the chosen file's frontmatter `id` (bumping `updated`), renames it to `<newId>-<slug>.md` in the same directory (`.issues/` or `.issues/closed/`), and commits it (`issue: renumber #<old> -> #<new> <title>`; `--no-commit` respected). The other copy keeps the old ID.
+
+- `--file` takes the repo-relative path as listed by `duplicate_issue`, a path relative to the cwd, or the bare filename (if that is in both `.issues/` and `.issues/closed/`, give the path). A file that isn't one of the ID's is `invalid_input` (exit **2**, `files` lists them).
+- Without `--file` and several files: on a terminal it lists them (with titles) and asks which one (no answer: `confirmation_required`, exit **2**); otherwise it fails with `duplicate_issue` (exit **3**) whose `candidates` are `[{ path, filename, closed, title }]`.
+- If only one file has the ID it refuses with `invalid_state` (exit **3**) unless `--force`.
+- **References.** Since the old ID meant two issues, `blockedBy` / `parent` links and `#<id>` mentions in other issues are ambiguous, so by default nothing else changes and they are only reported. `--update-refs` rewrites the `blockedBy` / `parent` links (never mentions) to the new ID, bumping those issues' `updated`, in the same commit. Only this worktree's issues are considered.
+- Output (stdout): human `Renumbered #<old> -> #<new>: <title>`, the `from -> to` paths, then the referencing issues as `#M: <title> (blockedBy, parent, mentions #<old>)` lines (changed ones under `Links to #<old> changed to #<new> in:`); `-o json`/`yaml` `{ renumbered, oldId, newId, from, to, issue, references, paths }`, where `references` is `[{ id, title, blockedBy, parent, mentions, updated, paths }]` (`updated`: its links were rewritten; `paths`: its rewritten file(s)) and `paths` is every committed path.
+
 ### Errors and Exit Codes
 
 Commands never call `process.exit` on failure: they throw a `GitracError` (`src/core/errors.ts`) carrying a machine-readable `code`, and a single top-level handler (`runCli` in `src/cli/index.ts`, using `src/cli/errors.ts`) prints it and exits with that code's exit status. Errors from simple-git become `git_error`; Commander usage errors (unknown option, missing argument, bad `-o` value) become `usage`; anything else becomes `error` with the original message.
@@ -326,7 +337,7 @@ Errors always go to **stderr**; stdout carries only the command's result (so wit
 | 0 | — | Success (including no-op claims) |
 | 1 | `error`, `invalid_config`, `invalid_issue`, `server_error` | Unexpected error, unparseable `.issues/config.yaml`, malformed issue file (no frontmatter, bad YAML, an `id` that doesn't match the file name; `file` names it — nothing is written), web server failed to start |
 | 2 | `invalid_input`, `usage`, `confirmation_required` | Bad issue ID, field value, text input, flag, or missing argument; or `delete` without confirmation (no `--yes` and no terminal, or the prompt was declined); nothing written |
-| 3 | `already_claimed`, `already_initialized`, `invalid_state`, `duplicate_issue` | Conflicts with current state: claimed by someone else (`claim`/`unclaim`), `init` on an initialized repo, `close` of a closed issue, `reopen` of an open issue, several files for one issue ID (`files` lists them) |
+| 3 | `already_claimed`, `already_initialized`, `invalid_state`, `duplicate_issue` | Conflicts with current state: claimed by someone else (`claim`/`unclaim`), `init` on an initialized repo, `close` of a closed issue, `reopen` of an open issue, several files for one issue ID (`files` lists them; see [Renumbering](#renumbering)), `renumber` of a non-duplicated ID without `--force` |
 | 4 | `issue_closed` | `claim`/`unclaim` on a closed issue |
 | 5 | `not_found`, `no_ready_issues` | The issue doesn't exist; `next` found no ready issue |
 | 6 | `lock_timeout` | Timed out waiting for the repo lock (safe to retry) |
@@ -403,6 +414,7 @@ issue: reopen #3 Fix login timeout
 issue: claim #3 Fix login timeout
 issue: unclaim #3 Fix login timeout
 issue: delete #3 Fix login timeout
+issue: renumber #3 -> #7 Fix login timeout
 ```
 
 **Committed files.** A commit contains the issue file (plus the old path when it was moved or renamed), `config.yaml` only when it actually changed (new labels registered, a new assignee added by `claim`), and the `.issues/assets/` files the issue references in its description or comments (plain filenames only; missing files are skipped) — on every surface, so an issue never points at an uncommitted image. Deleting a comment commits the assets the issue still references and never removes any (another issue may share them); only `delete` removes assets (see [Deleting](#deleting)).
