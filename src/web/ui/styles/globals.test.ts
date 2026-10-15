@@ -82,4 +82,19 @@ describe('globals.css prose styling', () => {
     expect(img).toContain('max-height: 400px');
     expect(img).toContain('cursor: pointer');
   });
+
+  test('table header cells get thead styling (Tiptap puts them in tbody)', async () => {
+    const css = await buildCss(PROSE_CLASSES);
+    // The plugin only styles `thead th`, which Tiptap never renders
+    expect(css).toContain('.prose :where(thead th)');
+    const th = ruleBody(css, '.tiptap.prose th {');
+    expect(th).toContain('font-weight: 600');
+    expect(th).toContain('color: var(--tw-prose-headings)');
+    expect(ruleBody(css, '.tiptap.prose tr:has(')).toContain(
+      'border-bottom-color: var(--tw-prose-th-borders)',
+    );
+    expect(ruleBody(css, '.tiptap.prose :is(th, td) > p')).toContain(
+      'margin-top: 0',
+    );
+  });
 });

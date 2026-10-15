@@ -8,6 +8,7 @@ import { Markdown } from 'tiptap-markdown';
 import { addComment } from '../api.ts';
 import { ImageUpload } from '../lib/image-upload-plugin.ts';
 import { getEditorMarkdown } from '../lib/markdown.ts';
+import { tableExtensions } from '../lib/table-extensions.ts';
 import { useIssueLinks } from '../lib/use-issue-links.ts';
 import { useIdentityStore } from '../stores/identityStore.ts';
 import { UploadError, useUploadError } from './UploadError.tsx';
@@ -35,6 +36,7 @@ export function CommentEditor({ issueId }: { issueId: number }) {
     extensions: [
       StarterKit,
       Image.configure({ inline: false, allowBase64: false }),
+      ...tableExtensions,
       ImageUpload.configure(uploadError.handlers),
       Placeholder.configure({ placeholder: 'Add a comment...' }),
       Markdown.configure({

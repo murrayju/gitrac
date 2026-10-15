@@ -17,6 +17,7 @@
   "dependencies": {
     "@tiptap/extension-image": "^3.21.0",
     "@tiptap/extension-placeholder": "^3.21.0",
+    "@tiptap/extension-table": "^3.21.0",
     "@tiptap/react": "^3.21.0",
     "@tiptap/starter-kit": "^3.21.0",
     "commander": "^14.0.0",

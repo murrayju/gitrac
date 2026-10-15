@@ -6,6 +6,7 @@ import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from 'tiptap-markdown';
 import { needsSave } from './description-sync.ts';
 import { getEditorMarkdown } from './markdown.ts';
+import { tableExtensions } from './table-extensions.ts';
 
 /**
  * Regression test for #90: clicking into a description that ends in a code
@@ -33,6 +34,7 @@ function makeEditor(content: string): {
     extensions: [
       StarterKit,
       Image.configure({ inline: false, allowBase64: false }),
+      ...tableExtensions,
       Markdown.configure({
         html: false,
         transformPastedText: true,
@@ -52,6 +54,7 @@ for (const text of [
   'Intro\n\n```js\nconst a = 1;\n```',
   'Intro\n\n> quoted',
   '* one\n* two',
+  'Intro\n\n|A|B|\n|-|:-:|\n|1|2|',
 ]) {
   test(`clicking into ${JSON.stringify(text)} needs no save`, () => {
     const { editor, updates } = makeEditor(text);

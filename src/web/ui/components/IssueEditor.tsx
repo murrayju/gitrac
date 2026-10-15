@@ -13,6 +13,7 @@ import {
 import { Markdown } from 'tiptap-markdown';
 import { ImageUpload, uploadImage } from '../lib/image-upload-plugin.ts';
 import { getEditorMarkdown } from '../lib/markdown.ts';
+import { tableExtensions } from '../lib/table-extensions.ts';
 import { useIssueLinks } from '../lib/use-issue-links.ts';
 import { UploadError, useUploadError } from './UploadError.tsx';
 
@@ -89,6 +90,7 @@ export const IssueEditor = forwardRef<
     extensions: [
       StarterKit,
       Image.configure({ inline: false, allowBase64: false }),
+      ...tableExtensions,
       ImageUpload.configure(uploadError.handlers),
       Placeholder.configure({ placeholder }),
       Markdown.configure({

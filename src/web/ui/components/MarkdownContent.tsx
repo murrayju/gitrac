@@ -2,6 +2,7 @@ import Image from '@tiptap/extension-image';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from 'tiptap-markdown';
+import { tableExtensions } from '../lib/table-extensions.ts';
 import { useIssueLinks } from '../lib/use-issue-links.ts';
 
 export function MarkdownContent({ content }: { content: string }) {
@@ -10,6 +11,7 @@ export function MarkdownContent({ content }: { content: string }) {
     extensions: [
       StarterKit,
       Image.configure({ inline: false, allowBase64: false }),
+      ...tableExtensions,
       Markdown.configure({ html: false }),
       issueLinks,
     ],

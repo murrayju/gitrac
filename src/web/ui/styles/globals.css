@@ -164,6 +164,41 @@ body {
   margin-bottom: 0.25em;
 }
 
+/*
+ * Tiptap tables (#89). Tiptap renders the header row's <th> cells inside
+ * <tbody> (there is no <thead>), so the plugin's `thead` styles don't reach
+ * them: give them the same look here. Each cell's text is wrapped in a <p>;
+ * drop its margins so rows stay as compact as plain HTML tables.
+ */
+.tiptap.prose th {
+  color: var(--tw-prose-headings);
+  font-weight: 600;
+  vertical-align: bottom;
+  padding: 0 1em 0.666667em;
+}
+
+.tiptap.prose th:first-child {
+  padding-inline-start: 0;
+}
+
+.tiptap.prose th:last-child {
+  padding-inline-end: 0;
+}
+
+.tiptap.prose tr:has(> th) {
+  border-bottom-color: var(--tw-prose-th-borders);
+}
+
+.tiptap.prose :is(th, td) > p {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+/* Cells selected across (drag or shift-click in the editor) */
+.tiptap .selectedCell {
+  background: rgba(59, 130, 246, 0.12);
+}
+
 /* Tiptap inline images */
 .tiptap img {
   max-width: 100%;
