@@ -228,6 +228,41 @@ describe('-o json', () => {
     ).not.toContain('hi');
   });
 
+  test('a file without frontmatter is invalid_issue, not #NaN', async () => {
+    const bad = join(root, '.issues', '2-bad.md');
+    await Bun.write(bad, 'no frontmatter here\n');
+    const human = await cli('edit', '2', '-t', 'x');
+    expect(human.code).toBe(EXIT_GENERAL);
+    expect(human.stdout).toBe('');
+    expect(human.stderr).toContain(
+      `Error: Issue file ${join('.issues', '2-bad.md')} is malformed: no YAML frontmatter. Fix or remove it.`,
+    );
+    for (const args of [
+      ['show', '2'],
+      ['edit', '2', '-t', 'x'],
+      ['comment', '2', 'hi'],
+    ]) {
+      const res = await cli('-o', 'json', ...args);
+      expect(res.code).toBe(EXIT_GENERAL);
+      expect(jsonError(res.stderr)).toMatchObject({
+        code: 'invalid_issue',
+        id: 2,
+        file: join('.issues', '2-bad.md'),
+      });
+    }
+    // Nothing rewritten, renamed (no NaN-x.md) or committed
+    expect(await Bun.file(bad).text()).toBe('no frontmatter here\n');
+    expect(await Bun.file(join(root, '.issues', 'NaN-x.md')).exists()).toBe(
+      false,
+    );
+    const ls = await cli('ls');
+    expect(ls.code).toBe(0);
+    expect(ls.stdout).not.toContain('NaN');
+    expect(ls.stderr).toContain(
+      `Warning: skipping unreadable issue file ${join('.issues', '2-bad.md')}`,
+    );
+  });
+
   test('a comment on a misnamed issue file commits the rename', async () => {
     const git = simpleGit(root);
     await git.mv(

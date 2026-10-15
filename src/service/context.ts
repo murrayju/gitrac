@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { extractAssetRefs } from '../core/assets.ts';
+import { extractAssetRefs, isAssetFilename } from '../core/assets.ts';
 import type { ClaimUser } from '../core/claim.ts';
 import type { Config, Issue } from '../core/types.ts';
 import { readConfig } from '../fs/issue-store.ts';
@@ -22,41 +22,6 @@ export type Operation =
   | 'label-colors'
   | 'assignees'
   | 'merge-driver';
-
-/**
- * Differences between the CLI and the web API that predate the service layer.
- * They are kept as explicit switches so moving both onto one implementation
- * changes no behavior; each is a candidate for unifying later. Use
- * {@link CLI_POLICY} or {@link WEB_POLICY}.
- */
-export interface SurfacePolicy {
-  /** Also commit `.issues/assets/` files referenced by the issue (web). */
-  commitAssets: boolean;
-  /** Verb in the commit message of a field edit: `edit #N` / `update #N`. */
-  editVerb: 'edit' | 'update';
-  /** Always commit config.yaml on field edits, not only when labels were registered (CLI). */
-  editAlwaysCommitsConfig: boolean;
-  /** `comment on #N <title>` (web) instead of `comment on #N` (CLI). */
-  commentMessageHasTitle: boolean;
-  /** Reject a bad reopen status before looking up the issue (CLI). */
-  reopenValidatesStatusFirst: boolean;
-}
-
-export const CLI_POLICY: SurfacePolicy = {
-  commitAssets: false,
-  editVerb: 'edit',
-  editAlwaysCommitsConfig: true,
-  commentMessageHasTitle: false,
-  reopenValidatesStatusFirst: true,
-};
-
-export const WEB_POLICY: SurfacePolicy = {
-  commitAssets: true,
-  editVerb: 'update',
-  editAlwaysCommitsConfig: false,
-  commentMessageHasTitle: true,
-  reopenValidatesStatusFirst: false,
-};
 
 /** What a mutation wrote, passed to {@link ServiceContext.onWritten}. */
 export interface WrittenChange {
@@ -94,8 +59,11 @@ export interface ServiceContext {
   push?: boolean;
   /** How to commit (default: {@link commitStrategy}). */
   commit?: CommitStrategy;
-  /** Per-surface behavior switches. */
-  policy: SurfacePolicy;
+  /**
+   * Called instead of throwing when the push after a commit fails (the change
+   * is already written and committed). Unset: the push error is thrown.
+   */
+  onPushError?: (err: unknown) => void;
   /**
    * Called after the files are written, before committing/pushing, so a
    * caller can report the result even if the commit then fails.
@@ -123,14 +91,21 @@ export function loadConfig(ctx: ServiceContext): Promise<Config> {
   return ctx.loadConfig ? ctx.loadConfig() : readConfig(ctx.dir);
 }
 
-/** `.issues/assets/` paths referenced by the issue (if the policy commits them). */
-export function assetPaths(ctx: ServiceContext, issue: Issue): string[] {
-  if (!ctx.policy.commitAssets) return [];
+/**
+ * `.issues/assets/` paths referenced by the issue's description and comments,
+ * committed along with it so the issue never points at an uncommitted image.
+ * Only plain filenames count (a ref with `/` or `..` never adds a path
+ * outside `.issues/assets/`); refs to files that don't exist are skipped by
+ * the commit.
+ */
+export function assetPaths(issue: Issue): string[] {
   const allContent = [
     issue.description,
     ...issue.comments.map((c) => c.body),
   ].join('\n');
-  return extractAssetRefs(allContent).map((f) => join('.issues', 'assets', f));
+  return extractAssetRefs(allContent)
+    .filter(isAssetFilename)
+    .map((f) => join('.issues', 'assets', f));
 }
 
 /** Message for an invalid explicit author. */
@@ -177,6 +152,11 @@ export async function commitChange(
     files: change.paths,
     message: change.message,
   });
-  await pushIfConfigured(ctx.dir, config, { push: ctx.push });
+  try {
+    await pushIfConfigured(ctx.dir, config, { push: ctx.push });
+  } catch (err) {
+    if (!ctx.onPushError) throw err;
+    ctx.onPushError(err);
+  }
   return hash;
 }

@@ -159,7 +159,7 @@ src/
 
 **Git layer** — all git operations. Commit, amend-until-pushed, push, pull, rebase, conflict resolution for issue files. Tracks "amendable" commit state. Uses simple-git or shells out to git.
 
-**Service layer** — one function per mutation (`createIssue`, `updateIssue`, `addComment`, `editComment`, `deleteComment`, `closeIssue`, `reopenIssue`, `deleteIssue`, `claimIssue`, `unclaimIssue`, `initProject`, `updateLabelColors`, `updateAssignees`, `installMergeDriver`). Each takes an explicit context — project root, identity, a config loader, commit options (`noCommit`, `push`) and a commit strategy (the CLI makes plain commits; the web plugs in the amend-until-pushed `AmendTracker`) — and returns the resulting issue/config plus the changed paths. It owns the repo lock, input validation, the close/reopen and claim rules, label registration, moving files between `.issues/` and `.issues/closed/`, the commit file set (incl. referenced assets) and commit messages. Errors are `GitracError`s. The few remaining CLI-vs-web differences (commit-message wording, which files are committed, error precedence for reopen) are explicit `SurfacePolicy` switches.
+**Service layer** — one function per mutation (`createIssue`, `updateIssue`, `addComment`, `editComment`, `deleteComment`, `closeIssue`, `reopenIssue`, `deleteIssue`, `claimIssue`, `unclaimIssue`, `initProject`, `updateLabelColors`, `updateAssignees`, `installMergeDriver`). Each takes an explicit context — project root, identity, a config loader, commit options (`noCommit`, `push`) and a commit strategy (the CLI makes plain commits; the web plugs in the amend-until-pushed `AmendTracker`) — and returns the resulting issue/config plus the changed paths. It owns the repo lock, input validation, the close/reopen and claim rules, label registration, moving files between `.issues/` and `.issues/closed/`, the commit file set (incl. referenced assets) and commit messages. Errors are `GitracError`s with surface-neutral messages (no CLI flags; the CLI appends hints such as `Use --force to take it over.` by error code). Input is validated before the issue is loaded, so a bad field/status/comment body is `invalid_input` (400) even when the issue is also missing or in the wrong state. The CLI and web share one behavior; the only differences are context options (identity, commit strategy, `--no-commit`/`--push`).
 
 **CLI layer** — thin command adapters using Commander.js. Reads args/flags/stdin, calls the service, formats output; errors become exit codes.
 
@@ -247,7 +247,7 @@ Errors always go to **stderr**; stdout carries only the command's result (so wit
 | Exit | `code` | Meaning |
 |------|--------|---------|
 | 0 | — | Success (including no-op claims) |
-| 1 | `error`, `invalid_config`, `server_error` | Unexpected error, unparseable `.issues/config.yaml`, web server failed to start |
+| 1 | `error`, `invalid_config`, `invalid_issue`, `server_error` | Unexpected error, unparseable `.issues/config.yaml`, malformed issue file (no frontmatter, bad YAML, an `id` that doesn't match the file name; `file` names it — nothing is written), web server failed to start |
 | 2 | `invalid_input`, `usage`, `confirmation_required` | Bad issue ID, field value, text input, flag, or missing argument; or `delete` without confirmation (no `--yes` and no terminal, or the prompt was declined); nothing written |
 | 3 | `already_claimed`, `already_initialized`, `invalid_state`, `duplicate_issue` | Conflicts with current state: claimed by someone else (`claim`/`unclaim`), `init` on an initialized repo, `close` of a closed issue, `reopen` of an open issue, several files for one issue ID (`files` lists them) |
 | 4 | `issue_closed` | `claim`/`unclaim` on a closed issue |
@@ -312,15 +312,24 @@ Filtering, search and sorting are one pure function (`src/core/query.ts`, loaded
 
 ### Commit Messages
 
-Auto-generated with the configured prefix:
+Auto-generated with the configured prefix, identical for the CLI and the web UI:
 
 ```
-issue: create #3 - Fix login timeout
-issue: comment on #3
-issue: close #3 - Fix login timeout
-issue: update #3 priority=high assignee=murrayju
-issue: claim #3 (murrayju)
+issue: create #3 Fix login timeout
+issue: edit #3 Fix login timeout
+issue: comment on #3 Fix login timeout
+issue: edit comment on #3 Fix login timeout
+issue: delete comment on #3 Fix login timeout
+issue: close #3 Fix login timeout
+issue: reopen #3 Fix login timeout
+issue: claim #3 Fix login timeout
+issue: unclaim #3 Fix login timeout
+issue: delete #3 Fix login timeout
 ```
+
+**Committed files.** A commit contains the issue file (plus the old path when it was moved or renamed), `config.yaml` only when it actually changed (new labels registered, a new assignee added by `claim`), and the `.issues/assets/` files the issue references in its description or comments (plain filenames only; missing files are skipped) — on every surface, so an issue never points at an uncommitted image. Deleting a comment commits the assets the issue still references and never removes any (another issue may share them); only `delete` removes assets (see [Deleting](#deleting)).
+
+Comment bodies are trimmed everywhere (`comment`, `-c/--comment` on `edit`/`close`/`reopen`/`claim`/`unclaim`, the web UI); a blank `-c` adds no comment.
 
 ---
 
@@ -363,6 +372,7 @@ Implementation: `withLock` (`src/fs/lock.ts`, generic) and `withRepoLock` (`src/
 ### Push/Pull
 
 - `--push` flag forces push, `--no-push` flag forces no push, absence of either defers to `config.git.autoPush`
+- The web UI follows `config.git.autoPush` too, pushing after each commit or amend (within the request, under the lock). A pushed commit is no longer amendable, so with `autoPush` every web edit is its own commit — pushed history is never rewritten. A failed web push is logged to the server's stderr and doesn't fail the request (the change is already written and committed); the CLI reports it as `git_error` (exit 7)
 - Before commit: if remote has changes, attempt `git pull --rebase` first
 - Issue file conflict auto-resolution (see below)
 
@@ -420,7 +430,7 @@ The server has no authentication, so exposure is limited instead (`src/web/secur
 | Method | Route | Description |
 |--------|-------|------------|
 | GET | `/api/issues` | List issues. Query params `status`, `priority`, `label`, `assignee` (comma-separated or repeated), `search`, `mine` (= the server's identity), `sort` — same semantics as `gitrac ls` (see [List Filters](#list-filters)) |
-| GET | `/api/issues/:id` | Get single issue. **409** `{ error, code: "duplicate_issue", files }` if several files have the ID (also for every mutation of that issue) |
+| GET | `/api/issues/:id` | Get single issue. **409** `{ error, code: "duplicate_issue", files }` if several files have the ID, **409** `{ error, code: "invalid_issue", file }` if its file is malformed (both also for every mutation of that issue) |
 | POST | `/api/issues` | Create issue (optional `author` sets `createdBy`) |
 | PATCH | `/api/issues/:id` | Update issue metadata |
 | DELETE | `/api/issues/:id` | Delete issue + assets only it references (see [Deleting](#deleting)); always a new commit, never amended into the create. **200** `{ deleted: true, issue, paths, assets }` (the issue as it was). Honors `If-Match` |
@@ -430,6 +440,8 @@ The server has no authentication, so exposure is limited instead (`src/web/secur
 | PATCH | `/api/issues/:id/close` | Close issue (status `done`). **409** `{ error, code: "invalid_state", current }` if already closed |
 | PATCH | `/api/issues/:id/reopen` | Reopen issue with `defaultStatus` (optional body `{ status }`: a non-closed status, else 400). **409** `invalid_state` if already open |
 | GET | `/api/config` | Get project config |
+| PATCH | `/api/config/labels` | Merge label colors (`{ labels: { name: color } }`). **400** if `labels` isn't an object (including a non-JSON or `null` body) |
+| PATCH | `/api/config/assignees` | Replace the assignees (`{ assignees: [{ name, email }] }`). **400** if not an array of non-empty `name`/`email` |
 | GET | `/api/identity` | Default author for web writes (`{ name, email }` from git config / `--author`) |
 | GET | `/api/git/status` | Branch, push state, warnings |
 | GET | `/api/events` | SSE stream for live updates: `connected` on (re)connect, `issues-changed` on file changes, `: keep-alive` comments every 5s |

@@ -33,7 +33,10 @@ import { loadStoredIssue, type Precondition } from './load.ts';
  * Issue mutations shared by the CLI and the web API. Every operation runs its
  * whole read-validate-write-commit sequence under the repo lock
  * (`withRepoLock`, re-entrant), reads the config fresh inside it, and
- * validates input before touching disk. Errors are `GitracError`s: the CLI
+ * validates input before loading the issue (so input errors take precedence
+ * over not-found / state errors) and before touching disk. CLI and web get
+ * identical behavior: commit messages, committed files (incl. referenced
+ * assets), trimmed comments. Errors are `GitracError`s: the CLI
  * maps them to exit codes, the web API to HTTP statuses.
  */
 
@@ -51,7 +54,10 @@ export interface IssueChange {
 
 /** Options for operations on an existing issue. */
 export interface ExistingIssueOptions {
-  /** Checked on the loaded issue before anything else (e.g. `If-Match`). */
+  /**
+   * Checked on the loaded issue before it is changed (e.g. `If-Match`). Input
+   * is validated first, so a bad request is `invalid_input` even if stale.
+   */
   precondition?: Precondition;
 }
 
@@ -66,18 +72,22 @@ function validFields(
   return fields.values;
 }
 
-/** Append a comment by the context's identity (CLI `-c/--comment`). */
+/**
+ * Append a comment by the context's identity (CLI `-c/--comment`). The body
+ * is trimmed, like every comment; a blank one adds nothing.
+ */
 async function appendComment(
   ctx: ServiceContext,
   issue: Issue,
   body: string | undefined,
   timestamp: string,
 ): Promise<void> {
-  if (!body) return;
+  const text = body?.trim();
+  if (!text) return;
   issue.comments.push({
     author: (await ctx.identity()).name,
     timestamp,
-    body,
+    body: text,
   });
 }
 
@@ -154,7 +164,7 @@ export async function createIssue(
       paths: [
         issuePath(filename, false),
         ...(updated ? [CONFIG_PATH] : []),
-        ...assetPaths(ctx, issue),
+        ...assetPaths(issue),
       ],
       message: commitMessage(config, `create #${id} ${issue.title}`),
       config: updated ?? undefined,
@@ -176,11 +186,12 @@ export async function updateIssue(
 ): Promise<IssueChange> {
   return withRepoLock(ctx.dir, async () => {
     const config = await loadConfig(ctx);
+    // Input errors take precedence over issue errors (missing, If-Match...).
+    const { title, status, priority, assignee, labels, description } =
+      validFields(fields, config);
     const stored = await loadStoredIssue(ctx.dir, id, options.precondition);
     const { issue } = stored;
 
-    const { title, status, priority, assignee, labels, description } =
-      validFields(fields, config);
     if (title !== undefined) issue.title = title;
     if (status !== undefined) issue.status = status;
     if (priority !== undefined) issue.priority = priority;
@@ -196,23 +207,20 @@ export async function updateIssue(
     const [newPath, ...oldPaths] = await relocateIssue(ctx.dir, issue, stored, {
       closed: isClosedStatus(issue.status),
     });
+    // config.yaml only changes (and is committed) when new labels were
+    // registered.
     const updated = await registerLabels(ctx.dir, issue.labels);
-    const configPaths =
-      updated || ctx.policy.editAlwaysCommitsConfig ? [CONFIG_PATH] : [];
 
     return finish(ctx, config, {
       operation: 'update',
       issue,
       paths: [
         newPath as string,
-        ...configPaths,
+        ...(updated ? [CONFIG_PATH] : []),
         ...oldPaths,
-        ...assetPaths(ctx, issue),
+        ...assetPaths(issue),
       ],
-      message: commitMessage(
-        config,
-        `${ctx.policy.editVerb} #${id} ${issue.title}`,
-      ),
+      message: commitMessage(config, `edit #${id} ${issue.title}`),
       config: updated ?? undefined,
     });
   });
@@ -269,24 +277,22 @@ export async function addComment(
 ): Promise<IssueChange> {
   return withRepoLock(ctx.dir, async () => {
     const config = await loadConfig(ctx);
-    const stored = await loadStoredIssue(ctx.dir, id, options.precondition);
-    const { issue } = stored;
-
     const text = commentBody(body);
     const author = await resolveAuthor(ctx, options.author);
     if (author === null) throw invalidInput(INVALID_AUTHOR);
+    const stored = await loadStoredIssue(ctx.dir, id, options.precondition);
+    const { issue } = stored;
 
     const now = new Date().toISOString();
     issue.comments.push({ author, timestamp: now, body: text });
     issue.updated = now;
 
     const issuePaths = await writeInPlace(ctx, stored);
-    const suffix = ctx.policy.commentMessageHasTitle ? ` ${issue.title}` : '';
     return finish(ctx, config, {
       operation: 'comment',
       issue,
-      paths: [...issuePaths, ...assetPaths(ctx, issue)],
-      message: commitMessage(config, `comment on #${id}${suffix}`),
+      paths: [...issuePaths, ...assetPaths(issue)],
+      message: commitMessage(config, `comment on #${id} ${issue.title}`),
     });
   });
 }
@@ -300,12 +306,12 @@ export async function editComment(
   options: ExistingIssueOptions = {},
 ): Promise<IssueChange> {
   validCommentIndex(index);
+  const text = commentBody(body);
   return withRepoLock(ctx.dir, async () => {
     const config = await loadConfig(ctx);
     const stored = await loadStoredIssue(ctx.dir, id, options.precondition);
     const { issue } = stored;
     assertCommentIndex(issue, index);
-    const text = commentBody(body);
 
     const comment = issue.comments[index];
     if (comment) comment.body = text;
@@ -315,7 +321,7 @@ export async function editComment(
     return finish(ctx, config, {
       operation: 'edit-comment',
       issue,
-      paths: [...issuePaths, ...assetPaths(ctx, issue)],
+      paths: [...issuePaths, ...assetPaths(issue)],
       message: commitMessage(config, `edit comment on #${id} ${issue.title}`),
     });
   });
@@ -342,8 +348,10 @@ export async function deleteComment(
     return finish(ctx, config, {
       operation: 'delete-comment',
       issue,
-      // Assets referenced only by the deleted comment aren't committed.
-      paths: issuePaths,
+      // Assets the issue still references are committed; ones referenced
+      // only by the deleted comment are left alone (never removed: another
+      // issue may share them).
+      paths: [...issuePaths, ...assetPaths(issue)],
       message: commitMessage(config, `delete comment on #${id} ${issue.title}`),
     });
   });
@@ -380,7 +388,7 @@ export async function closeIssue(
     return finish(ctx, config, {
       operation: 'close',
       issue,
-      paths: [...paths, ...assetPaths(ctx, issue)],
+      paths: [...paths, ...assetPaths(issue)],
       message: commitMessage(config, `close #${id} ${issue.title}`),
     });
   });
@@ -408,14 +416,13 @@ export async function reopenIssue(
 ): Promise<IssueChange> {
   return withRepoLock(ctx.dir, async () => {
     const config = await loadConfig(ctx);
-    const early = ctx.policy.reopenValidatesStatusFirst
-      ? validReopenStatus(config, options.status)
-      : undefined;
+    // Input errors take precedence over issue errors (missing, open...).
+    const status = validReopenStatus(config, options.status);
     const stored = await loadStoredIssue(ctx.dir, id, options.precondition);
     const { issue } = stored;
     assertCanReopen(issue, stored.closed);
 
-    issue.status = early ?? validReopenStatus(config, options.status);
+    issue.status = status;
     const now = new Date().toISOString();
     issue.updated = now;
     await appendComment(ctx, issue, options.comment, now);
@@ -427,7 +434,7 @@ export async function reopenIssue(
     return finish(ctx, config, {
       operation: 'reopen',
       issue,
-      paths: [...paths, ...assetPaths(ctx, issue)],
+      paths: [...paths, ...assetPaths(issue)],
       message: commitMessage(config, `reopen #${id} ${issue.title}`),
     });
   });

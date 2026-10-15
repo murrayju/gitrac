@@ -7,6 +7,7 @@ import {
   serializeComments,
   unescapeCommentHeaderLine,
 } from './comments.ts';
+import { GitracError } from './errors.ts';
 import { scanFences } from './fences.ts';
 import type { Issue, IssueFrontmatter, Priority, Status } from './types.ts';
 
@@ -102,6 +103,45 @@ export function parseIssue(markdown: string): Issue {
     description,
     comments,
   };
+}
+
+/**
+ * Parse the file of issue `id` (`path`: repo-relative, for messages) and
+ * check it is one gitrac can safely rewrite: it has YAML frontmatter whose
+ * `id` matches the file name. Throws `invalid_issue` otherwise — e.g. a file
+ * without frontmatter would otherwise read as issue `#NaN` and be rewritten
+ * as `NaN-<slug>.md`.
+ */
+export function parseIssueFile(
+  content: string,
+  file: { id: number; path: string },
+): Issue {
+  const invalid = (reason: string, cause?: unknown) =>
+    new GitracError(
+      'invalid_issue',
+      `Issue file ${file.path} is malformed: ${reason}. Fix or remove it.`,
+      { details: { id: file.id, file: file.path }, cause },
+    );
+  let issue: Issue;
+  try {
+    issue = parseIssue(content);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw invalid(`invalid frontmatter (${message.split('\n')[0]})`, err);
+  }
+  if (Number.isNaN(issue.id)) {
+    throw invalid(
+      /^\uFEFF?---\r?\n/.test(content)
+        ? 'missing or invalid id in the frontmatter'
+        : 'no YAML frontmatter',
+    );
+  }
+  if (issue.id !== file.id) {
+    throw invalid(
+      `frontmatter id ${issue.id} doesn't match the file name (#${file.id})`,
+    );
+  }
+  return issue;
 }
 
 /**

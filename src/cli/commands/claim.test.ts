@@ -70,8 +70,9 @@ describe('claim', () => {
 
     const res = await cli('Bob', 'claim', '1');
     expect(res.code).toBe(EXIT_ALREADY_CLAIMED);
-    expect(res.stderr).toContain('already claimed by Alice');
-    expect(res.stderr).toContain('--force');
+    expect(res.stderr).toContain(
+      'Error: Issue #1 is already claimed by Alice (in_progress). Use --force to take it over.',
+    );
 
     const issue = await readIssue(dir, 1);
     expect(issue.assignee).toBe('Alice');
@@ -118,7 +119,10 @@ describe('claim', () => {
 
     const res = await cli('Bob', 'claim', '1');
     expect(res.code).toBe(EXIT_ISSUE_CLOSED);
-    expect(res.stderr).toContain('closed');
+    // The CLI adds its own hint to the service's surface-neutral message
+    expect(res.stderr).toContain(
+      'Error: Issue #1 is closed (done). Use "gitrac reopen 1" first, or claim --force to reopen and claim it.',
+    );
     expect((await findIssueFile(dir, 1))?.closed).toBe(true);
     expect((await readIssue(dir, 1)).status).toBe('done');
     expect(await commitCount()).toBe(before);
@@ -175,6 +179,9 @@ describe('unclaim', () => {
     expect((await cli('Alice', 'claim', '1')).code).toBe(0);
     const res = await cli('Bob', 'unclaim', '1');
     expect(res.code).toBe(EXIT_ALREADY_CLAIMED);
+    expect(res.stderr).toContain(
+      'Error: Issue #1 is claimed by Alice, not you. Use --force to release it anyway.',
+    );
     expect((await readIssue(dir, 1)).assignee).toBe('Alice');
 
     expect((await cli('Bob', 'unclaim', '1', '--force')).code).toBe(0);

@@ -1,9 +1,5 @@
 import type { ClaimUser } from '../core/claim.ts';
-import {
-  CLI_POLICY,
-  type ServiceContext,
-  type WrittenChange,
-} from '../service/context.ts';
+import type { ServiceContext, WrittenChange } from '../service/context.ts';
 import type { GlobalOptions } from './global-options.ts';
 import { formatIssueDetail } from './output.ts';
 
@@ -44,7 +40,6 @@ export function cliServiceContext(
     identity: () => resolveClaimUser(globalOpts),
     noCommit: !globalOpts.commit,
     push: globalOpts.push,
-    policy: CLI_POLICY,
     onWritten,
   };
 }

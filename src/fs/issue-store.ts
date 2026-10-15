@@ -14,7 +14,7 @@ import {
   serializeConfig,
 } from '../core/config.ts';
 import { duplicateIssue, GitracError, issueNotFound } from '../core/errors.ts';
-import { parseIssue, serializeIssue } from '../core/issue.ts';
+import { parseIssueFile, serializeIssue } from '../core/issue.ts';
 import { issueFilename, parseIssueId } from '../core/slug.ts';
 import type { Config, Issue } from '../core/types.ts';
 
@@ -170,14 +170,19 @@ export async function readIssueContent(
 }
 
 /**
- * Read and parse an issue by its numeric ID.
+ * Read and parse an issue by its numeric ID. Throws `not_found` if there is
+ * no file for it and `invalid_issue` if the file is malformed (see
+ * `parseIssueFile`).
  */
 export async function readIssue(dir: string, id: number): Promise<Issue> {
   const raw = await readIssueContent(dir, id);
   if (!raw) {
     throw issueNotFound(id);
   }
-  return parseIssue(raw.content);
+  return parseIssueFile(raw.content, {
+    id,
+    path: issueRelPath(raw.filename, raw.closed),
+  });
 }
 
 /**

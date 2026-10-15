@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import simpleGit from 'simple-git';
 import { initIssuesDir } from '../fs/issue-store.ts';
 import { initProject } from './config.ts';
-import { CLI_POLICY } from './context.ts';
 import { installMergeDriver } from './merge-driver.ts';
 import { type ServiceFixture, serviceFixture } from './test-helpers.fixture.ts';
 
@@ -58,7 +57,6 @@ describe('merge driver git config', () => {
     dir,
     identity: async () => ({ name: 'Ada', email: 'ada@example.com' }),
     noCommit,
-    policy: CLI_POLICY,
   });
 
   test('installMergeDriver defines merge.gitrac.driver', async () => {

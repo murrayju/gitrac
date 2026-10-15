@@ -38,6 +38,26 @@ export function toGitracError(err: unknown): GitracError {
   return new GitracError('error', String(err));
 }
 
+/**
+ * Append a CLI hint (e.g. which flag overrides the error) to a service
+ * error's message, keyed by error code. Service messages are
+ * surface-neutral; the adapter knows its own flags. Returns `err` unchanged
+ * if it isn't a {@link GitracError} or has no hint; otherwise a copy with the
+ * same code, details and cause. Use as `promise.catch((e) => { throw withHint(e, …) })`.
+ */
+export function withHint(
+  err: unknown,
+  hints: Partial<Record<ErrorCode, string>>,
+): unknown {
+  if (!(err instanceof GitracError)) return err;
+  const hint = hints[err.code];
+  if (!hint) return err;
+  return new GitracError(err.code, `${err.message} ${hint}`, {
+    details: err.details,
+    cause: err,
+  });
+}
+
 /** The machine-readable error object for json/yaml output. */
 export function errorPayload(err: GitracError): ErrorPayload {
   // code and message come first and are never overridden by details.

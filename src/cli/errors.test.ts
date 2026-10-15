@@ -17,6 +17,7 @@ import {
   formatError,
   scanErrorOptions,
   toGitracError,
+  withHint,
 } from './errors.ts';
 import { ProjectRootError } from './global-options.ts';
 
@@ -123,5 +124,26 @@ describe('scanErrorOptions', () => {
     [['comment', '1', '--', '-o', 'json', '--debug'], 'human', false],
   ] as const)('%j', (argv, format, debug) => {
     expect(scanErrorOptions(argv)).toEqual({ format, debug });
+  });
+});
+
+describe('withHint', () => {
+  test('appends the hint for the error code, keeping code and details', () => {
+    const err = new GitracError('already_claimed', 'Taken.', {
+      details: { id: 1 },
+    });
+    const hinted = withHint(err, { already_claimed: 'Use --force.' });
+    expect(hinted).toBeInstanceOf(GitracError);
+    expect((hinted as GitracError).message).toBe('Taken. Use --force.');
+    expect((hinted as GitracError).code).toBe('already_claimed');
+    expect((hinted as GitracError).details).toEqual({ id: 1 });
+    expect((hinted as GitracError).cause).toBe(err);
+  });
+
+  test('leaves other codes and non-GitracErrors alone', () => {
+    const err = new GitracError('not_found', 'Missing.');
+    expect(withHint(err, { already_claimed: 'x' })).toBe(err);
+    const plain = new Error('boom');
+    expect(withHint(plain, { error: 'x' })).toBe(plain);
   });
 });

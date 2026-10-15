@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { fileURLToPath } from 'node:url';
+import { GitracError } from './errors.ts';
 import { scanFences } from './fences.ts';
-import { differsOnlyInUpdated, parseIssue, serializeIssue } from './issue.ts';
+import {
+  differsOnlyInUpdated,
+  parseIssue,
+  parseIssueFile,
+  serializeIssue,
+} from './issue.ts';
 import type { Comment, Issue } from './types.ts';
 
 const FULL_ISSUE = `---
@@ -542,5 +548,47 @@ describe('existing issue files in this repo', () => {
         out: raw,
       });
     }
+  });
+});
+
+describe('parseIssueFile', () => {
+  const file = { id: 3, path: '.issues/3-x.md' };
+  const valid = '---\nid: 3\ntitle: X\n---\n\nBody\n';
+
+  function failure(content: string): GitracError {
+    try {
+      parseIssueFile(content, file);
+    } catch (err) {
+      return err as GitracError;
+    }
+    throw new Error('expected parseIssueFile to throw');
+  }
+
+  test('parses a well-formed file', () => {
+    expect(parseIssueFile(valid, file)).toMatchObject({ id: 3, title: 'X' });
+  });
+
+  test('a file without frontmatter is invalid_issue, not #NaN', () => {
+    const err = failure('just text\n');
+    expect(err).toBeInstanceOf(GitracError);
+    expect(err.code).toBe('invalid_issue');
+    expect(err.exitCode).toBe(1);
+    expect(err.message).toBe(
+      'Issue file .issues/3-x.md is malformed: no YAML frontmatter. Fix or remove it.',
+    );
+    expect(err.details).toEqual({ id: 3, file: '.issues/3-x.md' });
+  });
+
+  test('a missing / non-numeric id, bad YAML or a mismatched id is invalid_issue', () => {
+    expect(failure('---\ntitle: X\n---\n').message).toContain(
+      'missing or invalid id in the frontmatter',
+    );
+    expect(failure('---\nid: abc\n---\n').code).toBe('invalid_issue');
+    expect(failure('---\n: [\n---\n').message).toContain(
+      'invalid frontmatter (',
+    );
+    expect(failure('---\nid: 4\ntitle: X\n---\n').message).toContain(
+      "frontmatter id 4 doesn't match the file name (#3)",
+    );
   });
 });

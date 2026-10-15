@@ -1,9 +1,10 @@
 import { type Context, Hono } from 'hono';
 import { GitracError } from '../../core/errors.ts';
-import { parseIssue } from '../../core/issue.ts';
+import { parseIssueFile } from '../../core/issue.ts';
 import { type IssueQuery, parseIssueQuery } from '../../core/query.ts';
 import type { Issue } from '../../core/types.ts';
 import { readIssueContent } from '../../fs/issue-store.ts';
+import { issuePath } from '../../service/context.ts';
 import { deleteIssue } from '../../service/delete.ts';
 import { IssueUnreadableError, ValidationError } from '../../service/errors.ts';
 import {
@@ -20,25 +21,10 @@ import { listIssues } from '../../service/list.ts';
 import type { Precondition } from '../../service/load.ts';
 import { ifMatchSatisfied, issueETag } from '../etag.ts';
 import { mutationLock } from '../lock.ts';
+import { asRecord, readJsonBody } from '../request-body.ts';
 import type { ServerContext } from '../server.ts';
 import { webServiceContext } from '../service-context.ts';
 import { serverIdentity } from './identity.ts';
-
-/** Treat a non-object JSON body as empty so field checks reject it. */
-function asRecord(value: unknown): Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-/** Parse a JSON request body, returning undefined if it isn't valid JSON. */
-async function readJsonBody(c: Context): Promise<unknown> {
-  try {
-    return await c.req.json();
-  } catch {
-    return undefined;
-  }
-}
 
 /** An issue as currently on disk, with its version (ETag) and location. */
 interface LoadedIssue {
@@ -61,22 +47,37 @@ function duplicateResponse(c: Context, err: GitracError): Response {
   );
 }
 
+/** Whether `err` reports a malformed issue file. */
+function isInvalidIssue(err: unknown): err is GitracError {
+  return err instanceof GitracError && err.code === 'invalid_issue';
+}
+
+/** 409 `{ error, code: "invalid_issue", file }`. */
+function invalidIssueResponse(c: Context, err: GitracError): Response {
+  return c.json(
+    { error: err.message, code: err.code, file: err.details?.file },
+    409,
+  );
+}
+
 /**
  * Read + parse an issue and compute its ETag; null if missing/unreadable.
- * Throws `duplicate_issue` if several files have the ID.
+ * Throws `duplicate_issue` if several files have the ID and `invalid_issue`
+ * if its file is malformed.
  */
 async function loadIssue(dir: string, id: number): Promise<LoadedIssue | null> {
   try {
     const raw = await readIssueContent(dir, id);
     if (!raw) return null;
+    const path = issuePath(raw.filename, raw.closed);
     return {
-      issue: parseIssue(raw.content),
+      issue: parseIssueFile(raw.content, { id, path }),
       etag: issueETag(raw.content),
       filename: raw.filename,
       closed: raw.closed,
     };
   } catch (err) {
-    if (isDuplicateIssue(err)) throw err;
+    if (isDuplicateIssue(err) || isInvalidIssue(err)) throw err;
     return null;
   }
 }
@@ -121,6 +122,7 @@ function ifMatchGuard(c: Context): {
  * - field validation: 400 `{ error, errors }`; other bad input: 400 `{ error }`
  * - missing or unreadable issue, comment index out of range: 404 `{ error }`
  * - several files for the issue ID: 409 `{ error, code, files }`
+ * - malformed issue file: 409 `{ error, code: "invalid_issue", file }`
  */
 function errorResponse(
   c: Context,
@@ -144,6 +146,7 @@ function errorResponse(
     return c.json({ error: `Issue #${err.id} not found` }, 404);
   }
   if (isDuplicateIssue(err)) return duplicateResponse(c, err);
+  if (isInvalidIssue(err)) return invalidIssueResponse(c, err);
   if (err instanceof GitracError) {
     if (err.code === 'invalid_state' && current) {
       c.header('ETag', current.etag);
@@ -228,6 +231,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
       loaded = await loadIssue(dir, id);
     } catch (err) {
       if (isDuplicateIssue(err)) return duplicateResponse(c, err);
+      if (isInvalidIssue(err)) return invalidIssueResponse(c, err);
       throw err;
     }
     if (!loaded) {

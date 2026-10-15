@@ -11,7 +11,6 @@ import {
   writeConfig,
   writeIssue,
 } from '../fs/issue-store.ts';
-import { CLI_POLICY, WEB_POLICY } from './context.ts';
 import { IssueUnreadableError, ValidationError } from './errors.ts';
 import {
   addComment,
@@ -198,7 +197,6 @@ describe('updateIssue', () => {
     const result = await updateIssue(fx.context(), 1, { title: 'New title' });
     expect(result.paths).toEqual([
       join('.issues', '1-new-title.md'),
-      join('.issues', 'config.yaml'),
       join('.issues', '1-old-title.md'),
     ]);
     expect(fx.commits[0]?.message).toBe('issue: edit #1 New title');
@@ -217,34 +215,67 @@ describe('updateIssue', () => {
     });
   });
 
-  test('adds an optional comment by the identity', async () => {
+  test('adds an optional comment by the identity, trimmed (blank: none)', async () => {
     const { issue } = await updateIssue(
       fx.context(),
       1,
       {},
-      { comment: 'note' },
+      { comment: '  note \n' },
     );
     expect(issue.comments).toMatchObject([{ author: 'Ada', body: 'note' }]);
+
+    const blank = await updateIssue(fx.context(), 1, {}, { comment: '  ' });
+    expect(blank.issue.comments).toHaveLength(1);
   });
 
-  test('web policy: "update" verb, config only when labels were registered', async () => {
-    const ctx = fx.context({ policy: WEB_POLICY });
+  test('"edit" verb; config.yaml only when labels were registered', async () => {
+    const ctx = fx.context();
     const first = await updateIssue(ctx, 1, { priority: 'high' });
     expect(first.paths).toEqual([join('.issues', '1-old-title.md')]);
-    expect(fx.commits[0]?.message).toBe('issue: update #1 Old title');
+    expect(fx.commits[0]?.message).toBe('issue: edit #1 Old title');
+    expect(fx.commits[0]?.files).toEqual([join('.issues', '1-old-title.md')]);
 
     const second = await updateIssue(ctx, 1, { labels: ['fresh'] });
     expect(second.paths).toContain(join('.issues', 'config.yaml'));
   });
 
-  test('the precondition runs before validation and can abort', async () => {
+  test('commits the assets the issue references', async () => {
+    const result = await updateIssue(fx.context(), 1, {
+      description:
+        'See ![x](/.issues/assets/pic.png) and /.issues/assets/../config.yaml',
+    });
+    // Only plain asset filenames, never a path escaping .issues/assets/
+    expect(result.paths).toEqual([
+      join('.issues', '1-old-title.md'),
+      join('.issues', 'assets', 'pic.png'),
+    ]);
+  });
+
+  test('input is validated before the issue is loaded', async () => {
+    let seen: StoredIssue | undefined;
+    const precondition = (current: StoredIssue) => {
+      seen = current;
+      throw new Error('stale');
+    };
+    const invalid = await rejection(
+      updateIssue(fx.context(), 1, { status: 'bogus' }, { precondition }),
+    );
+    expect(invalid).toBeInstanceOf(ValidationError);
+    expect(seen).toBeUndefined();
+    const missing = await rejection(
+      updateIssue(fx.context(), 99, { status: 'bogus' }),
+    );
+    expect(missing).toBeInstanceOf(ValidationError);
+  });
+
+  test('the precondition runs before anything is written and can abort', async () => {
     const before = await snapshot();
     let seen: StoredIssue | undefined;
     const err = await rejection(
       updateIssue(
         fx.context(),
         1,
-        { status: 'bogus' },
+        { status: 'todo' },
         {
           precondition: (current) => {
             seen = current;
@@ -260,16 +291,53 @@ describe('updateIssue', () => {
     expect(await snapshot()).toEqual(before);
   });
 
-  test('a missing issue is not_found; an unparsable one IssueUnreadableError', async () => {
+  test('a missing issue is not_found; a malformed one invalid_issue', async () => {
     const missing = await rejection(updateIssue(fx.context(), 99, {}));
     expect((missing as GitracError).code).toBe('not_found');
     expect((missing as GitracError).message).toBe('Issue #99 not found');
 
     await writeFile(join(fx.dir, '.issues', '2-bad.md'), '---\n: [\n---\n');
     const bad = await rejection(updateIssue(fx.context(), 2, {}));
-    expect(bad).toBeInstanceOf(IssueUnreadableError);
-    expect((bad as IssueUnreadableError).id).toBe(2);
-    expect((bad as GitracError).code).toBe('error');
+    expect((bad as GitracError).code).toBe('invalid_issue');
+    expect((bad as GitracError).message).toStartWith(
+      `Issue file ${join('.issues', '2-bad.md')} is malformed: invalid frontmatter`,
+    );
+    expect((bad as GitracError).details).toEqual({
+      id: 2,
+      file: join('.issues', '2-bad.md'),
+    });
+  });
+
+  test('a file without frontmatter is invalid_issue and is left alone (not #NaN)', async () => {
+    const path = join(fx.dir, '.issues', '3-plain.md');
+    await writeFile(path, 'no frontmatter here\n');
+    const before = await snapshot();
+    for (const run of [
+      () => updateIssue(fx.context(), 3, { title: 'x' }),
+      () => addComment(fx.context(), 3, 'hi'),
+      () => closeIssue(fx.context(), 3),
+    ]) {
+      const err = await rejection(run());
+      expect((err as GitracError).code).toBe('invalid_issue');
+      expect((err as GitracError).message).toBe(
+        `Issue file ${join('.issues', '3-plain.md')} is malformed: no YAML frontmatter. Fix or remove it.`,
+      );
+    }
+    expect(await snapshot()).toEqual(before);
+    expect(fx.commits).toEqual([]);
+  });
+
+  test('a frontmatter id that does not match the file name is invalid_issue', async () => {
+    await writeIssue(fx.dir, makeIssue({ id: 4, title: 'Four' }));
+    await rename(
+      join(fx.dir, '.issues', '4-four.md'),
+      join(fx.dir, '.issues', '5-four.md'),
+    );
+    const err = await rejection(updateIssue(fx.context(), 5, {}));
+    expect((err as GitracError).code).toBe('invalid_issue');
+    expect((err as GitracError).message).toContain(
+      "frontmatter id 4 doesn't match the file name (#5)",
+    );
   });
 });
 
@@ -288,29 +356,31 @@ describe('comments', () => {
     );
   });
 
-  test('addComment trims the body and commits only the issue (CLI)', async () => {
+  test('addComment trims the body; title in the message, referenced assets committed', async () => {
     const result = await addComment(fx.context(), 1, '  hello  ');
     expect(result.issue.comments.at(-1)).toMatchObject({
       author: 'Ada',
       body: 'hello',
     });
-    expect(result.paths).toEqual([join('.issues', '1-has-comments.md')]);
-    expect(fx.commits[0]?.message).toBe('issue: comment on #1');
-  });
-
-  test('web policy: title in the message, referenced assets committed', async () => {
-    const result = await addComment(
-      fx.context({ policy: WEB_POLICY }),
-      1,
-      'hi',
-      { author: 'Grace' },
-    );
-    expect(result.issue.comments.at(-1)?.author).toBe('Grace');
     expect(result.paths).toEqual([
       join('.issues', '1-has-comments.md'),
       join('.issues', 'assets', 'pic.png'),
     ]);
     expect(fx.commits[0]?.message).toBe('issue: comment on #1 Has comments');
+  });
+
+  test('an explicit author overrides the identity', async () => {
+    const result = await addComment(fx.context(), 1, 'hi', {
+      author: 'Grace',
+    });
+    expect(result.issue.comments.at(-1)?.author).toBe('Grace');
+  });
+
+  test('a bad body is rejected before the issue is looked up', async () => {
+    const err = await rejection(addComment(fx.context(), 99, '  '));
+    expect((err as GitracError).code).toBe('invalid_input');
+    const edit = await rejection(editComment(fx.context(), 99, 0, ''));
+    expect((edit as GitracError).code).toBe('invalid_input');
   });
 
   test('addComment rejects an empty body or blank author with invalid_input', async () => {
@@ -335,14 +405,13 @@ describe('comments', () => {
       'issue: edit comment on #1 Has comments',
     );
 
-    const deleted = await deleteComment(
-      fx.context({ policy: WEB_POLICY }),
-      1,
-      0,
-    );
+    const deleted = await deleteComment(fx.context(), 1, 0);
     expect(deleted.issue.comments).toEqual([]);
-    // Deleting never commits assets
-    expect(deleted.paths).toEqual([join('.issues', '1-has-comments.md')]);
+    // Assets the issue still references are committed (never removed)
+    expect(deleted.paths).toEqual([
+      join('.issues', '1-has-comments.md'),
+      join('.issues', 'assets', 'pic.png'),
+    ]);
     expect(fx.commits[1]?.message).toBe(
       'issue: delete comment on #1 Has comments',
     );
@@ -496,7 +565,7 @@ describe('closeIssue / reopenIssue', () => {
     expect((err as GitracError).code).toBe('invalid_state');
   });
 
-  test('a bad reopen status is a ValidationError; the policy decides precedence', async () => {
+  test('a bad reopen status is a ValidationError, reported before issue errors', async () => {
     // Closed issue: rejected either way
     await closeIssue(fx.context(), 1);
     const bad = await rejection(
@@ -504,14 +573,15 @@ describe('closeIssue / reopenIssue', () => {
     );
     expect(bad).toBeInstanceOf(ValidationError);
 
-    // CLI checks the status first; web checks the issue first
-    const cli = await rejection(
-      reopenIssue(fx.context({ policy: CLI_POLICY }), 99, { status: 'bogus' }),
+    // Input first: a missing or open issue with a bad status is invalid_input
+    const missing = await rejection(
+      reopenIssue(fx.context(), 99, { status: 'bogus' }),
     );
-    expect((cli as GitracError).code).toBe('invalid_input');
-    const web = await rejection(
-      reopenIssue(fx.context({ policy: WEB_POLICY }), 99, { status: 'bogus' }),
+    expect(missing).toBeInstanceOf(ValidationError);
+    await reopenIssue(fx.context(), 1);
+    const open = await rejection(
+      reopenIssue(fx.context(), 1, { status: 'bogus' }),
     );
-    expect((web as GitracError).code).toBe('not_found');
+    expect(open).toBeInstanceOf(ValidationError);
   });
 });

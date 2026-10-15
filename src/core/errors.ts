@@ -6,7 +6,10 @@
  * CLI contract (documented in the skill and design spec): keep them stable.
  */
 
-/** Unexpected / general failure (also: invalid config file, server errors). */
+/**
+ * Unexpected / general failure (also: invalid config file, malformed issue
+ * file, server errors).
+ */
 export const EXIT_GENERAL = 1;
 /**
  * Bad arguments, flags, or field values (including CLI usage errors), or a
@@ -36,6 +39,7 @@ export const EXIT_NOT_A_PROJECT = 8;
 export const ERROR_EXIT_CODES = {
   error: EXIT_GENERAL,
   invalid_config: EXIT_GENERAL,
+  invalid_issue: EXIT_GENERAL,
   server_error: EXIT_GENERAL,
   invalid_input: EXIT_INVALID_INPUT,
   usage: EXIT_INVALID_INPUT,

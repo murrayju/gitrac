@@ -67,6 +67,14 @@ describe('claimIssue', () => {
     });
   });
 
+  test('the comment is trimmed; a blank one adds nothing', async () => {
+    await writeIssue(fx.dir, makeIssue({ id: 1, title: 'Task' }));
+    const claimed = await claimIssue(fx.context(), 1, { comment: ' mine\n' });
+    expect(claimed.issue.comments).toMatchObject([{ body: 'mine' }]);
+    const released = await unclaimIssue(fx.context(), 1, { comment: '  ' });
+    expect(released.issue.comments).toHaveLength(1);
+  });
+
   test('claiming your own in-progress issue is a no-op', async () => {
     await writeIssue(
       fx.dir,
@@ -85,6 +93,10 @@ describe('claimIssue', () => {
     );
     const err = await rejection(claimIssue(fx.context(), 1));
     expect(err.code).toBe('already_claimed');
+    // Surface-neutral: no CLI flags (adapters add hints)
+    expect(err.message).toBe(
+      'Issue #1 is already claimed by bob@x.com (in_progress).',
+    );
     expect(err.details).toEqual({ id: 1, assignee: 'bob@x.com' });
     expect((await readIssue(fx.dir, 1)).assignee).toBe('bob@x.com');
 
@@ -102,6 +114,7 @@ describe('claimIssue', () => {
     );
     const err = await rejection(claimIssue(fx.context(), 1));
     expect(err.code).toBe('issue_closed');
+    expect(err.message).toBe('Issue #1 is closed (done).');
 
     const result = await claimIssue(fx.context(), 1, { force: true });
     expect(result.changed && result.paths).toEqual([
@@ -213,9 +226,9 @@ describe('unclaimIssue', () => {
       fx.dir,
       makeIssue({ id: 1, status: 'in_progress', assignee: 'bob@x.com' }),
     );
-    expect((await rejection(unclaimIssue(fx.context(), 1))).code).toBe(
-      'already_claimed',
-    );
+    const err = await rejection(unclaimIssue(fx.context(), 1));
+    expect(err.code).toBe('already_claimed');
+    expect(err.message).toBe('Issue #1 is claimed by bob@x.com, not you.');
     const forced = await unclaimIssue(fx.context(), 1, { force: true });
     expect(forced.issue.assignee).toBe('');
   });

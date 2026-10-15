@@ -5,11 +5,7 @@ import type { ClaimUser } from '../core/claim.ts';
 import type { Issue } from '../core/types.ts';
 import { initIssuesDir } from '../fs/issue-store.ts';
 import type { CommitRequest } from './commit.ts';
-import {
-  CLI_POLICY,
-  type ServiceContext,
-  type WrittenChange,
-} from './context.ts';
+import type { ServiceContext, WrittenChange } from './context.ts';
 
 /** Shared setup for the service-layer unit tests (no git repo needed). */
 export interface ServiceFixture {
@@ -42,7 +38,6 @@ export async function serviceFixture(): Promise<ServiceFixture> {
       dir,
       identity: async () => ADA,
       push: false,
-      policy: CLI_POLICY,
       commit: async (request) => {
         commits.push(request);
         events.push(`commit:${request.operation}`);

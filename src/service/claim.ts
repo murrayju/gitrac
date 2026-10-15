@@ -18,7 +18,8 @@ import { loadStoredIssue } from './load.ts';
 /**
  * Claim / unclaim: the rules live in `src/core/claim.ts`; this applies them
  * to the issue on disk under the repo lock, so two concurrent claims can't
- * both win.
+ * both win. Error messages are surface-neutral (no CLI flags or commands):
+ * adapters append their own hints by error code (see `src/cli/commands/claim.ts`).
  */
 
 /**
@@ -34,6 +35,17 @@ export interface ClaimOptions {
   comment?: string;
   /** claim: take over someone else's issue, or reopen and claim a closed one. unclaim: release someone else's issue. */
   force?: boolean;
+}
+
+/** Append the (trimmed) comment, if not blank. */
+function addClaimComment(
+  issue: Issue,
+  author: string,
+  body: string | undefined,
+  timestamp: string,
+): void {
+  const text = body?.trim();
+  if (text) issue.comments.push({ author, timestamp, body: text });
 }
 
 /**
@@ -61,14 +73,14 @@ export async function claimIssue(
     if (decision.action === 'already-claimed') {
       throw new GitracError(
         'already_claimed',
-        `Issue #${id} is already claimed by ${decision.assignee} (in_progress). Use --force to take it over.`,
+        `Issue #${id} is already claimed by ${decision.assignee} (in_progress).`,
         { details: { id, assignee: decision.assignee } },
       );
     }
     if (decision.action === 'closed') {
       throw new GitracError(
         'issue_closed',
-        `Issue #${id} is closed (${issue.status}). Use "gitrac reopen ${id}" first, or claim --force to reopen and claim it.`,
+        `Issue #${id} is closed (${issue.status}).`,
         { details: { id, status: issue.status } },
       );
     }
@@ -89,13 +101,7 @@ export async function claimIssue(
     }
     const now = new Date().toISOString();
     issue.updated = now;
-    if (options.comment) {
-      issue.comments.push({
-        author: user.name,
-        timestamp: now,
-        body: options.comment,
-      });
-    }
+    addClaimComment(issue, user.name, options.comment, now);
 
     // in_progress is an open status, so write to the open dir; the old file
     // goes if it was in the closed dir or its name doesn't match the title.
@@ -103,7 +109,7 @@ export async function claimIssue(
       closed: false,
     });
     if (configChanged) paths.push(CONFIG_PATH);
-    paths.push(...assetPaths(ctx, issue));
+    paths.push(...assetPaths(issue));
 
     const commit = await commitChange(ctx, config, {
       operation: 'claim',
@@ -138,7 +144,7 @@ export async function unclaimIssue(
     if (decision.action === 'not-yours') {
       throw new GitracError(
         'already_claimed',
-        `Issue #${id} is claimed by ${decision.assignee}, not you. Use --force to release it anyway.`,
+        `Issue #${id} is claimed by ${decision.assignee}, not you.`,
         { details: { id, assignee: decision.assignee } },
       );
     }
@@ -159,19 +165,13 @@ export async function unclaimIssue(
     }
     const now = new Date().toISOString();
     issue.updated = now;
-    if (options.comment) {
-      issue.comments.push({
-        author: user.name,
-        timestamp: now,
-        body: options.comment,
-      });
-    }
+    addClaimComment(issue, user.name, options.comment, now);
 
     // Replaces the old file if its name didn't match the title's slug.
     const paths = await relocateIssue(ctx.dir, issue, stored, {
       closed: false,
     });
-    paths.push(...assetPaths(ctx, issue));
+    paths.push(...assetPaths(issue));
 
     const commit = await commitChange(ctx, config, {
       operation: 'unclaim',

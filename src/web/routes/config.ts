@@ -6,6 +6,7 @@ import {
   updateLabelColors,
 } from '../../service/config.ts';
 import { mutationLock } from '../lock.ts';
+import { asRecord, readJsonBody } from '../request-body.ts';
 import type { ServerContext } from '../server.ts';
 import { webServiceContext } from '../service-context.ts';
 
@@ -38,8 +39,8 @@ export function configRoutes(ctx: ServerContext): Hono {
 
   // PATCH /config/labels — update label colors
   app.patch('/config/labels', locked, async (c) => {
-    const body = await c.req.json();
-    const { labels } = body;
+    // A non-JSON / non-object body leaves `labels` undefined -> 400.
+    const { labels } = asRecord(await readJsonBody(c));
     return mutateConfig(c, () =>
       updateLabelColors(webServiceContext(ctx), labels),
     );
@@ -47,8 +48,7 @@ export function configRoutes(ctx: ServerContext): Hono {
 
   // PATCH /config/assignees — update assignees list
   app.patch('/config/assignees', locked, async (c) => {
-    const body = await c.req.json();
-    const { assignees } = body;
+    const { assignees } = asRecord(await readJsonBody(c));
     return mutateConfig(c, () =>
       updateAssignees(webServiceContext(ctx), assignees),
     );

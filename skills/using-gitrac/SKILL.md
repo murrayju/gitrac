@@ -192,7 +192,7 @@ stdout only ever holds the result. Errors and warnings (e.g. "not on the default
 | Exit | `code` | Meaning |
 |------|--------|---------|
 | 0 | | Success |
-| 1 | `error`, `invalid_config` | Unexpected error, or unparseable `.issues/config.yaml` |
+| 1 | `error`, `invalid_config`, `invalid_issue` | Unexpected error, unparseable `.issues/config.yaml`, or a malformed issue file (no frontmatter, bad YAML, `id` not matching the file name; `file` names it, nothing is written — fix the file by hand) |
 | 2 | `invalid_input`, `usage`, `confirmation_required` | Bad ID / field value / flag / missing argument, or `delete` without `--yes` (stdin not a terminal) — nothing was written |
 | 3 | `already_claimed`, `already_initialized`, `invalid_state`, `duplicate_issue` | Conflict: claimed by someone else, already initialized, closing a closed / reopening an open issue, or several files on disk for one issue ID (`files` lists them — merge them by hand and delete all but one, or renumber one if they are different issues) |
 | 4 | `issue_closed` | `claim`/`unclaim` on a closed issue |
