@@ -68,7 +68,7 @@ When installed as a binary, replace `./bun index.ts` with `gitrac` in all exampl
 | `gitrac close <id> --no-commit` | Close without committing (for atomic commits) |
 | `gitrac close <id> -c "text"` | Close with an inline comment |
 | `gitrac delete <id> --yes` | Delete an issue (duplicates, test issues) and the assets only it uses, and drop it from other issues' `blockedBy`/`parent`, in one commit. Without `--yes` and no terminal it only prints what would be deleted and exits 2; `--dry-run` previews (exit 0) |
-| `gitrac renumber <id> --file <path>` | Give one copy of a duplicated issue ID (`duplicate_issue`) a fresh ID: renames the file, updates its `id`, commits (`-o json`: `oldId`, `newId`, `from`, `to`, `references`). Without `--file` it lists the files (exit 3). Issues linking to / mentioning the old ID are listed, not changed; `--update-refs` repoints their `blockedBy`/`parent`. `--force` for a non-duplicated ID |
+| `gitrac renumber <id> --file <path>` | Give one copy of a duplicated issue ID (`duplicate_issue`) a fresh ID: renames the file, updates its `id`, adds a `Renumbered from #<old>` comment, commits (`-o json`: `oldId`, `newId`, `from`, `to`, `references`). Without `--file` it lists the files (exit 3). Issues linking to / mentioning the old ID are listed, not changed; `--update-refs` repoints their `blockedBy`/`parent`. `--force` for a non-duplicated ID |
 | `gitrac reopen <id>` | Reopen a closed issue (status = config `defaultStatus`; `-s todo` to pick) |
 | `gitrac create -t "title" --description-file desc.md` | Create with a markdown description (`-` = stdin; or `-d "text"`) |
 | `gitrac comment <id> "text"` | Add a comment (or `--body-file <path\|->`) |

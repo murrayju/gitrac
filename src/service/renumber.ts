@@ -154,12 +154,20 @@ function mentionsIn(issue: Issue, id: number): boolean {
   );
 }
 
+/** The comment {@link renumberIssue} adds to the renumbered issue. */
+export function renumberedComment(oldId: number, duplicated: boolean): string {
+  return duplicated
+    ? `Renumbered from #${oldId} (duplicate ID).`
+    : `Renumbered from #${oldId}.`;
+}
+
 /**
  * Give one file of issue `id` a fresh ID: the next one from the normal
  * allocator (`allocateIssueId`), so it is unique across worktrees and every
  * known ref. The file is renamed to `<newId>-<slug>.md` (in the same
- * directory) with its frontmatter `id` changed and `updated` bumped, and the
- * change is committed (`issue: renumber #<old> -> #<new> <title>`) per the
+ * directory) with its frontmatter `id` changed, `updated` bumped and a
+ * `Renumbered from #<old>` comment (by the context's identity) appended, and
+ * the change is committed (`issue: renumber #<old> -> #<new> <title>`) per the
  * context's commit options.
  *
  * Meant for duplicate IDs (two clones created the same one): with several
@@ -225,10 +233,18 @@ export async function renumberIssue(
     // anything is written or an ID allocated).
     const relinks = options.updateRefs ? await linkingIssues(ctx.dir, id) : [];
 
+    const author = (await ctx.identity()).name;
     const newId = await allocateIssueId(ctx.dir);
     const now = new Date().toISOString();
     issue.id = newId;
     issue.updated = now;
+    // Record where it came from: old `#<id>` mentions elsewhere (and in
+    // history) still point at the old ID.
+    issue.comments.push({
+      author,
+      timestamp: now,
+      body: renumberedComment(id, candidates.length > 1),
+    });
     // The ID is in the filename, so this is always a rename: [new, old].
     const moved = await relocateIssue(ctx.dir, issue, chosen, {
       closed: chosen.closed,

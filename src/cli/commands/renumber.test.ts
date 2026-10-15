@@ -154,7 +154,14 @@ describe('a duplicate ID after merging two clones', () => {
       newId: 3,
       from: BETA,
       to: join('.issues', '3-beta.md'),
-      issue: { id: 3, title: 'Beta' },
+      issue: {
+        id: 3,
+        title: 'Beta',
+        // #87: the old ID is recorded on the renumbered issue.
+        comments: [
+          { author: 'Alice', body: 'Renumbered from #1 (duplicate ID).' },
+        ],
+      },
       references: [
         {
           id: 2,
@@ -171,6 +178,10 @@ describe('a duplicate ID after merging two clones', () => {
     expect((await simpleGit(dir).status()).isClean()).toBe(true);
     expect((await readIssue(dir, 1)).title).toBe('Alpha');
     expect((await readIssue(dir, 3)).title).toBe('Beta');
+    // The comment is in the renumber commit (the tree is clean).
+    expect((await readIssue(dir, 3)).comments.at(-1)?.body).toBe(
+      'Renumbered from #1 (duplicate ID).',
+    );
     // Not rewritten by default: the link was ambiguous.
     expect((await readIssue(dir, 2)).blockedBy).toEqual([1]);
     expect((await cli('show', '1')).code).toBe(0);

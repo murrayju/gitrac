@@ -93,6 +93,16 @@ describe('renumberIssue', () => {
     const moved = await readIssue(fx.dir, 3);
     expect(moved.title).toBe('Beta');
     expect(moved.updated).not.toBe('2025-01-01T00:00:00Z');
+    // #87: it records the old ID, by the context's identity, in the file
+    // that is committed and in the returned issue.
+    expect(moved.comments).toEqual([
+      {
+        author: 'Ada',
+        timestamp: moved.updated,
+        body: 'Renumbered from #1 (duplicate ID).',
+      },
+    ]);
+    expect(result.issue.comments).toEqual(moved.comments);
     // The other copy keeps the ID, untouched; #1 is no longer duplicated.
     expect((await readIssue(fx.dir, 1)).title).toBe('Alpha');
     expect(await findIssueFiles(fx.dir, 1)).toHaveLength(1);
@@ -104,6 +114,25 @@ describe('renumberIssue', () => {
       files: [join('.issues', '3-beta.md'), BETA],
       message: 'issue: renumber #1 -> #3 Beta',
     });
+  });
+
+  test('appends the renumber comment after existing comments', async () => {
+    const existing = {
+      author: 'Bob',
+      timestamp: '2025-01-02T00:00:00Z',
+      body: 'Earlier note.',
+    };
+    await writeIssue(
+      fx.dir,
+      makeIssue({ id: 1, title: 'Beta', comments: [existing] }),
+    );
+    await renumberIssue(fx.context(), 1, { file: BETA });
+    const moved = await readIssue(fx.dir, 3);
+    expect(moved.comments.map((c) => c.body)).toEqual([
+      'Earlier note.',
+      'Renumbered from #1 (duplicate ID).',
+    ]);
+    expect(moved.comments[0]).toEqual(existing);
   });
 
   test('accepts a bare filename', async () => {
@@ -150,6 +179,10 @@ describe('renumberIssue', () => {
 
     const result = await renumberIssue(fx.context(), 2, { force: true });
     expect(result.newId).toBe(3);
+    // Not a duplicate, so the comment doesn't say it was.
+    expect(result.issue.comments.map((c) => c.body)).toEqual([
+      'Renumbered from #2.',
+    ]);
     expect(await findIssueFiles(fx.dir, 2)).toEqual([]);
   });
 
