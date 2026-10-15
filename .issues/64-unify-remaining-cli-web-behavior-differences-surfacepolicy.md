@@ -1,14 +1,14 @@
 ---
 id: 64
 title: Unify remaining CLI/web behavior differences (SurfacePolicy)
-status: todo
+status: in_progress
 priority: low
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - chore
 created: '2026-10-15T01:16:55.011Z'
 createdBy: Justin Murray
-updated: '2026-10-15T01:16:55.011Z'
+updated: '2026-10-15T02:29:37.617Z'
 ---
 
 Follow-ups from the #51 service-layer refactor, which deliberately preserved existing CLI/web differences via `SurfacePolicy` (`CLI_POLICY` / `WEB_POLICY` in `src/service/`). Decide on one behavior for each and remove the switch:
