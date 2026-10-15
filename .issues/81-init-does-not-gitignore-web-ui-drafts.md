@@ -1,14 +1,14 @@
 ---
 id: 81
 title: init does not gitignore web UI drafts
-status: todo
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-15T16:07:04.696Z'
 createdBy: Justin Murray
-updated: '2026-10-15T16:07:04.696Z'
+updated: '2026-10-15T16:07:29.458Z'
 ---
 
 The web UI saves new-issue drafts to `.issues/drafts/*.json` (untracked). This repo's own `.gitignore` excludes them, but `gitrac init` doesn't set that up for other projects. The documented `git add -A && git commit` workflow then commits drafts.
