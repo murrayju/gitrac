@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import simpleGit from 'simple-git';
 import { EXIT_ALREADY_CLAIMED, EXIT_ISSUE_CLOSED } from '../../core/claim.ts';
-import { readIssue } from '../../fs/issue-store.ts';
+import { readConfig, readIssue, writeConfig } from '../../fs/issue-store.ts';
 
 /**
  * Regression tests for #56: a claim made in one worktree (committed or not)
@@ -459,5 +459,84 @@ describe('issues that exist only elsewhere', () => {
     // Its show is the local one, without a note.
     const shown = await cli(main, 'Ada', 'show', '1');
     expect(shown.stderr).not.toContain('Note:');
+  });
+});
+
+/** Regression tests for #105: an issue in review stays claimed elsewhere. */
+describe('review handoff across worktrees (#105)', () => {
+  /** Add a `review` status and set it as `reviewStatus` in `dir`'s config. */
+  async function enableReview(dir: string) {
+    const config = await readConfig(dir);
+    config.statuses.splice(3, 0, { name: 'review', closed: false });
+    config.reviewStatus = 'review';
+    await writeConfig(dir, config);
+  }
+
+  test('an agent hands off in its worktree; main still sees the claim', async () => {
+    for (const dir of [main, wt1, wt2]) await enableReview(dir);
+    await ok(wt1, 'Bob', 'claim', '1', '--no-commit');
+    await ok(wt1, 'Bob', 'review', '1', '--no-commit', '-c', 'please review');
+    expect(await readIssue(wt1, 1)).toMatchObject({
+      status: 'review',
+      assignee: 'Bob',
+    });
+    const where = `in worktree ${wt1} (branch agent-1)`;
+
+    // Still shown as claimed elsewhere.
+    const listed = await json<Listed[]>(main, 'Ada', 'ls');
+    expect(listed[0]?.claimedElsewhere).toMatchObject({
+      ref: 'agent-1',
+      worktree: wt1,
+      assignee: 'Bob',
+    });
+    expect(await ok(main, 'Ada', 'ls')).toContain(`[claimed ${where} by Bob]`);
+
+    // claim refuses; ready / next skip it.
+    const res = await cli(main, 'Ada', 'claim', '1');
+    expect(res.code).toBe(EXIT_ALREADY_CLAIMED);
+    expect(res.stderr).toContain(
+      `Error: Issue #1 is already claimed by Bob (review) ${where}.`,
+    );
+    expect(
+      (await json<Listed[]>(main, 'Ada', 'ready')).map((i) => i.id),
+    ).toEqual([2]);
+    expect((await json<Listed>(main, 'Ada', 'next')).id).toBe(2);
+    // The assignee's own `next` skips it too.
+    expect((await json<Listed>(wt2, 'Bob', 'next')).id).toBe(2);
+
+    // unclaim --force releases it.
+    expect((await cli(main, 'Ada', 'unclaim', '1')).code).toBe(
+      EXIT_ALREADY_CLAIMED,
+    );
+    await ok(main, 'Ada', 'unclaim', '1', '--force');
+    expect(await readIssue(main, 1)).toMatchObject({
+      status: 'todo',
+      assignee: '',
+    });
+    expect(
+      (await json<Listed[]>(main, 'Ada', 'ready')).map((i) => i.id),
+    ).toEqual([1, 2]);
+  });
+
+  test('claim by the assignee sends it back to in_progress (rework)', async () => {
+    await enableReview(wt1);
+    await ok(wt1, 'Bob', 'claim', '1', '--no-commit');
+    await ok(wt1, 'Bob', 'review', '1', '--no-commit');
+    await ok(wt1, 'Bob', 'claim', '1', '--no-commit');
+    expect((await readIssue(wt1, 1)).status).toBe('in_progress');
+  });
+
+  test('review needs a configured reviewStatus and a claimed issue', async () => {
+    const none = await cli(main, 'Ada', '-o', 'json', 'review', '1');
+    expect(none.code).toBe(2);
+    expect(JSON.parse(none.stderr).error).toMatchObject({
+      code: 'invalid_input',
+    });
+    expect(none.stderr).toContain('reviewStatus');
+
+    await enableReview(main);
+    const unclaimed = await cli(main, 'Ada', 'review', '1');
+    expect(unclaimed.code).toBe(3);
+    expect(unclaimed.stderr).toContain('Use "gitrac claim 1" first.');
   });
 });

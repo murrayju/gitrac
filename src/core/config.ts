@@ -7,11 +7,13 @@ import type {
   StatusDefinition,
 } from './types.ts';
 import {
+  activeStatus,
   DEFAULT_PRIORITY,
   DEFAULT_STATUS,
   defaultPriorityDefinitions,
   defaultStatusDefinitions,
   isLegacyClosed,
+  unclaimStatus,
 } from './workflow.ts';
 
 const DEFAULT_GIT: GitConfig = {
@@ -179,6 +181,7 @@ const PRIORITY_KEYS = new Set(['name', 'label', 'color']);
 const WORKFLOW_KEYS = [
   ['activeStatus', false],
   ['unclaimStatus', false],
+  ['reviewStatus', false],
   ['closeStatus', true],
   ['cancelStatus', true],
 ] as const;
@@ -329,6 +332,30 @@ function checkWorkflow(
   ) {
     errors.push('unclaimStatus must differ from activeStatus');
   }
+  if (typeof obj.reviewStatus === 'string') {
+    // Compare with the resolved statuses: the active and unclaim keys can be unset.
+    const workflow = {
+      statuses: [...statuses].map(([name, closed]) => ({ name, closed })),
+      defaultStatus: String(obj.defaultStatus),
+      ...(typeof obj.activeStatus === 'string'
+        ? { activeStatus: obj.activeStatus }
+        : {}),
+      ...(typeof obj.unclaimStatus === 'string'
+        ? { unclaimStatus: obj.unclaimStatus }
+        : {}),
+    };
+    const active = activeStatus(workflow);
+    const unclaim = unclaimStatus(workflow);
+    if (obj.reviewStatus === active) {
+      errors.push(
+        `reviewStatus "${obj.reviewStatus}" must differ from the active status`,
+      );
+    } else if (obj.reviewStatus === unclaim) {
+      errors.push(
+        `reviewStatus "${obj.reviewStatus}" must differ from the unclaim status`,
+      );
+    }
+  }
 }
 
 /**
@@ -341,7 +368,9 @@ function checkWorkflow(
  * `label` / hex `color` (and, for statuses, `closed`); at least one status is
  * open and one closed; `defaultStatus` is a configured open status and
  * `defaultPriority` a configured priority; `activeStatus` / `unclaimStatus`,
- * if set, are configured open statuses (and differ); `closeStatus` /
+ * if set, are configured open statuses (and differ); `reviewStatus`, if set,
+ * is a configured open status other than the (resolved) active and unclaim
+ * statuses; `closeStatus` /
  * `cancelStatus`, if set, are configured closed statuses.
  */
 export function configErrors(value: unknown): string[] {

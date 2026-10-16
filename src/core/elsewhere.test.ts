@@ -287,3 +287,31 @@ describe('issuesOnlyElsewhere', () => {
     ]);
   });
 });
+
+describe('claimedElsewhere with a review status (#105)', () => {
+  const review = {
+    ...CONFIG,
+    statuses: [...CONFIG.statuses, { name: 'review', closed: false }],
+    reviewStatus: 'review',
+  };
+
+  test('an assigned issue in review elsewhere is claimed elsewhere', () => {
+    const states = [state('2026-01-03T00:00:00.000Z', { status: 'review' })];
+    expect(claimedElsewhere(local, review, states)).toEqual({
+      ref: 'feature',
+      assignee: 'bob@example.com',
+      updated: '2026-01-03T00:00:00.000Z',
+    });
+    expect(elsewhereMarks(local, review, states)).toHaveProperty(
+      'claimedElsewhere',
+    );
+    // Without a review status configured, it is not a claim.
+    expect(claimedElsewhere(local, CONFIG, states)).toBeUndefined();
+    // Unassigned in review is not a claim.
+    expect(
+      claimedElsewhere(local, review, [
+        state('2026-01-03T00:00:00.000Z', { status: 'review', assignee: '' }),
+      ]),
+    ).toBeUndefined();
+  });
+});

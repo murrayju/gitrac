@@ -13,14 +13,16 @@ import {
   activeStatus,
   findStatus,
   isClosedStatus,
+  isHeldStatus,
+  reviewStatus,
   unclaimStatus,
   type WorkflowConfig,
 } from './workflow.ts';
 
 /**
  * Exit codes for `claim` / `unclaim`: {@link EXIT_ALREADY_CLAIMED} when the
- * issue is claimed by someone else (in the configured active status —
- * `in_progress` by default — and assigned to another user; `--force`
+ * issue is claimed by someone else (in a held status, see `heldStatuses` in
+ * `src/core/workflow.ts`, and assigned to another user; `--force`
  * overrides), {@link EXIT_ISSUE_CLOSED} when it is closed (a closed status;
  * `claim --force` reopens and claims it). Defined with the other exit codes
  * in `errors.ts`.
@@ -66,11 +68,14 @@ export type ClaimDecision =
    * warning).
    */
   | { action: 'claim'; reopen: boolean; heldElsewhere?: ClaimedElsewhere }
-  /** Already active and assigned to the user: nothing to do. */
+  /**
+   * Already active and assigned to the user: nothing to do. (An issue of
+   * theirs in the review status is claimed: back to the active status.)
+   */
   | { action: 'noop' }
   /**
-   * Refused: active and assigned to someone else — here, or (`elsewhere`)
-   * on another branch or worktree whose version is newer.
+   * Refused: held (active or in review) and assigned to someone else: here,
+   * or (`elsewhere`) on another branch or worktree whose version is newer.
    */
   | {
       action: 'already-claimed';
@@ -100,7 +105,8 @@ export interface ClaimOptions {
 
 /**
  * Decide what `claim` should do with `issue` (pure; no I/O). "Active" is
- * the configured active status (`activeStatus`, default `in_progress`; see
+ * the configured active status (`activeStatus`, default `in_progress`);
+ * "held" is the active status or the review status (`heldStatuses`; see
  * `src/core/workflow.ts`).
  *
  * - Closed issues (a closed status; the directory does not count, see #97)
@@ -109,10 +115,11 @@ export interface ClaimOptions {
  *   an agent's worktree, not merged yet) is refused unless `force`, in which
  *   case it is claimed here (this newer version then supersedes the close).
  * - An issue whose effective state (the newest version here or in
- *   `elsewhere`) is active and assigned to someone else is refused unless
+ *   `elsewhere`) is held and assigned to someone else is refused unless
  *   `force`.
  * - An issue that is active and already assigned to the user here, with no
- *   newer version elsewhere, is a no-op.
+ *   newer version elsewhere, is a no-op. If it is in review instead, it is
+ *   claimed (moved back to the active status for rework).
  * - Anything else is claimed; if the effective state is the user's own claim
  *   elsewhere, the decision says where (`heldElsewhere`).
  */
@@ -133,8 +140,12 @@ export function decideClaim(
   }
   const newer = newestElsewhere(issue, options.elsewhere);
   const effective = effectiveState(issue, options.elsewhere);
-  if (effective.status === activeStatus(config)) {
-    if (!newer && isAssignedTo(issue.assignee, user)) {
+  if (isHeldStatus(config, effective.status)) {
+    if (
+      !newer &&
+      issue.status === activeStatus(config) &&
+      isAssignedTo(issue.assignee, user)
+    ) {
       return { action: 'noop' };
     }
     if (
@@ -159,7 +170,7 @@ export function decideClaim(
 
 export type UnclaimDecision =
   /**
-   * Proceed: clear the assignee and write `status` (the active status moved
+   * Proceed: clear the assignee and write `status` (a held status moved
    * back to the unclaim status; other statuses kept). `elsewhere` is set when
    * the claim being released is the effective version on another branch or
    * worktree: the local release (with a newer `updated`) supersedes it.
@@ -186,7 +197,8 @@ export type UnclaimDecision =
  * - An issue that is unassigned in its effective state is a no-op.
  * - Releasing someone else's claim requires `force`.
  * - Otherwise it is released: the assignee is cleared and the effective
- *   status is kept, except that the active status becomes the unclaim status.
+ *   status is kept, except that a held status (active or review) becomes the
+ *   unclaim status.
  */
 export function decideUnclaim(
   issue: LocalState,
@@ -213,9 +225,81 @@ export function decideUnclaim(
   if (!isAssignedTo(assignee, user) && !options.force) {
     return { action: 'not-yours', assignee, ...where };
   }
-  // Keep the effective status (if this config knows it), except the active one.
+  // Keep the effective status (if this config knows it), except a held one.
   const kept =
     newer && findStatus(config, newer.status) ? newer.status : issue.status;
-  const status = kept === activeStatus(config) ? unclaimStatus(config) : kept;
+  const status = isHeldStatus(config, kept) ? unclaimStatus(config) : kept;
   return { action: 'unclaim', status, ...where };
+}
+
+export type ReviewDecision =
+  /**
+   * Proceed: set `status` (the review status) and keep `assignee` (the
+   * effective one).
+   * `elsewhere` is set when the claim being handed off is the effective
+   * version on another branch or worktree: the local write (with a newer
+   * `updated`) supersedes it.
+   */
+  | {
+      action: 'review';
+      status: Status;
+      assignee: string;
+      elsewhere?: ClaimedElsewhere;
+    }
+  /** Already in the review status: nothing to do. */
+  | { action: 'noop' }
+  /** Refused: no review status is configured. */
+  | { action: 'no-review-status' }
+  /** Refused: not claimed (not in the active status, or unassigned). */
+  | { action: 'not-claimed'; status: Status }
+  /** Refused: claimed by someone else, here or (`elsewhere`) in a newer version elsewhere. */
+  | { action: 'not-yours'; assignee: string; elsewhere?: ClaimedElsewhere }
+  /** Refused: closed here, or (`elsewhere`) in a newer version elsewhere. */
+  | { action: 'closed'; status: Status; elsewhere?: ClosedElsewhere };
+
+/**
+ * Decide what `review` should do with `issue` (pure; no I/O): hand off a
+ * claimed issue for review. Judged by the effective state (the newest
+ * version here or in `elsewhere`), like `unclaim`.
+ *
+ * - Without a configured review status (`reviewStatus`), it is refused.
+ * - Closed issues (here, or in the effective state) are refused.
+ * - An issue that is not held (not in the active or review status, or
+ *   unassigned) is refused: claim it first.
+ * - Someone else's claim needs `force`; their assignee is then kept.
+ * - An issue already in the review status is a no-op.
+ * - Otherwise it moves to the review status. The assignee is kept, so the
+ *   issue stays held (see `heldStatuses` in `src/core/workflow.ts`).
+ */
+export function decideReview(
+  issue: LocalState,
+  user: ClaimUser,
+  config: WorkflowConfig,
+  options: ClaimOptions = {},
+): ReviewDecision {
+  const review = reviewStatus(config);
+  if (review === undefined) return { action: 'no-review-status' };
+  if (isClosedStatus(config, issue.status)) {
+    return { action: 'closed', status: issue.status };
+  }
+  const closedThere = closedElsewhere(issue, config, options.elsewhere);
+  if (closedThere) {
+    return {
+      action: 'closed',
+      status: closedThere.status,
+      elsewhere: closedThere,
+    };
+  }
+  const newer = newestElsewhere(issue, options.elsewhere);
+  const effective = newer ?? issue;
+  const assignee = effective.assignee?.trim() ? effective.assignee : '';
+  if (!assignee || !isHeldStatus(config, effective.status)) {
+    return { action: 'not-claimed', status: effective.status };
+  }
+  const where = newer ? { elsewhere: toClaimedElsewhere(newer) } : {};
+  if (!isAssignedTo(assignee, user) && !options.force) {
+    return { action: 'not-yours', assignee, ...where };
+  }
+  if (effective.status === review) return { action: 'noop' };
+  return { action: 'review', status: review, assignee, ...where };
 }

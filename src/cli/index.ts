@@ -18,6 +18,7 @@ import {
 import { registerReadyCommands } from './commands/ready.ts';
 import { registerRenumberCommand } from './commands/renumber.ts';
 import { registerReopenCommand } from './commands/reopen.ts';
+import { registerReviewCommand } from './commands/review.ts';
 import {
   registerServeCommand,
   resolveServeOptions,
@@ -74,6 +75,7 @@ export function createProgram(): Command {
   registerReopenCommand(program);
   registerClaimCommand(program);
   registerUnclaimCommand(program);
+  registerReviewCommand(program);
   registerLinkCommands(program);
   registerReadyCommands(program);
   registerDeleteCommand(program);

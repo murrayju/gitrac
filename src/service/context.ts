@@ -22,6 +22,7 @@ export type Operation =
   | 'renumber'
   | 'claim'
   | 'unclaim'
+  | 'review'
   | 'link'
   | 'unlink'
   | 'label-colors'

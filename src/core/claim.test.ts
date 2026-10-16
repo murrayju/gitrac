@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   claimAssignee,
   decideClaim,
+  decideReview,
   decideUnclaim,
   isAssignedTo,
 } from './claim.ts';
@@ -487,5 +488,162 @@ describe('decideUnclaim with versions elsewhere (#65)', () => {
         force: true,
       }),
     ).toEqual({ action: 'closed', status: 'done', elsewhere: closed });
+  });
+});
+
+/** Regression tests for #105: a review status keeps the issue held. */
+describe('review status (#105)', () => {
+  const REVIEW = {
+    ...CONFIG,
+    statuses: [...CONFIG.statuses, { name: 'review', closed: false }],
+    reviewStatus: 'review',
+  };
+  const at = (t: number) => `2026-01-0${t}T00:00:00Z`;
+  const reviewBy = (assignee: string, updated = at(3)) => ({
+    ref: 'agent-1',
+    worktree: '/wt/agent-1',
+    status: 'review',
+    assignee,
+    updated,
+  });
+  const where = (assignee: string) => ({
+    ref: 'agent-1',
+    worktree: '/wt/agent-1',
+    assignee,
+    updated: at(3),
+  });
+  const todo = { status: 'todo', assignee: '', updated: at(2) };
+
+  test("someone else's issue in review is claimed: refused unless force", () => {
+    const issue = { status: 'review', assignee: bob.email };
+    expect(decideClaim(issue, alice, REVIEW)).toEqual({
+      action: 'already-claimed',
+      assignee: bob.email,
+    });
+    expect(decideClaim(issue, alice, REVIEW, { force: true })).toEqual({
+      action: 'claim',
+      reopen: false,
+    });
+    // Without a review status, a status named review is not held.
+    expect(decideClaim(issue, alice, CONFIG)).toEqual({
+      action: 'claim',
+      reopen: false,
+    });
+  });
+
+  test('my own issue in review is claimed back to the active status (rework)', () => {
+    expect(
+      decideClaim({ status: 'review', assignee: alice.email }, alice, REVIEW),
+    ).toEqual({ action: 'claim', reopen: false });
+  });
+
+  test("someone else's review elsewhere is claimed elsewhere", () => {
+    expect(
+      decideClaim(todo, alice, REVIEW, { elsewhere: [reviewBy(bob.email)] }),
+    ).toEqual({
+      action: 'already-claimed',
+      assignee: bob.email,
+      elsewhere: where(bob.email),
+    });
+  });
+
+  test('unclaim moves the review status back to the unclaim status', () => {
+    expect(
+      decideUnclaim({ status: 'review', assignee: alice.email }, alice, REVIEW),
+    ).toEqual({ action: 'unclaim', status: 'todo' });
+    expect(
+      decideUnclaim(todo, alice, REVIEW, {
+        elsewhere: [reviewBy(bob.email)],
+        force: true,
+      }),
+    ).toEqual({
+      action: 'unclaim',
+      status: 'todo',
+      elsewhere: where(bob.email),
+    });
+  });
+
+  describe('decideReview', () => {
+    const mine = { status: 'in_progress', assignee: alice.email };
+
+    test('my claimed issue goes to review, keeping the assignee', () => {
+      expect(decideReview(mine, alice, REVIEW)).toEqual({
+        action: 'review',
+        status: 'review',
+        assignee: alice.email,
+      });
+    });
+
+    test('no review status configured is refused', () => {
+      expect(decideReview(mine, alice, CONFIG)).toEqual({
+        action: 'no-review-status',
+      });
+    });
+
+    test('an unclaimed issue is refused', () => {
+      expect(decideReview(todo, alice, REVIEW)).toEqual({
+        action: 'not-claimed',
+        status: 'todo',
+      });
+      expect(
+        decideReview({ status: 'in_progress', assignee: '' }, alice, REVIEW),
+      ).toEqual({ action: 'not-claimed', status: 'in_progress' });
+    });
+
+    test("someone else's claim needs force; their assignee is kept", () => {
+      const theirs = { status: 'in_progress', assignee: bob.email };
+      expect(decideReview(theirs, alice, REVIEW)).toEqual({
+        action: 'not-yours',
+        assignee: bob.email,
+      });
+      expect(decideReview(theirs, alice, REVIEW, { force: true })).toEqual({
+        action: 'review',
+        status: 'review',
+        assignee: bob.email,
+      });
+    });
+
+    test('already in review is a no-op', () => {
+      expect(
+        decideReview(
+          { status: 'review', assignee: alice.email },
+          alice,
+          REVIEW,
+        ),
+      ).toEqual({ action: 'noop' });
+    });
+
+    test('closed here or elsewhere is refused', () => {
+      expect(
+        decideReview({ status: 'done', assignee: alice.email }, alice, REVIEW),
+      ).toEqual({ action: 'closed', status: 'done' });
+      expect(
+        decideReview({ ...mine, updated: at(2) }, alice, REVIEW, {
+          elsewhere: [{ ...reviewBy(alice.email), status: 'done' }],
+        }),
+      ).toEqual({
+        action: 'closed',
+        status: 'done',
+        elsewhere: {
+          ref: 'agent-1',
+          worktree: '/wt/agent-1',
+          status: 'done',
+          updated: at(3),
+        },
+      });
+    });
+
+    test('my claim elsewhere is handed off by a newer local write', () => {
+      expect(
+        decideReview(todo, alice, REVIEW, {
+          elsewhere: [{ ...reviewBy(alice.email), status: 'in_progress' }],
+        }),
+      ).toEqual({
+        action: 'review',
+        status: 'review',
+        assignee: alice.email,
+        elsewhere: where(alice.email),
+      });
+    });
   });
 });

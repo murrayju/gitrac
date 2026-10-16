@@ -9,8 +9,8 @@ import {
 } from './query.ts';
 import type { Issue } from './types.ts';
 import {
-  activeStatus,
   isClosedStatus,
+  isHeldStatus,
   type StatusConfig,
   type WorkflowConfig,
 } from './workflow.ts';
@@ -91,19 +91,23 @@ export function readyIssues(
 }
 
 /**
- * The issue `next` picks: the first ready issue that isn't already in the
- * configured active status (claimed; default `in_progress`) — here or, per its effective state, in another
- * worktree or on another branch. Your own in-progress work is listed by
- * `ready` but skipped here, so several agents sharing one git identity
- * (e.g. in separate worktrees) each get a different issue.
+ * The issue `next` picks: the first ready issue that isn't already in a
+ * held status (the active status, default `in_progress`, or the review
+ * status; see `heldStatuses`), here or, per its effective state, in another
+ * worktree or on another branch. Your own held work is listed by `ready` but
+ * skipped here, so several agents sharing one git identity (e.g. in separate
+ * worktrees) each get a different issue.
  */
 export function nextIssue(
   ready: Issue[],
   config: WorkflowConfig,
   elsewhere: StatesElsewhere = new Map(),
 ): Issue | undefined {
-  const active = activeStatus(config);
   return ready.find(
-    (issue) => effectiveState(issue, elsewhere.get(issue.id)).status !== active,
+    (issue) =>
+      !isHeldStatus(
+        config,
+        effectiveState(issue, elsewhere.get(issue.id)).status,
+      ),
   );
 }

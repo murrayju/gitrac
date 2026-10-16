@@ -124,6 +124,11 @@ export interface Config {
   activeStatus?: Status;
   /** The status `unclaim` moves an active issue back to; open. Unset: `todo`. */
   unclaimStatus?: Status;
+  /**
+   * The status `review` sets: work handed off for review, still claimed by
+   * its assignee; open, not the active or unclaim status. Unset: no review step.
+   */
+  reviewStatus?: Status;
   /** The status `close` sets; closed. Unset: `done`. */
   closeStatus?: Status;
   /** The status `close --cancelled` sets; closed. Unset: `cancelled`. */

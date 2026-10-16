@@ -256,6 +256,7 @@ The server binds to `127.0.0.1` by default and rejects cross-origin and DNS-rebi
 | `comment` / `c <id> [body]` | Add a comment (argument, `--body-file`, or stdin) |
 | `claim <id>` | Assign to yourself and set the active status. **Fails if someone else holds it** |
 | `unclaim` / `release <id>` | Give an issue back, even a claim held in another worktree |
+| `review <id>` | Hand a claimed issue off for review (needs `reviewStatus`). It stays claimed until closed or unclaimed |
 | `close <id>` / `reopen <id>` | Close (moves to `closed/`; `--cancelled`, `-s`) or reopen it |
 | `link` / `unlink <id>` | `--blocked-by <ids>`, `--parent <id>`. Cycles are rejected |
 | `ready` | Open, unassigned (or yours), unblocked issues, sorted by priority |
@@ -283,7 +284,7 @@ The server binds to `127.0.0.1` by default and rejects cross-origin and DNS-rebi
 | 1 | Unexpected error, invalid config, malformed issue file |
 | 2 | Invalid input or usage, a declined prompt, or confirmation required (`delete` without `--yes` and without a terminal prints its plan and exits 2) |
 | 3 | Conflict: already claimed, already initialized, invalid state transition, duplicate issue files, `renumber` of a non-duplicated ID without `--force` |
-| 4 | Issue is closed (`claim` / `unclaim`) |
+| 4 | Issue is closed (`claim` / `unclaim` / `review`) |
 | 5 | Not found, or no ready issue (`next`) |
 | 6 | Timed out waiting for the repo lock |
 | 7 | git commit or push failed |
@@ -368,6 +369,7 @@ $ echo $?
 
 - **Picking work:** `next --claim` runs under the shared lock and accounts for claims in every worktree and on every branch, so concurrent agents always get distinct issues.
 - **Finishing:** the agent closes on its branch with `close --no-commit` and commits code and issue together. That issue then drops out of `ready` / `next` everywhere until the branch is merged.
+- **Review handoff:** with a `reviewStatus` configured, the agent runs `gitrac review <id>` when its work is ready. The issue keeps its assignee and stays claimed everywhere until the orchestrator closes it (or `unclaim`s it); the agent's `claim` sends it back to the active status for rework.
 - **Stuck or dead agents:** release the claim from anywhere with `gitrac unclaim <id>`, adding `--force` if it was someone else's. The newer release supersedes the claim, and the issue becomes ready again.
 - **Merging:** the merge driver handles `.issues/` (comments combined, fields merged). Delete merged or abandoned agent branches so their stale claims stop showing up.
 
@@ -416,6 +418,7 @@ defaultPriority: medium
 # optional workflow hooks (defaults shown):
 # activeStatus: in_progress   # what `claim` sets
 # unclaimStatus: todo         # where `unclaim` moves an active issue
+# reviewStatus: review        # what `review` sets (still claimed); unset = no review step
 # closeStatus: done           # what `close` sets
 # cancelStatus: cancelled     # what `close --cancelled` sets
 labels:                   # name -> color; new labels get a color automatically

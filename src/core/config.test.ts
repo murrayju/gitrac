@@ -802,6 +802,41 @@ ${extra}`;
         'unclaimStatus must differ from activeStatus',
       ],
       [
+        base('  - open\n  - done', 'reviewStatus: done\n'),
+        'reviewStatus "done" must be an open status',
+      ],
+      [
+        base('  - open\n  - done', 'reviewStatus: review\n'),
+        'reviewStatus "review" is not a configured status',
+      ],
+      [
+        base(
+          '  - open\n  - doing\n  - done',
+          'activeStatus: doing\nreviewStatus: doing\n',
+        ),
+        'reviewStatus "doing" must differ from the active status',
+      ],
+      [
+        // The active status is the fallback (in_progress) here.
+        base(
+          '  - open\n  - in_progress\n  - done',
+          'reviewStatus: in_progress\n',
+        ),
+        'reviewStatus "in_progress" must differ from the active status',
+      ],
+      [
+        base(
+          '  - open\n  - doing\n  - review\n  - done',
+          'activeStatus: doing\nunclaimStatus: review\nreviewStatus: review\n',
+        ),
+        'reviewStatus "review" must differ from the unclaim status',
+      ],
+      [
+        // The unclaim status is the fallback (defaultStatus: open) here.
+        base('  - open\n  - doing\n  - done', 'reviewStatus: open\n'),
+        'reviewStatus "open" must differ from the unclaim status',
+      ],
+      [
         base('  - open\n  - done', 'closeStatus: open\n'),
         'closeStatus "open" must be a closed status',
       ],
@@ -823,6 +858,14 @@ ${extra}`;
     }
     // ...and a valid one parses.
     expect(errorOf(base('  - open\n  - done'))).toBe('');
+    expect(
+      errorOf(
+        base(
+          '  - open\n  - in_progress\n  - review\n  - done',
+          'reviewStatus: review\n',
+        ),
+      ),
+    ).toBe('');
   });
 
   test('implicit defaults (in_progress, todo, done, cancelled) need not exist', () => {

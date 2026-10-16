@@ -1,7 +1,7 @@
 import type { Issue, Status } from './types.ts';
 import {
-  activeStatus,
   isClosedStatus,
+  isHeldStatus,
   type WorkflowConfig,
 } from './workflow.ts';
 
@@ -152,8 +152,9 @@ export function effectiveState(
 }
 
 /**
- * Whether the effective version of `issue` is a claim (in the configured
- * active status, default `in_progress`, and assigned) found on another
+ * Whether the effective version of `issue` is a claim (in a held status,
+ * see `heldStatuses` in `src/core/workflow.ts`: the active status, default
+ * `in_progress`, or the review status; and assigned) found on another
  * branch or worktree; returns where and by whom.
  */
 export function claimedElsewhere(
@@ -164,7 +165,7 @@ export function claimedElsewhere(
   const newest = newestElsewhere(issue, states);
   if (
     newest === undefined ||
-    newest.status !== activeStatus(config) ||
+    !isHeldStatus(config, newest.status) ||
     !newest.assignee.trim()
   ) {
     return undefined;

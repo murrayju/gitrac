@@ -2,19 +2,21 @@ import {
   type ClaimUser,
   claimAssignee,
   decideClaim,
+  decideReview,
   decideUnclaim,
 } from '../core/claim.ts';
 import { findAssigneeByEmail } from '../core/config.ts';
 import {
   type ClaimedElsewhere,
   describeLocation,
+  effectiveState,
   toClosedElsewhere,
 } from '../core/elsewhere.ts';
 import { GitracError, invalidInput } from '../core/errors.ts';
 import { nextTimestamp } from '../core/timestamp.ts';
 import type { Config, Issue } from '../core/types.ts';
 import { authorError, hasLineBreak } from '../core/validate.ts';
-import { activeStatus } from '../core/workflow.ts';
+import { activeStatus, reviewStatus } from '../core/workflow.ts';
 import { relocateIssue, writeConfig } from '../fs/issue-store.ts';
 import { issueStatesElsewhere } from '../git/elsewhere.ts';
 import { withRepoLock } from '../git/lock.ts';
@@ -47,7 +49,8 @@ export type ClaimResult =
        * claim: the effective state was already the user's own claim on
        * another branch or worktree (now claimed here too). unclaim: the
        * released claim was the effective version elsewhere (superseded by
-       * the local release).
+       * the local release). review: the claim handed off was the effective
+       * version elsewhere (superseded by the local write).
        */
       elsewhere?: ClaimedElsewhere;
     })
@@ -56,7 +59,11 @@ export type ClaimResult =
 export interface ClaimOptions {
   /** Comment to add (by the context's identity). */
   comment?: string;
-  /** claim: take over someone else's issue, or reopen and claim a closed one. unclaim: release someone else's issue. */
+  /**
+   * claim: take over someone else's issue, or reopen and claim a closed one.
+   * unclaim: release someone else's issue. review: hand off someone else's
+   * claim (it stays theirs).
+   */
   force?: boolean;
 }
 
@@ -95,7 +102,8 @@ function addClaimComment(
 /**
  * Assign the issue to the context's identity (email if known, else name) and
  * set it to the configured active status (`activeStatus`, default
- * `in_progress`). Throws `already_claimed` if someone else has it (here,
+ * `in_progress`); your own issue in the review status goes back to the
+ * active status (rework). Throws `already_claimed` if someone else has it (here,
  * or in a newer version on another branch or in another worktree, committed
  * or not; `details.claimedElsewhere` says where) and `issue_closed` if it is
  * closed here or in a newer version elsewhere (`details.closedElsewhere`
@@ -128,11 +136,13 @@ export async function claimIssue(
     });
     if (decision.action === 'already-claimed') {
       const where = decision.elsewhere;
+      // The held status: active, or in review.
+      const held = effectiveState(issue, elsewhere).status;
       throw new GitracError(
         'already_claimed',
         where
-          ? `Issue #${id} is already claimed by ${where.assignee} (${active}) ${describeLocation(where)}.`
-          : `Issue #${id} is already claimed by ${decision.assignee} (${active}).`,
+          ? `Issue #${id} is already claimed by ${where.assignee} (${held}) ${describeLocation(where)}.`
+          : `Issue #${id} is already claimed by ${decision.assignee} (${held}).`,
         {
           details: where
             ? { id, assignee: where.assignee, claimedElsewhere: where }
@@ -203,8 +213,8 @@ export async function claimIssue(
 }
 
 /**
- * Give an issue back: clear the assignee and move it from the active status
- * (default `in_progress`) back to the unclaim status (`unclaimStatus`,
+ * Give an issue back: clear the assignee and move it from a held status
+ * (the active status, default `in_progress`, or the review status) back to the unclaim status (`unclaimStatus`,
  * default `todo`); other statuses are kept. Judged by the issue's effective
  * state (here, in other worktrees, or on other branches; see
  * `src/core/elsewhere.ts`): a claim held elsewhere is released by writing a
@@ -290,6 +300,120 @@ export async function unclaimIssue(
       issue,
       paths,
       message: commitMessage(config, `unclaim #${id} ${issue.title}`),
+    });
+    return {
+      changed: true,
+      issue,
+      paths,
+      config,
+      commit,
+      ...(decision.elsewhere ? { elsewhere: decision.elsewhere } : {}),
+    };
+  });
+}
+
+/** `invalid_input`: the config has no review status. */
+function noReviewStatus(): GitracError {
+  return invalidInput(
+    'No review status is configured: set reviewStatus to an open status in .issues/config.yaml',
+  );
+}
+
+/**
+ * Hand a claimed issue off for review: set the configured review status
+ * (`reviewStatus`) and keep the assignee, so the issue stays held (others
+ * need `force` to claim it, `next` skips it, other worktrees see it as
+ * claimed) until it is closed or unclaimed. Judged by the effective state
+ * (here, in other worktrees, or on other branches), like `unclaim`. Throws
+ * `invalid_input` if no review status is configured, `invalid_state` if the
+ * issue is not claimed, `already_claimed` if it is someone else's (unless
+ * `force`; `details.claimedElsewhere` says where, if not here) and
+ * `issue_closed` if it is closed here or in a newer version elsewhere. An
+ * issue already in review is a no-op.
+ */
+export async function submitForReview(
+  ctx: ServiceContext,
+  id: number,
+  options: ClaimOptions = {},
+): Promise<ClaimResult> {
+  const user = await ctx.identity();
+  assertValidUser(user, options.comment, { claim: false });
+  return withRepoLock(ctx.dir, async () => {
+    const config = await loadConfig(ctx);
+    // A config problem, checked before the issue is loaded.
+    if (reviewStatus(config) === undefined) throw noReviewStatus();
+    const stored = await loadStoredIssue(ctx.dir, id);
+    const { issue } = stored;
+    // Under the (shared) repo lock, like claim.
+    const elsewhere = (await issueStatesElsewhere(ctx.dir, { ids: [id] })).get(
+      id,
+    );
+
+    const decision = decideReview(issue, user, config, {
+      force: options.force,
+      elsewhere,
+    });
+    if (decision.action === 'no-review-status') throw noReviewStatus();
+    if (decision.action === 'not-claimed') {
+      throw new GitracError(
+        'invalid_state',
+        `Issue #${id} is not claimed (${decision.status}); only a claimed issue (${activeStatus(config)}, assigned) can go to review.`,
+        { details: { id, status: decision.status } },
+      );
+    }
+    if (decision.action === 'not-yours') {
+      const where = decision.elsewhere;
+      throw new GitracError(
+        'already_claimed',
+        where
+          ? `Issue #${id} is claimed by ${where.assignee} ${describeLocation(where)}, not you.`
+          : `Issue #${id} is claimed by ${decision.assignee}, not you.`,
+        {
+          details: where
+            ? { id, assignee: where.assignee, claimedElsewhere: where }
+            : { id, assignee: decision.assignee },
+        },
+      );
+    }
+    if (decision.action === 'closed') {
+      const where = decision.elsewhere;
+      throw new GitracError(
+        'issue_closed',
+        where
+          ? `Issue #${id} is closed (${decision.status}) ${describeLocation(where)}.`
+          : `Issue #${id} is closed (${decision.status}).`,
+        {
+          details: where
+            ? { id, status: decision.status, closedElsewhere: where }
+            : { id, status: decision.status },
+        },
+      );
+    }
+    if (decision.action === 'noop') {
+      return { changed: false, issue, config };
+    }
+
+    issue.status = decision.status;
+    issue.assignee = decision.assignee;
+    // Strictly later than every version, so this one supersedes them.
+    const now = nextTimestamp([
+      issue.updated,
+      ...(elsewhere ?? []).map((s) => s.updated),
+    ]);
+    issue.updated = now;
+    addClaimComment(issue, user.name, options.comment, now);
+
+    // The review status is open (config validation): write to the open dir.
+    const paths = await relocateIssue(ctx.dir, issue, stored, {
+      closed: false,
+    });
+    paths.push(...assetPaths(issue));
+
+    const commit = await commitChange(ctx, config, {
+      operation: 'review',
+      issue,
+      paths,
+      message: commitMessage(config, `review #${id} ${issue.title}`),
     });
     return {
       changed: true,

@@ -13,7 +13,7 @@ export function registerUnclaimCommand(program: Command): void {
     .command('unclaim <id>')
     .alias('release')
     .description(
-      'Give an issue back: clear the assignee and move the active status (in_progress) back to the unclaim status (todo). ' +
+      'Give an issue back: clear the assignee and move the active status (in_progress) or review status back to the unclaim status (todo). ' +
         'Also releases a claim held in another worktree or on another branch. ' +
         `Exits ${EXIT_ALREADY_CLAIMED} if someone else has it (override with --force), ` +
         `${EXIT_ISSUE_CLOSED} if it is closed.`,

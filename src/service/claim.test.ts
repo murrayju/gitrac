@@ -19,10 +19,11 @@ import {
   listAllIssueFiles,
   readConfig,
   readIssue,
+  writeConfig,
   writeIssue,
 } from '../fs/issue-store.ts';
 import { issueStatesElsewhere } from '../git/elsewhere.ts';
-import { claimIssue, unclaimIssue } from './claim.ts';
+import { claimIssue, submitForReview, unclaimIssue } from './claim.ts';
 import {
   ADA,
   makeIssue,
@@ -371,4 +372,106 @@ describe('superseding a claim elsewhere on a tied or later clock (#94)', () => {
       expect(await effectiveClaimElsewhere()).toBeUndefined();
     });
   }
+});
+
+/** Regression tests for #105: hand a claimed issue off for review. */
+describe('submitForReview', () => {
+  async function enableReview() {
+    const config = await readConfig(fx.dir);
+    config.statuses.splice(3, 0, { name: 'review', closed: false });
+    config.reviewStatus = 'review';
+    await writeConfig(fx.dir, config);
+  }
+
+  test('without a review status it is invalid_input, before the issue is loaded', async () => {
+    const err = await rejection(submitForReview(fx.context(), 99));
+    expect(err.code).toBe('invalid_input');
+    expect(err.message).toContain('reviewStatus');
+    expect(fx.events).toEqual([]);
+  });
+
+  test('my claimed issue goes to review, keeping the assignee', async () => {
+    await enableReview();
+    await writeIssue(
+      fx.dir,
+      makeIssue({
+        id: 1,
+        title: 'Task',
+        status: 'in_progress',
+        assignee: ADA.email,
+      }),
+    );
+    const result = await submitForReview(fx.context(), 1, {
+      comment: 'ready for review',
+    });
+    expect(result.changed).toBe(true);
+    expect(result.issue).toMatchObject({
+      status: 'review',
+      assignee: ADA.email,
+      comments: [{ author: 'Ada', body: 'ready for review' }],
+    });
+    expect(result.issue.updated > '2025-01-01T00:00:00Z').toBe(true);
+    expect(fx.commits[0]?.message).toBe('issue: review #1 Task');
+    expect((await readIssue(fx.dir, 1)).status).toBe('review');
+
+    // Again: a no-op.
+    const again = await submitForReview(fx.context(), 1);
+    expect(again.changed).toBe(false);
+    expect(fx.commits).toHaveLength(1);
+
+    // Still claimed: someone else needs force.
+    const bob = { name: 'Bob', email: 'bob@x.com' };
+    const err = await rejection(
+      claimIssue(fx.context({ identity: async () => bob }), 1),
+    );
+    expect(err.code).toBe('already_claimed');
+    expect(err.message).toBe(
+      `Issue #1 is already claimed by ${ADA.email} (review).`,
+    );
+  });
+
+  test('claim by the assignee moves it back to the active status; unclaim to the unclaim status', async () => {
+    await enableReview();
+    await writeIssue(
+      fx.dir,
+      makeIssue({ id: 1, status: 'review', assignee: ADA.email }),
+    );
+    const claimed = await claimIssue(fx.context(), 1);
+    expect(claimed.changed).toBe(true);
+    expect(claimed.issue.status).toBe('in_progress');
+
+    await submitForReview(fx.context(), 1);
+    const released = await unclaimIssue(fx.context(), 1);
+    expect(released.issue).toMatchObject({ status: 'todo', assignee: '' });
+  });
+
+  test('unclaimed is invalid_state; someone else’s needs force; closed is issue_closed', async () => {
+    await enableReview();
+    await writeIssue(fx.dir, makeIssue({ id: 1, status: 'todo' }));
+    const unclaimed = await rejection(submitForReview(fx.context(), 1));
+    expect(unclaimed.code).toBe('invalid_state');
+    expect(unclaimed.message).toBe(
+      'Issue #1 is not claimed (todo); only a claimed issue (in_progress, assigned) can go to review.',
+    );
+
+    await writeIssue(
+      fx.dir,
+      makeIssue({ id: 2, status: 'in_progress', assignee: 'bob@x.com' }),
+    );
+    const theirs = await rejection(submitForReview(fx.context(), 2));
+    expect(theirs.code).toBe('already_claimed');
+    expect(theirs.message).toBe('Issue #2 is claimed by bob@x.com, not you.');
+    const forced = await submitForReview(fx.context(), 2, { force: true });
+    expect(forced.issue).toMatchObject({
+      status: 'review',
+      assignee: 'bob@x.com',
+    });
+
+    await writeIssue(fx.dir, makeIssue({ id: 3, status: 'done' }), {
+      closed: true,
+    });
+    expect((await rejection(submitForReview(fx.context(), 3))).code).toBe(
+      'issue_closed',
+    );
+  });
 });

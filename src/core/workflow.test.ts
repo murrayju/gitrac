@@ -6,10 +6,13 @@ import {
   cancelStatus,
   closedStatuses,
   closeStatus,
+  heldStatuses,
   humanize,
   isClosedStatus,
+  isHeldStatus,
   openStatuses,
   priorityLabel,
+  reviewStatus,
   statusDefinitions,
   statusLabel,
   statusSortOrder,
@@ -151,5 +154,27 @@ describe('fallbacks when the workflow keys are unset', () => {
       'cancelled',
     );
     expect(cancelStatus(withStatuses(['open', 'done']))).toBeUndefined();
+  });
+});
+
+/** Regression tests for #105: the optional review status. */
+describe('review status and held statuses', () => {
+  test('unset: no review status; only the active status is held', () => {
+    const config = createDefaultConfig();
+    expect(reviewStatus(config)).toBeUndefined();
+    expect(heldStatuses(config)).toEqual(['in_progress']);
+    expect(isHeldStatus(config, 'in_progress')).toBe(true);
+    expect(isHeldStatus(config, 'todo')).toBe(false);
+  });
+
+  test('set: the active and the review status are held', () => {
+    const config = withStatuses(['todo', 'doing', 'review', 'done'], {
+      activeStatus: 'doing',
+      reviewStatus: 'review',
+    });
+    expect(reviewStatus(config)).toBe('review');
+    expect(heldStatuses(config)).toEqual(['doing', 'review']);
+    expect(isHeldStatus(config, 'review')).toBe(true);
+    expect(isHeldStatus(config, 'todo')).toBe(false);
   });
 });

@@ -12,10 +12,11 @@ import type {
  * `config.statuses` lists the statuses in workflow order (the order of the
  * UI's dropdowns and filters), each with a `closed` flag; `config.priorities`
  * lists the priorities most urgent first. The workflow statuses `claim`,
- * `unclaim` and `close` use are configurable too (`activeStatus`,
- * `unclaimStatus`, `closeStatus`, `cancelStatus`); when a key is unset the
- * built-in name is used if it is configured (with the right open/closed
- * kind), else a fallback — see the resolvers below. `parseConfig`
+ * `unclaim`, `review` and `close` use are configurable too (`activeStatus`,
+ * `unclaimStatus`, `reviewStatus`, `closeStatus`, `cancelStatus`); when a key
+ * is unset the built-in name is used if it is configured (with the right
+ * open/closed kind), else a fallback (see the resolvers below).
+ * `reviewStatus` has no fallback: unset, there is no review step. `parseConfig`
  * (`src/core/config.ts`) validates explicitly set keys.
  */
 
@@ -95,6 +96,7 @@ export type WorkflowConfig = Pick<
   | 'defaultStatus'
   | 'activeStatus'
   | 'unclaimStatus'
+  | 'reviewStatus'
   | 'closeStatus'
   | 'cancelStatus'
 >;
@@ -176,6 +178,33 @@ export function unclaimStatus(config: WorkflowConfig): Status {
     return DEFAULT_UNCLAIM_STATUS;
   }
   return config.defaultStatus;
+}
+
+/**
+ * The status `review` sets (work handed off for review, still held by its
+ * assignee): `config.reviewStatus`. Unset: none (there is no review step).
+ */
+export function reviewStatus(config: WorkflowConfig): Status | undefined {
+  return config.reviewStatus;
+}
+
+/**
+ * The statuses in which an assigned issue is held (claimed): the active
+ * status, and the review status if one is configured. Others need `--force`
+ * to claim a held issue, `next` skips it, and `unclaim` moves it back to the
+ * unclaim status.
+ */
+export function heldStatuses(config: WorkflowConfig): Status[] {
+  const review = reviewStatus(config);
+  const active = activeStatus(config);
+  return review === undefined || review === active
+    ? [active]
+    : [active, review];
+}
+
+/** Whether `status` is one of the {@link heldStatuses}. */
+export function isHeldStatus(config: WorkflowConfig, status: Status): boolean {
+  return heldStatuses(config).includes(status);
 }
 
 /**

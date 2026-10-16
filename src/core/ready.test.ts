@@ -201,3 +201,49 @@ describe('with versions elsewhere (#56)', () => {
     expect(nextIssue(list, config)?.id).toBe(2);
   });
 });
+
+describe('with a review status (#105)', () => {
+  const review = {
+    ...config,
+    statuses: [...config.statuses, { name: 'review', closed: false }],
+    reviewStatus: 'review',
+  };
+
+  test('next skips my issues in review, here or elsewhere', () => {
+    const list = [
+      issue(1, { status: 'review', assignee: ME.email }),
+      issue(2),
+      issue(3),
+    ];
+    expect(nextIssue(list, review)?.id).toBe(2);
+    // Without a review status, review is just an open status.
+    expect(nextIssue(list, config)?.id).toBe(1);
+    const elsewhere = new Map([
+      [
+        2,
+        [
+          {
+            ref: 'agent-1',
+            status: 'review',
+            assignee: ME.email,
+            updated: '2025-01-02T00:00:00Z',
+          },
+        ],
+      ],
+    ]);
+    expect(nextIssue(list, review, elsewhere)?.id).toBe(3);
+  });
+
+  test("someone else's issue in review elsewhere is not available", () => {
+    expect(
+      isAvailableTo(issue(1), ME, review, [
+        {
+          ref: 'agent-1',
+          status: 'review',
+          assignee: 'bob@example.com',
+          updated: '2025-01-02T00:00:00Z',
+        },
+      ]),
+    ).toBe(false);
+  });
+});
