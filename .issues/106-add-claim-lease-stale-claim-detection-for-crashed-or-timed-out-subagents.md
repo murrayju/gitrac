@@ -1,9 +1,9 @@
 ---
 id: 106
 title: Add claim lease / stale-claim detection for crashed or timed-out subagents
-status: backlog
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - feature
 blockedBy:
@@ -11,7 +11,7 @@ blockedBy:
   - 94
 created: '2026-10-16T12:13:32.495Z'
 createdBy: Justin Murray
-updated: '2026-10-16T12:14:10.081Z'
+updated: '2026-10-16T20:57:22.995Z'
 ---
 
 When orchestrating parallel subagents across worktrees, a subagent process can crash, hang, or hit a context/timeout limit after claiming an issue. Because claims have no TTL or staleness check, the issue stays `in_progress` indefinitely unless the orchestrator externally tracks agent health and runs `gitrac unclaim <id> --force`.
