@@ -1,14 +1,14 @@
 ---
 id: 92
 title: CRLF line endings in issue files swallow comments into the description
-status: backlog
+status: in_progress
 priority: high
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-16T12:12:37.943Z'
 createdBy: Justin Murray
-updated: '2026-10-16T12:12:37.943Z'
+updated: '2026-10-16T14:13:05.201Z'
 ---
 
 While frontmatter helpers (`topLevelBlocks`, `parseIssueFile`, `stripFrontmatterUpdated`, `parseIssueForMerge`) split on `/\r?\n/`, the body and comment parsers split on `'\n'`:
