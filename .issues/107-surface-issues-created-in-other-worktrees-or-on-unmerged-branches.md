@@ -1,16 +1,16 @@
 ---
 id: 107
 title: Surface issues created in other worktrees or on unmerged branches
-status: backlog
+status: in_progress
 priority: low
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - feature
 blockedBy:
   - 93
 created: '2026-10-16T12:13:33.538Z'
 createdBy: Justin Murray
-updated: '2026-10-16T12:14:11.094Z'
+updated: '2026-10-16T20:06:07.241Z'
 ---
 
 `listIssues` and `listReadyIssues` only load `.issues/*.md` files present in the current worktree's filesystem, then overlay `issueStatesElsewhere` for those IDs.
