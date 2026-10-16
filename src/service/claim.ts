@@ -13,10 +13,21 @@ import {
   toClosedElsewhere,
 } from '../core/elsewhere.ts';
 import { GitracError, invalidInput } from '../core/errors.ts';
+import {
+  claimAge,
+  formatDuration,
+  type StaleClaim,
+  type StaleOptions,
+  staleClaim,
+} from '../core/stale.ts';
 import { nextTimestamp } from '../core/timestamp.ts';
 import type { Config, Issue } from '../core/types.ts';
 import { authorError, hasLineBreak } from '../core/validate.ts';
-import { activeStatus, reviewStatus } from '../core/workflow.ts';
+import {
+  activeStatus,
+  isClosedStatus,
+  reviewStatus,
+} from '../core/workflow.ts';
 import { relocateIssue, writeConfig } from '../fs/issue-store.ts';
 import { issueStatesElsewhere } from '../git/elsewhere.ts';
 import { withRepoLock } from '../git/lock.ts';
@@ -53,6 +64,13 @@ export type ClaimResult =
        * version elsewhere (superseded by the local write).
        */
       elsewhere?: ClaimedElsewhere;
+      /**
+       * claim / unclaim with `stale`: the stale claim that was taken over
+       * or released (someone else's, or the user's own).
+       */
+      staleClaim?: StaleClaim;
+      /** claim with `renew`: the user's own claim was renewed (no other change). */
+      renewed?: boolean;
     })
   | { changed: false; issue: Issue; config: Config };
 
@@ -70,6 +88,53 @@ export interface ClaimOptions {
    * `If-Match`). The user is validated first.
    */
   precondition?: Precondition;
+  /**
+   * claim: take over someone else's claim only if it is stale (see
+   * `staleClaim` in `src/core/stale.ts`); judged on the fresh scan under
+   * the lock, so a claim renewed meanwhile is not taken. Your own stale
+   * claim is renewed. unclaim: release someone else's claim only if it is
+   * stale (else `already_claimed`, with the claim's age).
+   */
+  stale?: StaleOptions;
+  /**
+   * claim: if the issue is already your claim (active status), renew it:
+   * write a newer `updated` (a heartbeat) instead of a no-op.
+   */
+  renew?: boolean;
+}
+
+/**
+ * The stale claim of `issue` per `stale` (undefined without `stale`), for
+ * claim / unclaim. A local closed issue never counts: taking it over would
+ * reopen it.
+ */
+function staleClaimOf(
+  issue: Issue,
+  config: Config,
+  elsewhere: Parameters<typeof staleClaim>[2],
+  stale: StaleOptions | undefined,
+): StaleClaim | undefined {
+  if (!stale || isClosedStatus(config, issue.status)) return undefined;
+  return staleClaim(issue, config, elsewhere, stale);
+}
+
+/**
+ * Why a claim is not stale, for an `already_claimed` error when `stale` was
+ * given: the claim's status is not the active status, or its age.
+ */
+function notStaleReason(
+  issue: Issue,
+  config: Config,
+  elsewhere: Parameters<typeof staleClaim>[2],
+  stale: StaleOptions,
+): string {
+  const { status } = effectiveState(issue, elsewhere);
+  if (status !== activeStatus(config)) {
+    return ` A claim in ${status} is never stale.`;
+  }
+  const age = claimAge(issue, elsewhere, stale.now);
+  if (age === undefined) return ' Its last activity is unknown.';
+  return ` Its last activity was ${formatDuration(age)} ago, less than ${formatDuration(stale.maxAgeMs)}.`;
 }
 
 /**
@@ -135,19 +200,24 @@ export async function claimIssue(
 
     // Decided under the lock, on the freshly-read issue.
     const active = activeStatus(config);
+    // A stale claim is taken over as with force (judged on this scan).
+    const stale = staleClaimOf(issue, config, elsewhere, options.stale);
     const decision = decideClaim(issue, user, config, {
-      force: options.force,
+      force: options.force || stale !== undefined,
       elsewhere,
     });
     if (decision.action === 'already-claimed') {
       const where = decision.elsewhere;
       // The held status: active, or in review.
       const held = effectiveState(issue, elsewhere).status;
+      const reason = options.stale
+        ? notStaleReason(issue, config, elsewhere, options.stale)
+        : '';
       throw new GitracError(
         'already_claimed',
         where
-          ? `Issue #${id} is already claimed by ${where.assignee} (${held}) ${describeLocation(where)}.`
-          : `Issue #${id} is already claimed by ${decision.assignee} (${held}).`,
+          ? `Issue #${id} is already claimed by ${where.assignee} (${held}) ${describeLocation(where)}.${reason}`
+          : `Issue #${id} is already claimed by ${decision.assignee} (${held}).${reason}`,
         {
           details: where
             ? { id, assignee: where.assignee, claimedElsewhere: where }
@@ -169,7 +239,10 @@ export async function claimIssue(
         },
       );
     }
-    if (decision.action === 'noop') {
+    // Renew your own claim (a heartbeat), or a stale one of yours.
+    const renewed =
+      decision.action === 'noop' && (options.renew || stale !== undefined);
+    if (decision.action === 'noop' && !renewed) {
       return { changed: false, issue, config };
     }
 
@@ -200,19 +273,24 @@ export async function claimIssue(
     if (configChanged) paths.push(CONFIG_PATH);
     paths.push(...assetPaths(issue));
 
+    const verb = renewed && options.renew ? 'renew' : 'claim';
     const commit = await commitChange(ctx, config, {
       operation: 'claim',
       issue,
       paths,
-      message: commitMessage(config, `claim #${id} ${issue.title}`),
+      message: commitMessage(config, `${verb} #${id} ${issue.title}`),
     });
+    const heldElsewhere =
+      decision.action === 'claim' ? decision.heldElsewhere : undefined;
     return {
       changed: true,
       issue,
       paths,
       config,
       commit,
-      ...(decision.heldElsewhere ? { elsewhere: decision.heldElsewhere } : {}),
+      ...(heldElsewhere ? { elsewhere: heldElsewhere } : {}),
+      ...(stale ? { staleClaim: stale } : {}),
+      ...(renewed && options.renew ? { renewed: true } : {}),
     };
   });
 }
@@ -244,17 +322,22 @@ export async function unclaimIssue(
       id,
     );
 
+    // A stale claim is released as with force (judged on this scan).
+    const stale = staleClaimOf(issue, config, elsewhere, options.stale);
     const decision = decideUnclaim(issue, user, config, {
-      force: options.force,
+      force: options.force || stale !== undefined,
       elsewhere,
     });
     if (decision.action === 'not-yours') {
       const where = decision.elsewhere;
+      const reason = options.stale
+        ? notStaleReason(issue, config, elsewhere, options.stale)
+        : '';
       throw new GitracError(
         'already_claimed',
         where
-          ? `Issue #${id} is claimed by ${where.assignee} ${describeLocation(where)}, not you.`
-          : `Issue #${id} is claimed by ${decision.assignee}, not you.`,
+          ? `Issue #${id} is claimed by ${where.assignee} ${describeLocation(where)}, not you.${reason}`
+          : `Issue #${id} is claimed by ${decision.assignee}, not you.${reason}`,
         {
           details: where
             ? { id, assignee: where.assignee, claimedElsewhere: where }
@@ -313,6 +396,7 @@ export async function unclaimIssue(
       config,
       commit,
       ...(decision.elsewhere ? { elsewhere: decision.elsewhere } : {}),
+      ...(stale ? { staleClaim: stale } : {}),
     };
   });
 }

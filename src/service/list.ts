@@ -14,6 +14,11 @@ import {
   queryIssues,
 } from '../core/query.ts';
 import { parseIssueId } from '../core/slug.ts';
+import {
+  type StaleClaim,
+  type StaleOptions,
+  staleClaim,
+} from '../core/stale.ts';
 import type { Issue } from '../core/types.ts';
 import { isClosedStatus, type WorkflowConfig } from '../core/workflow.ts';
 import { listClosedIssueFiles, listIssueFiles } from '../fs/issue-store.ts';
@@ -95,31 +100,73 @@ type States = ReadonlyMap<number, readonly IssueStateElsewhere[]>;
  * `elsewhere` gives the issues that have no file here but exist in another
  * worktree or on another branch (newest version, see `issuesOnlyElsewhere`),
  * filtered and sorted per `query` too. Else it is empty.
+ *
+ * With `options.stale`, only the issues whose effective state is a stale
+ * claim (see `staleClaim` in `src/core/stale.ts`) are listed, and
+ * `staleClaims` gives each one's claim. The versions elsewhere for this
+ * come from `options.states` (maybe cached), else `options.elsewhere`, else
+ * a fresh scan.
  */
 export async function listIssues(
   dir: string,
   query: IssueQuery,
-  config: QueryConfig,
-  options: { elsewhere?: States | Promise<States> } = {},
+  config: QueryConfig & WorkflowConfig,
+  options: {
+    elsewhere?: States | Promise<States>;
+    stale?: StaleOptions;
+    states?: States | Promise<States>;
+  } = {},
 ): Promise<
-  IssueListing & { misplaced: string[]; elsewhere: IssueOnlyElsewhere[] }
+  IssueListing & {
+    misplaced: string[];
+    elsewhere: IssueOnlyElsewhere[];
+    staleClaims: Map<number, StaleClaim>;
+  }
 > {
-  const [{ open, closed, unreadable }, states] = await Promise.all([
-    loadDirs(dir),
-    options.elsewhere,
-  ]);
+  const [{ open, closed, unreadable }, states, staleStates] = await Promise.all(
+    [
+      loadDirs(dir),
+      options.elsewhere,
+      options.stale
+        ? (options.states ?? options.elsewhere ?? issueStatesElsewhere(dir))
+        : undefined,
+    ],
+  );
   const misplaced = [
     ...open.filter((f) => isClosedStatus(config, f.issue.status)),
     ...closed.filter((f) => !isClosedStatus(config, f.issue.status)),
   ].map((f) => f.path);
   const issues = [...open, ...closed].map((f) => f.issue);
+  let listed = queryIssues(issues, query, config);
+  let onlyElsewhere = states
+    ? queryElsewhere(localIds(issues, unreadable), states, query, config)
+    : [];
+  const staleClaims = new Map<number, StaleClaim>();
+  const stale = options.stale;
+  if (stale) {
+    listed = listed.filter((issue) => {
+      const claim = staleClaim(
+        issue,
+        config,
+        staleStates?.get(issue.id),
+        stale,
+      );
+      if (claim) staleClaims.set(issue.id, claim);
+      return claim !== undefined;
+    });
+    // Their issue is the newest version: judge it alone, at its location.
+    onlyElsewhere = onlyElsewhere.filter(({ issue, foundElsewhere }) => {
+      const claim = staleClaim(issue, config, undefined, stale);
+      if (claim) staleClaims.set(issue.id, { ...claim, ...foundElsewhere });
+      return claim !== undefined;
+    });
+  }
   return {
-    issues: queryIssues(issues, query, config),
+    issues: listed,
     unreadable,
     misplaced,
-    elsewhere: states
-      ? queryElsewhere(localIds(issues, unreadable), states, query, config)
-      : [],
+    elsewhere: onlyElsewhere,
+    staleClaims,
   };
 }
 
@@ -161,12 +208,17 @@ function queryElsewhere(
 }
 
 /**
- * Every issue's versions elsewhere, with their parsed issues (for
- * `listIssues`' `elsewhere` option and `marksFromStates`). Read-only; one
- * scan.
+ * Every issue's versions elsewhere, with their parsed issues unless
+ * `withIssues` is false (for `listIssues`' `elsewhere` and `states`
+ * options and `marksFromStates`). Read-only; one scan.
  */
-export function scanElsewhere(dir: string): Promise<States> {
-  return issueStatesElsewhere(dir, { withIssues: true });
+export function scanElsewhere(
+  dir: string,
+  options: { withIssues?: boolean } = {},
+): Promise<States> {
+  return issueStatesElsewhere(dir, {
+    withIssues: options.withIssues ?? true,
+  });
 }
 
 /**

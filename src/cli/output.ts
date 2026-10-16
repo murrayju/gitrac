@@ -7,6 +7,7 @@ import {
   type ElsewhereMarks,
   type FoundElsewhere,
 } from '../core/elsewhere.ts';
+import type { StaleClaim } from '../core/stale.ts';
 import type { Comment, Issue, OutputFormat } from '../core/types.ts';
 
 /**
@@ -33,10 +34,31 @@ function shortDate(iso: string): string {
 }
 
 /**
- * Claims and closes on other branches / worktrees, by issue ID (see
- * `elsewhereMarks` in `src/core/elsewhere.ts`).
+ * The marks of an issue: a claim or close on another branch / worktree (see
+ * `elsewhereMarks` in `src/core/elsewhere.ts`), and a stale claim (see
+ * `staleClaim` in `src/core/stale.ts`; with `--stale`).
  */
-export type MarksElsewhere = ReadonlyMap<number, ElsewhereMarks>;
+export type IssueMarks = ElsewhereMarks & { staleClaim?: StaleClaim };
+
+/** {@link IssueMarks}, by issue ID. */
+export type MarksElsewhere = ReadonlyMap<number, IssueMarks>;
+
+/** `stale claim by Y, last activity <iso>`. */
+export function describeStaleClaim(claim: StaleClaim): string {
+  return `stale claim by ${claim.assignee}, last activity ${claim.updated}`;
+}
+
+/** The {@link IssueMarks} of each ID, from the elsewhere marks and stale claims. */
+export function mergeMarks(
+  marks: ReadonlyMap<number, ElsewhereMarks>,
+  staleClaims: ReadonlyMap<number, StaleClaim>,
+): Map<number, IssueMarks> {
+  const merged = new Map<number, IssueMarks>(marks);
+  for (const [id, staleClaim] of staleClaims) {
+    merged.set(id, { ...merged.get(id), staleClaim });
+  }
+  return merged;
+}
 
 /** `claimed on branch X by Y` / `claimed in worktree P (branch X) by Y`. */
 export function describeClaimElsewhere(claim: ClaimedElsewhere): string {
@@ -57,7 +79,7 @@ export function describeFoundElsewhere(found: FoundElsewhere): string {
  * The human description of `mark` (a claim or a close elsewhere, or an
  * issue that is only elsewhere), if any.
  */
-function describeMark(mark: ElsewhereMarks | undefined): string | undefined {
+function describeMark(mark: IssueMarks | undefined): string | undefined {
   if (mark?.claimedElsewhere)
     return describeClaimElsewhere(mark.claimedElsewhere);
   if (mark?.closedElsewhere)
@@ -103,6 +125,7 @@ function formatHumanList(issues: Issue[], marks?: MarksElsewhere): string {
 
   const rows = issues.map((issue) => {
     const mark = describeMark(marks?.get(issue.id));
+    const stale = marks?.get(issue.id)?.staleClaim;
     return [
       pad(`#${issue.id}`, 6),
       pad(truncate(issue.title, 40), 42),
@@ -112,6 +135,7 @@ function formatHumanList(issues: Issue[], marks?: MarksElsewhere): string {
       pad(shortDate(issue.updated), 12),
       issue.labels.join(', ') || '-',
       mark ? `  [${mark}]` : '',
+      stale ? `  [${describeStaleClaim(stale)}]` : '',
     ].join('');
   });
 
@@ -163,9 +187,10 @@ function dependencyLines(issue: Issue, deps?: IssueDependencies): string[] {
 function formatHumanDetail(
   issue: Issue,
   deps?: IssueDependencies,
-  mark?: ElsewhereMarks,
+  mark?: IssueMarks,
 ): string {
   const where = describeMark(mark);
+  const stale = mark?.staleClaim;
   const when =
     mark?.claimedElsewhere?.updated ?? mark?.closedElsewhere?.updated;
   const lines: string[] = [
@@ -175,6 +200,7 @@ function formatHumanDetail(
     `Priority:   ${issue.priority}`,
     `Assignee:   ${issue.assignee || '-'}`,
     ...(where ? [`Elsewhere:  ${where}${when ? ` (${when})` : ''}`] : []),
+    ...(stale ? [`Stale:      ${describeStaleClaim(stale)}`] : []),
     `Labels:     ${issue.labels.length > 0 ? issue.labels.join(', ') : '-'}`,
     ...dependencyLines(issue, deps),
     `Created:    ${issue.created} by ${issue.createdBy}`,
@@ -236,7 +262,7 @@ export function formatIssueDetail(
   issue: Issue,
   format: OutputFormat,
   deps?: IssueDependencies,
-  mark?: ElsewhereMarks,
+  mark?: IssueMarks,
 ): string {
   const marks = mark ? new Map([[issue.id, mark]]) : undefined;
   const data = deps

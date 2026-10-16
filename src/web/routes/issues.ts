@@ -4,6 +4,7 @@ import type { ElsewhereMarks } from '../../core/elsewhere.ts';
 import { GitracError, invalidInput } from '../../core/errors.ts';
 import { parseIssueFile } from '../../core/issue.ts';
 import { type IssueQuery, parseIssueQuery } from '../../core/query.ts';
+import { type StaleOptions, staleOptions } from '../../core/stale.ts';
 import type { Issue } from '../../core/types.ts';
 import { readIssueContent } from '../../fs/issue-store.ts';
 import { claimIssue, unclaimIssue } from '../../service/claim.ts';
@@ -254,7 +255,9 @@ export function issueRoutes(ctx: ServerContext): Hono {
     const { dir, config } = ctx;
     const q = (name: string): string[] | undefined => c.req.queries(name);
     let query: IssueQuery;
+    let stale: StaleOptions | undefined;
     try {
+      stale = staleOptions(c.req.query('stale'));
       query = parseIssueQuery(
         {
           status: q('status'),
@@ -276,17 +279,29 @@ export function issueRoutes(ctx: ServerContext): Hono {
     }
     // `elsewhere=1`: also the issues that exist only in another worktree or
     // on another branch, after the local ones (from the cached scan).
-    const { issues, elsewhere } = await listIssues(dir, query, config, {
-      elsewhere: isTruthy(c.req.query('elsewhere'))
-        ? elsewhereCache(ctx).states()
-        : undefined,
-    });
+    // `stale=<duration>`: only the issues whose effective state is a stale
+    // claim, each with `staleClaim` (same rules as `gitrac ls --stale`).
+    const { issues, elsewhere, staleClaims } = await listIssues(
+      dir,
+      query,
+      config,
+      {
+        elsewhere: isTruthy(c.req.query('elsewhere'))
+          ? elsewhereCache(ctx).states()
+          : undefined,
+        states: stale ? elsewhereCache(ctx).states() : undefined,
+        stale,
+      },
+    );
+    const withStale = <T extends Issue>(issue: T) => {
+      const staleClaim = staleClaims.get(issue.id);
+      return staleClaim ? { ...issue, staleClaim } : issue;
+    };
     return c.json([
-      ...(await withClaims(ctx, issues)),
-      ...elsewhere.map(({ issue, foundElsewhere }) => ({
-        ...issue,
-        foundElsewhere,
-      })),
+      ...(await withClaims(ctx, issues)).map(withStale),
+      ...elsewhere.map(({ issue, foundElsewhere }) =>
+        withStale({ ...issue, foundElsewhere }),
+      ),
     ]);
   });
 

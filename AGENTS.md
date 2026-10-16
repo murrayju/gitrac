@@ -17,6 +17,8 @@ This project uses gitrac to track its own issues. The `.issues/` directory conta
 ./gitrac next --claim          # atomically pick + claim the top ready issue (exit 5 if none)
 ./gitrac link <id> --blocked-by 3,4 [--parent 2]   # dependencies (unlink <id> -b 3 / --parent removes)
 ./gitrac unclaim <id>          # give it back (alias: release; also releases a claim held in another worktree/branch)
+./gitrac ls --stale 2h         # claims with no activity for 2h (dead agents); also on ready, next [--claim], unclaim
+./gitrac claim <id> --renew    # heartbeat: renew your own claim so it is not stale
 ./gitrac review <id>           # hand a claimed issue off for review (needs reviewStatus in config.yaml; stays claimed)
 ./gitrac comment <id> "text"    # add a comment (or --body-file <path|->)
 ./gitrac close <id>            # close an issue

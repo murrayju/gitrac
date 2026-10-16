@@ -1,6 +1,7 @@
 import type { Command } from 'commander';
 import type { ElsewhereMarks } from '../../core/elsewhere.ts';
 import { parseIssueQuery, SORT_FIELDS } from '../../core/query.ts';
+import { staleOptions } from '../../core/stale.ts';
 import { readConfig } from '../../fs/issue-store.ts';
 import { getBranchWarning } from '../../git/status.ts';
 import {
@@ -10,7 +11,7 @@ import {
   scanElsewhere,
 } from '../../service/list.ts';
 import { resolveProjectOptions } from '../global-options.ts';
-import { formatIssueList } from '../output.ts';
+import { formatIssueList, mergeMarks } from '../output.ts';
 import { resolveClaimUser } from '../service-context.ts';
 
 /** Collect a repeatable option's values (`--label a --label b`). */
@@ -49,6 +50,10 @@ export function registerListCommand(program: Command): void {
       '--elsewhere',
       'Also list issues that exist only in another worktree or on another branch',
     )
+    .option(
+      '--stale <duration>',
+      'Only issues whose claim (active status) has had no activity for <duration> (30s, 45m, 2h, 1d), here or in another worktree or branch',
+    )
     .action(
       async (options: {
         status?: string[];
@@ -59,9 +64,11 @@ export function registerListCommand(program: Command): void {
         search?: string;
         sort?: string;
         elsewhere?: boolean;
+        stale?: string;
       }) => {
         const globalOpts = await resolveProjectOptions(program);
         const { dir } = globalOpts;
+        const stale = staleOptions(options.stale);
 
         const config = await readConfig(dir);
         const query = parseIssueQuery(options, config, {
@@ -76,13 +83,19 @@ export function registerListCommand(program: Command): void {
 
         // `--elsewhere`: one scan of every issue (with the parsed issues)
         // gives both the issues only elsewhere and the marks.
-        const states = options.elsewhere ? scanElsewhere(dir) : undefined;
-        const { issues, unreadable, misplaced, elsewhere } = await listIssues(
-          dir,
-          query,
-          config,
-          { elsewhere: states },
-        );
+        // `--stale` alone: one scan (without the parsed issues) gives the
+        // stale claims and the marks.
+        const states = options.elsewhere
+          ? scanElsewhere(dir)
+          : stale
+            ? scanElsewhere(dir, { withIssues: false })
+            : undefined;
+        const { issues, unreadable, misplaced, elsewhere, staleClaims } =
+          await listIssues(dir, query, config, {
+            elsewhere: options.elsewhere ? states : undefined,
+            states,
+            stale,
+          });
         for (const path of unreadable) {
           console.warn(`Warning: skipping unreadable issue file ${path}`);
         }
@@ -102,7 +115,7 @@ export function registerListCommand(program: Command): void {
           formatIssueList(
             [...issues, ...elsewhere.map((e) => e.issue)],
             globalOpts.output,
-            marks,
+            mergeMarks(marks, staleClaims),
           ),
         );
       },

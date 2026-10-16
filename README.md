@@ -250,17 +250,17 @@ The server binds to `127.0.0.1` by default and rejects cross-origin and DNS-rebi
 |---|---|
 | `init` | Create `.issues/` and install the merge driver |
 | `create` / `new` | Create an issue: `-t` title, `-d`/`--description-file`, `-p`, `-l`, `-a`, `-s` |
-| `list` / `ls` | List issues: `--status` (`all`), `--priority`, `--label`, `--assignee`, `--mine`, `--search`, `--sort`, `--elsewhere` (also issues only in other worktrees/branches). Multi-value filters are comma-separated |
+| `list` / `ls` | List issues: `--status` (`all`), `--priority`, `--label`, `--assignee`, `--mine`, `--search`, `--sort`, `--elsewhere` (also issues only in other worktrees/branches), `--stale <duration>` (only claims with no activity for that long). Multi-value filters are comma-separated |
 | `show` / `view <id>` | Show an issue with comments, dependencies and claims elsewhere |
 | `edit <id>` | Change title, status, priority, assignee, labels, description |
 | `comment` / `c <id> [body]` | Add a comment (argument, `--body-file`, or stdin) |
-| `claim <id>` | Assign to yourself and set the active status. **Fails if someone else holds it** |
-| `unclaim` / `release <id>` | Give an issue back, even a claim held in another worktree |
+| `claim <id>` | Assign to yourself and set the active status. **Fails if someone else holds it**. `--renew` renews your own claim (a heartbeat) |
+| `unclaim` / `release <id>` | Give an issue back, even a claim held in another worktree. `--stale <duration>` releases someone else's claim if it is stale |
 | `review <id>` | Hand a claimed issue off for review (needs `reviewStatus`). It stays claimed until closed or unclaimed |
 | `close <id>` / `reopen <id>` | Close (moves to `closed/`; `--cancelled`, `-s`) or reopen it |
 | `link` / `unlink <id>` | `--blocked-by <ids>`, `--parent <id>`. Cycles are rejected |
-| `ready` | Open, unassigned (or yours), unblocked issues, sorted by priority |
-| `next [--claim]` | The top ready issue; with `--claim`, picks and claims it in one locked step |
+| `ready` | Open, unassigned (or yours), unblocked issues, sorted by priority. `--stale <duration>` also lists stale claims |
+| `next [--claim]` | The top ready issue; with `--claim`, picks and claims it in one locked step. `--stale <duration>` lets it take over a stale claim |
 | `delete` / `rm <id>` | Delete an issue, any assets only it uses, and links to it (`--yes`, `--dry-run`) |
 | `renumber <id>` | Give one copy of a duplicated ID a fresh ID (`--file`, `--update-refs`) |
 | `serve` | Start the web UI (the default when no command is given) |
@@ -370,7 +370,7 @@ $ echo $?
 - **Picking work:** `next --claim` runs under the shared lock and accounts for claims in every worktree and on every branch, so concurrent agents always get distinct issues.
 - **Finishing:** the agent closes on its branch with `close --no-commit` and commits code and issue together. That issue then drops out of `ready` / `next` everywhere until the branch is merged.
 - **Review handoff:** with a `reviewStatus` configured, the agent runs `gitrac review <id>` when its work is ready. The issue keeps its assignee and stays claimed everywhere until the orchestrator closes it (or `unclaim`s it); the agent's `claim` sends it back to the active status for rework.
-- **Stuck or dead agents:** release the claim from anywhere with `gitrac unclaim <id>`, adding `--force` if it was someone else's. The newer release supersedes the claim, and the issue becomes ready again.
+- **Stuck or dead agents:** release the claim from anywhere with `gitrac unclaim <id>`, adding `--force` if it was someone else's. The newer release supersedes the claim, and the issue becomes ready again. To find dead agents without tracking them yourself, use `gitrac ls --stale 2h`: it lists claims whose newest version (in any worktree or branch) has had no activity for 2 hours (`staleClaim` in `-o json`). `gitrac unclaim <id> --stale 2h` releases such a claim without `--force`, and `gitrac next --claim --stale 2h` can take one over (it checks again under the lock, so a claim renewed meanwhile is never taken). Claims in the review status are never stale. Agents send a heartbeat with `gitrac --no-commit claim <id> --renew`.
 - **Merging:** the merge driver handles `.issues/` (comments combined, fields merged). Delete merged or abandoned agent branches so their stale claims stop showing up.
 
 ### 5. Handle failures programmatically

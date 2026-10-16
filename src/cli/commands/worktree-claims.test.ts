@@ -11,7 +11,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import simpleGit from 'simple-git';
 import { EXIT_ALREADY_CLAIMED, EXIT_ISSUE_CLOSED } from '../../core/claim.ts';
-import { readConfig, readIssue, writeConfig } from '../../fs/issue-store.ts';
+import {
+  readConfig,
+  readIssue,
+  writeConfig,
+  writeIssue,
+} from '../../fs/issue-store.ts';
 
 /**
  * Regression tests for #56: a claim made in one worktree (committed or not)
@@ -59,8 +64,10 @@ async function json<T>(dir: string, author: string, ...args: string[]) {
 
 type Listed = {
   id: number;
+  assignee?: string;
   claimedElsewhere?: Record<string, string>;
   closedElsewhere?: Record<string, string>;
+  staleClaim?: Record<string, string>;
 };
 
 beforeEach(async () => {
@@ -538,5 +545,172 @@ describe('review handoff across worktrees (#105)', () => {
     const unclaimed = await cli(main, 'Ada', 'review', '1');
     expect(unclaimed.code).toBe(3);
     expect(unclaimed.stderr).toContain('Use "gitrac claim 1" first.');
+  });
+});
+
+/** Regression tests for #106: stale claims of crashed or timed-out agents. */
+describe('stale claims across worktrees (#106)', () => {
+  const HOUR = 60 * 60 * 1000;
+
+  /** Set issue `id`'s `updated` in `dir` to `hours` ago (an idle agent). */
+  async function age(dir: string, id: number, hours: number): Promise<string> {
+    const issue = await readIssue(dir, id);
+    issue.updated = new Date(Date.now() - hours * HOUR).toISOString();
+    await writeIssue(dir, issue);
+    return issue.updated;
+  }
+
+  // The issues were created long before the claims: age every copy, so an
+  // idle claim is still newer than the unclaimed versions.
+  beforeEach(async () => {
+    for (const dir of [main, wt1, wt2]) {
+      for (const id of [1, 2]) await age(dir, id, 10);
+    }
+  });
+
+  test('ls --stale lists an idle agent claim; next --claim --stale takes it over', async () => {
+    await ok(wt1, 'Bob', 'claim', '1', '--no-commit');
+    await ok(wt2, 'Cy', 'claim', '2', '--no-commit');
+    const updated = await age(wt1, 1, 3);
+    const where = { ref: 'agent-1', worktree: wt1, assignee: 'Bob', updated };
+
+    // Only the stale claim is listed (the fresh one is not).
+    const listed = await json<Listed[]>(main, 'Ada', 'ls', '--stale', '2h');
+    expect(listed.map((i) => i.id)).toEqual([1]);
+    expect(listed[0]?.staleClaim).toEqual(where);
+    expect(await ok(main, 'Ada', 'ls', '--stale', '2h')).toContain(
+      `[stale claim by Bob, last activity ${updated}]`,
+    );
+    expect(
+      (await json<Listed[]>(main, 'Ada', 'ls', '--stale', '4h')).length,
+    ).toBe(0);
+    // Without --stale, ls is unchanged.
+    expect(
+      (await json<Listed[]>(main, 'Ada', 'ls')).map((i) => i.staleClaim),
+    ).toEqual([undefined, undefined]);
+
+    // ready / next: available only with --stale.
+    expect((await cli(main, 'Ada', 'next')).code).toBe(5);
+    const ready = await json<Listed[]>(main, 'Ada', 'ready', '--stale', '2h');
+    expect(ready.map((i) => i.id)).toEqual([1]);
+    expect(ready[0]?.staleClaim).toEqual(where);
+    expect((await json<Listed>(main, 'Ada', 'next', '--stale', '2h')).id).toBe(
+      1,
+    );
+
+    const taken = await cli(
+      main,
+      'Ada',
+      '-o',
+      'json',
+      'next',
+      '--claim',
+      '--stale',
+      '2h',
+      '--no-commit',
+    );
+    expect(taken.code).toBe(0);
+    expect(JSON.parse(taken.stdout)).toMatchObject({
+      id: 1,
+      assignee: 'Ada',
+      status: 'in_progress',
+    });
+    expect(taken.stderr).toContain(
+      `Took over the stale claim by Bob on issue #1 (last activity ${updated}).`,
+    );
+    // Now Ada's claim is the effective one; the fresh #2 is never taken.
+    expect((await cli(wt1, 'Bob', 'claim', '1')).code).toBe(
+      EXIT_ALREADY_CLAIMED,
+    );
+    expect(
+      (await cli(main, 'Ada', 'next', '--claim', '--stale', '2h')).code,
+    ).toBe(5);
+    expect((await readIssue(wt2, 2)).assignee).toBe('Cy');
+  });
+
+  test('unclaim --stale releases a stale claim only', async () => {
+    await ok(wt1, 'Bob', 'claim', '1', '--no-commit');
+    await ok(wt2, 'Cy', 'claim', '2', '--no-commit');
+    await age(wt1, 1, 3);
+
+    // A fresh claim: refused, with its age.
+    const fresh = await cli(main, 'Ada', 'unclaim', '2', '--stale', '2h');
+    expect(fresh.code).toBe(EXIT_ALREADY_CLAIMED);
+    expect(fresh.stderr).toContain(
+      `Error: Issue #2 is claimed by Cy in worktree ${wt2} (branch agent-2), not you. Its last activity was 0s ago, less than 2h.`,
+    );
+
+    const res = await cli(main, 'Ada', 'unclaim', '1', '--stale', '2h');
+    expect(res.code).toBe(0);
+    expect(res.stderr).toContain('Released the stale claim by Bob');
+    expect(await readIssue(main, 1)).toMatchObject({
+      status: 'todo',
+      assignee: '',
+    });
+    expect(
+      (await json<Listed[]>(main, 'Ada', 'ready')).map((i) => i.id),
+    ).toEqual([1]);
+  });
+
+  test('a claim in the review status is never stale', async () => {
+    for (const dir of [main, wt1]) {
+      const config = await readConfig(dir);
+      config.statuses.splice(3, 0, { name: 'review', closed: false });
+      config.reviewStatus = 'review';
+      await writeConfig(dir, config);
+    }
+    await ok(wt1, 'Bob', 'claim', '1', '--no-commit');
+    await ok(wt1, 'Bob', 'review', '1', '--no-commit');
+    await age(wt1, 1, 5);
+
+    expect(
+      (await json<Listed[]>(main, 'Ada', 'ls', '--stale', '2h')).length,
+    ).toBe(0);
+    expect(
+      (await json<Listed[]>(main, 'Ada', 'ready', '--stale', '2h')).map(
+        (i) => i.id,
+      ),
+    ).toEqual([2]);
+    const res = await cli(main, 'Ada', 'unclaim', '1', '--stale', '2h');
+    expect(res.code).toBe(EXIT_ALREADY_CLAIMED);
+    expect(res.stderr).toContain('A claim in review is never stale.');
+  });
+
+  test('claim --renew in the worktree makes the claim fresh again', async () => {
+    await ok(wt1, 'Bob', 'claim', '1', '--no-commit');
+    await age(wt1, 1, 3);
+    expect(
+      (await json<Listed[]>(main, 'Ada', 'ls', '--stale', '2h')).map(
+        (i) => i.id,
+      ),
+    ).toEqual([1]);
+
+    const renew = await cli(wt1, 'Bob', '--no-commit', 'claim', '1', '--renew');
+    expect(renew.code).toBe(0);
+    expect(renew.stderr).toContain('Renewed your claim on issue #1.');
+    expect(
+      (await json<Listed[]>(main, 'Ada', 'ls', '--stale', '2h')).length,
+    ).toBe(0);
+    // next skips the renewed claim (it picks the free #2).
+    expect((await json<Listed>(main, 'Ada', 'next', '--stale', '2h')).id).toBe(
+      2,
+    );
+    expect(await readIssue(wt1, 1)).toMatchObject({
+      assignee: 'Bob',
+      status: 'in_progress',
+    });
+  });
+
+  test('a bad duration is invalid_input (exit 2)', async () => {
+    for (const args of [
+      ['ls', '--stale', '2x'],
+      ['ready', '--stale', ''],
+      ['next', '--stale', '0h'],
+      ['unclaim', '1', '--stale', '1.5h'],
+    ]) {
+      const res = await cli(main, 'Ada', '-o', 'json', ...args);
+      expect({ args, code: res.code }).toEqual({ args, code: 2 });
+      expect(JSON.parse(res.stderr).error.code).toBe('invalid_input');
+    }
   });
 });

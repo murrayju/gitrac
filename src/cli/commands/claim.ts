@@ -21,15 +21,26 @@ export function registerClaimCommand(program: Command): void {
       '-f, --force',
       'Take over an issue claimed by someone else, or reopen and claim a closed issue',
     )
+    .option(
+      '--renew',
+      'If you already hold it, renew the claim (a heartbeat: newer updated, so it is not stale)',
+    )
     .action(
-      async (idStr: string, options: { comment?: string; force?: boolean }) => {
+      async (
+        idStr: string,
+        options: { comment?: string; force?: boolean; renew?: boolean },
+      ) => {
         const globalOpts = await resolveProjectOptions(program);
         const id = parseIssueIdArg(idStr);
 
         const result = await claimIssue(
           cliServiceContext(globalOpts, printWrittenIssue(globalOpts)),
           id,
-          { comment: options.comment, force: options.force },
+          {
+            comment: options.comment,
+            force: options.force,
+            renew: options.renew,
+          },
         ).catch((err: unknown) => {
           const closedThere =
             err instanceof GitracError &&
@@ -42,6 +53,9 @@ export function registerClaimCommand(program: Command): void {
               : `Use "gitrac reopen ${id}" first, or claim --force to reopen and claim it.`,
           });
         });
+        if (result.changed && result.renewed) {
+          console.error(`Renewed your claim on issue #${id}.`);
+        }
         if (result.changed && result.elsewhere) {
           console.warn(
             `Warning: you already hold issue #${id} ${describeLocation(result.elsewhere)}; claimed it here too.`,

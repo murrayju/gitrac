@@ -2,6 +2,7 @@ import type { Command } from 'commander';
 import { EXIT_ALREADY_CLAIMED, EXIT_ISSUE_CLOSED } from '../../core/claim.ts';
 import { describeLocation } from '../../core/elsewhere.ts';
 import { parseIssueIdArg } from '../../core/errors.ts';
+import { staleOptions } from '../../core/stale.ts';
 import { unclaimIssue } from '../../service/claim.ts';
 import { withHint } from '../errors.ts';
 import { resolveProjectOptions } from '../global-options.ts';
@@ -20,21 +21,33 @@ export function registerUnclaimCommand(program: Command): void {
     )
     .option('-c, --comment <text>', 'Add a comment when releasing')
     .option('-f, --force', 'Release an issue claimed by someone else')
+    .option(
+      '--stale <duration>',
+      "Release someone else's claim only if it has had no activity for <duration> (30s, 45m, 2h, 1d)",
+    )
     .action(
-      async (idStr: string, options: { comment?: string; force?: boolean }) => {
+      async (
+        idStr: string,
+        options: { comment?: string; force?: boolean; stale?: string },
+      ) => {
         const globalOpts = await resolveProjectOptions(program);
         const id = parseIssueIdArg(idStr);
+        const stale = staleOptions(options.stale);
 
         const result = await unclaimIssue(
           cliServiceContext(globalOpts, printWrittenIssue(globalOpts)),
           id,
-          { comment: options.comment, force: options.force },
+          { comment: options.comment, force: options.force, stale },
         ).catch((err: unknown) => {
           throw withHint(err, {
             already_claimed: 'Use --force to release it anyway.',
           });
         });
-        if (result.changed && result.elsewhere) {
+        if (result.changed && result.staleClaim) {
+          console.error(
+            `Released the stale claim by ${result.staleClaim.assignee} (last activity ${result.staleClaim.updated}).`,
+          );
+        } else if (result.changed && result.elsewhere) {
           console.error(
             `Released the claim by ${result.elsewhere.assignee} ${describeLocation(result.elsewhere)} (this newer version supersedes it).`,
           );

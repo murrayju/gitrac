@@ -3,9 +3,14 @@ import { indexIssues } from '../core/dependencies.ts';
 import type { ElsewhereMarks } from '../core/elsewhere.ts';
 import { GitracError } from '../core/errors.ts';
 import type { IssueQuery, QueryConfig } from '../core/query.ts';
-import { nextIssue, readyIssues } from '../core/ready.ts';
+import { nextIssue, readyIssues, type StatesElsewhere } from '../core/ready.ts';
+import {
+  type StaleClaim,
+  type StaleOptions,
+  staleClaim,
+} from '../core/stale.ts';
 import type { Issue } from '../core/types.ts';
-import type { WorkflowConfig } from '../core/workflow.ts';
+import { isClosedStatus, type WorkflowConfig } from '../core/workflow.ts';
 import { issueStatesElsewhere } from '../git/elsewhere.ts';
 import { withRepoLock } from '../git/lock.ts';
 import { assertValidUser, type ClaimResult, claimIssue } from './claim.ts';
@@ -24,8 +29,43 @@ export interface ReadyListing extends IssueListing {
    * (`claimedElsewhere`). Ready issues are never closed elsewhere.
    */
   marks: Map<number, ElsewhereMarks>;
-  /** The issue `next` picks: the first ready one not in progress anywhere. */
+  /**
+   * The issue `next` picks: the first ready one not in progress anywhere
+   * (or with a stale claim).
+   */
   next: Issue | undefined;
+  /** With `stale`: the ready issues whose claim is stale, by ID. */
+  staleClaims: Map<number, StaleClaim>;
+}
+
+/** Options of {@link listReadyIssues} and {@link claimNextIssue}. */
+export interface ReadyOptions {
+  /**
+   * Treat stale claims (no activity for `stale.maxAgeMs`; see `staleClaim`
+   * in `src/core/stale.ts`) as available: `ready` lists them and `next`
+   * can pick them. Without it, a claim by someone else is never available.
+   */
+  stale?: StaleOptions;
+}
+
+/**
+ * The issues whose effective state is a stale claim, by ID. A closed local
+ * issue is left out: `claim` refuses it (taking it over would reopen it).
+ */
+function findStaleClaims(
+  issues: readonly Issue[],
+  config: WorkflowConfig,
+  elsewhere: StatesElsewhere,
+  stale: StaleOptions | undefined,
+): Map<number, StaleClaim> {
+  const claims = new Map<number, StaleClaim>();
+  if (!stale) return claims;
+  for (const issue of issues) {
+    if (isClosedStatus(config, issue.status)) continue;
+    const claim = staleClaim(issue, config, elsewhere.get(issue.id), stale);
+    if (claim) claims.set(issue.id, claim);
+  }
+  return claims;
 }
 
 /**
@@ -33,18 +73,22 @@ export interface ReadyListing extends IssueListing {
  * theirs, and not blocked by an open issue; filtered and sorted per `query`.
  * Judged by each issue's effective state, so issues claimed (or closed) on
  * another branch or in another worktree are left out (see
- * `src/core/elsewhere.ts`). `next` is the one `gitrac next` picks.
+ * `src/core/elsewhere.ts`), unless their claim is stale (`options.stale`).
+ * `next` is the one `gitrac next` picks.
  */
 export async function listReadyIssues(
   dir: string,
   user: ClaimUser,
   query: IssueQuery,
   config: QueryConfig & WorkflowConfig,
+  options: ReadyOptions = {},
 ): Promise<ReadyListing> {
   const [{ issues, unreadable }, elsewhere] = await Promise.all([
     loadAllIssues(dir),
     issueStatesElsewhere(dir),
   ]);
+  const staleClaims = findStaleClaims(issues, config, elsewhere, options.stale);
+  const stale = new Set(staleClaims.keys());
   const ready = readyIssues(
     issues,
     indexIssues(issues),
@@ -52,12 +96,19 @@ export async function listReadyIssues(
     query,
     config,
     elsewhere,
+    { stale },
   );
+  // Keep only the ready ones (not blocked, matching the query).
+  const readyIds = new Set(ready.map((i) => i.id));
+  for (const id of staleClaims.keys()) {
+    if (!readyIds.has(id)) staleClaims.delete(id);
+  }
   return {
     issues: ready,
     unreadable,
     marks: marksFromStates(ready, config, elsewhere),
-    next: nextIssue(ready, config, elsewhere),
+    next: nextIssue(ready, config, elsewhere, { stale }),
+    staleClaims,
   };
 }
 
@@ -75,15 +126,18 @@ export async function findNextIssue(
   user: ClaimUser,
   query: IssueQuery,
   config: QueryConfig & WorkflowConfig,
-): Promise<{ issue: Issue; unreadable: string[] }> {
-  const { next: issue, unreadable } = await listReadyIssues(
-    dir,
-    user,
-    query,
-    config,
-  );
+  options: ReadyOptions = {},
+): Promise<{ issue: Issue; unreadable: string[]; staleClaim?: StaleClaim }> {
+  const {
+    next: issue,
+    unreadable,
+    staleClaims,
+  } = await listReadyIssues(dir, user, query, config, options);
   if (!issue) throw noReadyIssues();
-  return { issue, unreadable };
+  const claim = staleClaims.get(issue.id);
+  return claim
+    ? { issue, unreadable, staleClaim: claim }
+    : { issue, unreadable };
 }
 
 /**
@@ -91,24 +145,32 @@ export async function findNextIssue(
  * under one hold of the repo lock — so concurrent `next --claim`s (other
  * agents, worktrees, the web UI) never pick the same issue. Uses the normal
  * claim rules (`claimIssue`). Throws `no_ready_issues` if nothing is ready.
+ *
+ * With `options.stale`, it can pick an issue whose claim is stale and take
+ * it over: the scan runs under the lock, and `claimIssue` checks again that
+ * the claim is still stale before it takes it, so a claim renewed meanwhile
+ * is never taken. `staleClaim` in the result is the claim taken over.
  */
 export async function claimNextIssue(
   ctx: ServiceContext,
   query: IssueQuery,
-  options: { comment?: string } = {},
+  options: { comment?: string } & ReadyOptions = {},
 ): Promise<ClaimResult & { unreadable: string[] }> {
   const user = await ctx.identity();
   assertValidUser(user, options.comment, { claim: true });
   return withRepoLock(ctx.dir, async () => {
     const config = await loadConfig(ctx);
-    const { issue, unreadable } = await findNextIssue(
+    const { issue, unreadable, staleClaim } = await findNextIssue(
       ctx.dir,
       user,
       query,
       config,
+      { stale: options.stale },
     );
+    // `claimIssue` scans again and takes the claim only if still stale.
     const result = await claimIssue(ctx, issue.id, {
       comment: options.comment,
+      ...(staleClaim ? { stale: options.stale } : {}),
     });
     return { ...result, unreadable };
   });

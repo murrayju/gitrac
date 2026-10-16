@@ -386,3 +386,34 @@ describe('foundElsewhere in the web API', () => {
     expect(clock.scans).toBe(1);
   });
 });
+
+/** Regression tests for #106: `GET /api/issues?stale=<duration>`. */
+describe('stale claims in the web API', () => {
+  test('?stale lists only stale claims, with staleClaim; a bad value is 400', async () => {
+    const old = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+    await claimIn(wt1, 1, old);
+    await claimIn(wt1, 2, new Date().toISOString());
+
+    const list =
+      await get<(Served & { staleClaim?: unknown })[]>('/issues?stale=2h');
+    expect(list.map((i) => i.id)).toEqual([1]);
+    expect(list[0]?.staleClaim).toEqual({
+      assignee: 'bob@example.com',
+      updated: old,
+      ref: 'agent-1',
+      worktree: wt1,
+    });
+    expect(list[0]?.claimedElsewhere?.ref).toBe('agent-1');
+    // Without the parameter: unchanged.
+    const all = await get<Served[]>('/issues');
+    expect(all.map((i) => i.id)).toEqual([1, 2]);
+    expect(all[0]).not.toHaveProperty('staleClaim');
+    // One cached scan for all of it.
+    expect(clock.scans).toBe(1);
+
+    const res = await createApp(ctx, { ui: null }).request(
+      'http://localhost/api/issues?stale=soon',
+    );
+    expect(res.status).toBe(400);
+  });
+});

@@ -1,6 +1,7 @@
 import type { Command } from 'commander';
 import { invalidInput } from '../../core/errors.ts';
 import { parseIssueQuery, SORT_FIELDS } from '../../core/query.ts';
+import { staleOptions } from '../../core/stale.ts';
 import { readConfig } from '../../fs/issue-store.ts';
 import { getBranchWarning } from '../../git/status.ts';
 import {
@@ -12,7 +13,7 @@ import {
   type GlobalOptions,
   resolveProjectOptions,
 } from '../global-options.ts';
-import { formatIssueDetail, formatIssueList } from '../output.ts';
+import { formatIssueDetail, formatIssueList, mergeMarks } from '../output.ts';
 import {
   cliServiceContext,
   printWrittenIssue,
@@ -31,6 +32,7 @@ interface ReadyFilterOptions {
   priority?: string[];
   search?: string;
   sort?: string;
+  stale?: string;
 }
 
 /** The `ls` filters that make sense for ready work (no `--assignee`). */
@@ -56,6 +58,10 @@ function addFilterOptions(command: Command): Command {
       '--sort <field>',
       `Sort by field (${SORT_FIELDS.join(', ')}); ties by ID`,
       'priority',
+    )
+    .option(
+      '--stale <duration>',
+      "Treat claims (active status) with no activity for <duration> (30s, 45m, 2h, 1d) as available, even someone else's",
     );
 }
 
@@ -69,6 +75,7 @@ function warnUnreadable(unreadable: string[]): void {
 async function prepare(program: Command, options: ReadyFilterOptions) {
   const globalOpts: GlobalOptions = await resolveProjectOptions(program);
   const { dir } = globalOpts;
+  const stale = staleOptions(options.stale);
   const config = await readConfig(dir);
   const user = await resolveClaimUser(globalOpts);
   const query = parseIssueQuery(options, config, {
@@ -76,7 +83,7 @@ async function prepare(program: Command, options: ReadyFilterOptions) {
   });
   const warning = await getBranchWarning(dir, config);
   if (warning) console.warn(`Warning: ${warning}`);
-  return { globalOpts, dir, config, user, query };
+  return { globalOpts, dir, config, user, query, stale };
 }
 
 export function registerReadyCommands(program: Command): void {
@@ -88,18 +95,25 @@ export function registerReadyCommands(program: Command): void {
           'Sorted by priority, then ID.',
       ),
   ).action(async (options: ReadyFilterOptions) => {
-    const { globalOpts, dir, config, user, query } = await prepare(
+    const { globalOpts, dir, config, user, query, stale } = await prepare(
       program,
       options,
     );
-    const { issues, unreadable, marks } = await listReadyIssues(
+    const { issues, unreadable, marks, staleClaims } = await listReadyIssues(
       dir,
       user,
       query,
       config,
+      { stale },
     );
     warnUnreadable(unreadable);
-    console.log(formatIssueList(issues, globalOpts.output, marks));
+    console.log(
+      formatIssueList(
+        issues,
+        globalOpts.output,
+        mergeMarks(marks, staleClaims),
+      ),
+    );
   });
 
   addFilterOptions(
@@ -107,7 +121,8 @@ export function registerReadyCommands(program: Command): void {
       .command('next')
       .description(
         'Show the top ready issue that is not already in progress; with --claim, claim it ' +
-          '(atomically, under the repo lock). Exits 5 if no issue is ready.',
+          '(atomically, under the repo lock). With --stale, a stale claim can be picked and taken over. ' +
+          'Exits 5 if no issue is ready.',
       )
       .option(
         '--claim',
@@ -121,27 +136,40 @@ export function registerReadyCommands(program: Command): void {
       if (options.comment !== undefined && !options.claim) {
         throw invalidInput('--comment needs --claim');
       }
-      const { globalOpts, dir, config, user, query } = await prepare(
+      const { globalOpts, dir, config, user, query, stale } = await prepare(
         program,
         options,
       );
       if (!options.claim) {
-        const { issue, unreadable } = await findNextIssue(
+        const { issue, unreadable, staleClaim } = await findNextIssue(
           dir,
           user,
           query,
           config,
+          { stale },
         );
         warnUnreadable(unreadable);
-        console.log(formatIssueDetail(issue, globalOpts.output));
+        console.log(
+          formatIssueDetail(
+            issue,
+            globalOpts.output,
+            undefined,
+            staleClaim ? { staleClaim } : undefined,
+          ),
+        );
         return;
       }
       const result = await claimNextIssue(
         cliServiceContext(globalOpts, printWrittenIssue(globalOpts)),
         query,
-        { comment: options.comment },
+        { comment: options.comment, stale },
       );
       warnUnreadable(result.unreadable);
+      if (result.changed && result.staleClaim) {
+        console.error(
+          `Took over the stale claim by ${result.staleClaim.assignee} on issue #${result.issue.id} (last activity ${result.staleClaim.updated}).`,
+        );
+      }
       // `next` never picks an issue that is already in progress, so a claim
       // always changes it; the no-op branch is just for completeness.
       if (!result.changed) {

@@ -247,3 +247,29 @@ describe('with a review status (#105)', () => {
     ).toBe(false);
   });
 });
+
+describe('stale claims (#106)', () => {
+  test('ready lists and next picks an issue in `stale`, else skips it', () => {
+    const issues = [
+      issue(1, { status: 'in_progress', assignee: 'bob@example.com' }),
+      issue(2, { priority: 'low' }),
+      issue(3, {
+        status: 'in_progress',
+        assignee: 'bob@example.com',
+        blockedBy: [2],
+      }),
+    ];
+    const query = parseIssueQuery({ sort: 'priority' }, config);
+    const byId = indexIssues(issues);
+    const plain = readyIssues(issues, byId, ME, query, config);
+    expect(plain.map((i) => i.id)).toEqual([2]);
+    const stale = new Set([1, 3]);
+    const list = readyIssues(issues, byId, ME, query, config, new Map(), {
+      stale,
+    });
+    // #3 is still blocked.
+    expect(list.map((i) => i.id)).toEqual([1, 2]);
+    expect(nextIssue(list, config, new Map(), { stale })?.id).toBe(1);
+    expect(nextIssue(list, config)?.id).toBe(2);
+  });
+});
