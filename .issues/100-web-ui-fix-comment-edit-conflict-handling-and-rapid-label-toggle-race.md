@@ -1,14 +1,14 @@
 ---
 id: 100
 title: 'Web UI: fix comment edit/conflict handling and rapid label toggle race'
-status: backlog
+status: in_progress
 priority: low
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-16T12:13:25.851Z'
 createdBy: Justin Murray
-updated: '2026-10-16T12:13:25.851Z'
+updated: '2026-10-16T20:02:26.580Z'
 ---
 
 Several UI state and concurrency bugs in `CommentList.tsx` and `MetadataPanel.tsx`:
