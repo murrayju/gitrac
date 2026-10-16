@@ -108,12 +108,14 @@ describe('decideClaim', () => {
         }),
       ).toEqual({ action: 'claim', reopen: true });
     }
-    // Located in closed/ even if the status says otherwise
+    // The status decides, not the directory (#97): an open-status file
+    // left in closed/ by a merge can be claimed (claimIssue moves it).
     expect(
-      decideClaim({ status: 'todo', assignee: '' }, alice, CONFIG, {
-        inClosedDir: true,
-      }),
-    ).toEqual({ action: 'closed' });
+      decideClaim({ status: 'todo', assignee: '' }, alice, CONFIG),
+    ).toEqual({
+      action: 'claim',
+      reopen: false,
+    });
   });
 });
 

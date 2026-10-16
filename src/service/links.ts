@@ -9,6 +9,7 @@ import {
 } from '../core/dependencies.ts';
 import { dependencyFields, normalizeIdList } from '../core/issue.ts';
 import type { Config, Issue } from '../core/types.ts';
+import { isClosedStatus } from '../core/workflow.ts';
 import { relocateIssue } from '../fs/issue-store.ts';
 import { withRepoLock } from '../git/lock.ts';
 import {
@@ -38,7 +39,7 @@ export type LinkResult = IssueChange & { changed: boolean };
 const sameLinks = (a: Issue, b: Issue): boolean =>
   JSON.stringify(dependencyFields(a)) === JSON.stringify(dependencyFields(b));
 
-/** Write the issue in place (renaming a stale filename) and commit. */
+/** Write the issue (renaming a stale filename or directory) and commit. */
 async function writeLinks(
   ctx: ServiceContext,
   stored: StoredIssue,
@@ -57,8 +58,9 @@ async function writeLinks(
     };
   }
   issue.updated = new Date().toISOString();
+  // Write to the directory the status requires (repairs a misplaced file).
   const paths = await relocateIssue(ctx.dir, issue, stored, {
-    closed: stored.closed,
+    closed: isClosedStatus(config, issue.status),
   });
   paths.push(...assetPaths(issue));
   const commit = await commitChange(ctx, config, {

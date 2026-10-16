@@ -123,7 +123,6 @@ export async function claimIssue(
     const active = activeStatus(config);
     const decision = decideClaim(issue, user, config, {
       force: options.force,
-      inClosedDir: stored.closed,
       elsewhere,
     });
     if (decision.action === 'already-claimed') {
@@ -227,7 +226,6 @@ export async function unclaimIssue(
 
     const decision = decideUnclaim(issue, user, config, {
       force: options.force,
-      inClosedDir: stored.closed,
       elsewhere,
     });
     if (decision.action === 'not-yours') {

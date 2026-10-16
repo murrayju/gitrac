@@ -6,7 +6,7 @@ import {
   setDefaultTimeout,
   test,
 } from 'bun:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Hono } from 'hono';
@@ -46,6 +46,13 @@ async function cliIds(...args: string[]): Promise<number[]> {
   const res = await cli('ls', '-o', 'json', ...args);
   expect(res.code).toBe(0);
   return (JSON.parse(res.stdout) as Issue[]).map((i) => i.id);
+}
+
+async function exists(path: string): Promise<boolean> {
+  return stat(path).then(
+    () => true,
+    () => false,
+  );
 }
 
 function issue(overrides: Partial<Issue>): Issue {
@@ -202,5 +209,75 @@ describe('gitrac ls filters', () => {
     }
     const bad = await app.request('http://localhost/api/issues?status=nope');
     expect(bad.status).toBe(400);
+  });
+});
+
+describe('issue files in the wrong directory (#97)', () => {
+  // After a merge: open status in closed/, closed status in .issues/.
+  const OPEN_IN_CLOSED = join('.issues', 'closed', '5-merged-open.md');
+  const CLOSED_IN_OPEN = join('.issues', '6-merged-closed.md');
+
+  beforeEach(async () => {
+    await writeIssue(dir, issue({ id: 5, title: 'Merged open' }), {
+      closed: true,
+    });
+    await writeIssue(
+      dir,
+      issue({ id: 6, title: 'Merged closed', status: 'done' }),
+    );
+  });
+
+  test('ls filters by status, not directory', async () => {
+    expect(await cliIds()).toEqual([1, 2, 4, 5]);
+    expect(await cliIds('--status', 'done')).toEqual([3, 6]);
+    expect(await cliIds('--status', 'all')).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  test('ls warns about each misplaced file on stderr', async () => {
+    const res = await cli('ls', '-o', 'json');
+    expect(res.code).toBe(0);
+    for (const path of [OPEN_IN_CLOSED, CLOSED_IN_OPEN]) {
+      expect(res.stderr).toContain(
+        `Warning: issue file ${path} is in the wrong directory for its status`,
+      );
+    }
+    expect(res.stdout).not.toContain('Warning');
+  });
+
+  test('GET /api/issues lists the same issues', async () => {
+    const app = new Hono();
+    app.route(
+      '/api',
+      issueRoutes({
+        dir,
+        config: await readConfig(dir),
+        amendTracker: new AmendTracker(),
+        watcher: new IssueWatcher(dir),
+        identity: new IdentityResolver(dir),
+      }),
+    );
+    for (const [args, qs] of [
+      [[], ''],
+      [['--status', 'done'], 'status=done'],
+      [['--status', 'all'], 'status=all'],
+    ] as [string[], string][]) {
+      const res = await app.request(`http://localhost/api/issues?${qs}`);
+      const web = ((await res.json()) as Issue[]).map((i) => i.id);
+      expect(web).toEqual(await cliIds(...args));
+    }
+  });
+
+  test('a later edit moves the file to the right directory', async () => {
+    expect((await cli('edit', '5', '-p', 'high')).code).toBe(0);
+    expect((await cli('comment', '6', 'Noted.')).code).toBe(0);
+    expect(await exists(join(dir, OPEN_IN_CLOSED))).toBe(false);
+    expect(await exists(join(dir, '.issues', '5-merged-open.md'))).toBe(true);
+    expect(await exists(join(dir, CLOSED_IN_OPEN))).toBe(false);
+    expect(
+      await exists(join(dir, '.issues', 'closed', '6-merged-closed.md')),
+    ).toBe(true);
+    const res = await cli('ls');
+    expect(res.stderr).not.toContain('wrong directory');
+    expect(await cliIds()).toEqual([1, 2, 4, 5]);
   });
 });

@@ -598,9 +598,10 @@ describe('a file whose name does not match its title', () => {
   });
 
   test('a comment on a closed issue stays in closed/', async () => {
-    await rename(
-      join(fx.dir, stale),
+    await rm(join(fx.dir, stale));
+    await writeFile(
       join(fx.dir, '.issues', 'closed', '1-old-title.md'),
+      serializeIssue(makeIssue({ id: 1, title: 'New title', status: 'done' })),
     );
     const result = await addComment(fx.context(), 1, 'late note');
     expect(result.paths).toEqual([

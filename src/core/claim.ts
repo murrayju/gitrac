@@ -90,8 +90,6 @@ type LocalState = Pick<Issue, 'status' | 'assignee'> &
 export interface ClaimOptions {
   /** Take over someone else's claim; reopen a closed issue. */
   force?: boolean;
-  /** Whether the file is in `closed/`. */
-  inClosedDir?: boolean;
   /**
    * The issue's versions on other branches and worktrees (see
    * `src/core/elsewhere.ts`); the newest version anywhere decides whether it
@@ -105,8 +103,8 @@ export interface ClaimOptions {
  * the configured active status (`activeStatus`, default `in_progress`; see
  * `src/core/workflow.ts`).
  *
- * - Closed issues (a closed status, or living in `closed/`) are refused
- *   unless `force`, in which case they are reopened and claimed.
+ * - Closed issues (a closed status; the directory does not count, see #97)
+ *   are refused unless `force`, in which case they are reopened and claimed.
  * - An open issue whose effective state is closed elsewhere (e.g. closed in
  *   an agent's worktree, not merged yet) is refused unless `force`, in which
  *   case it is claimed here (this newer version then supersedes the close).
@@ -124,9 +122,7 @@ export function decideClaim(
   config: WorkflowConfig,
   options: ClaimOptions = {},
 ): ClaimDecision {
-  const closed =
-    options.inClosedDir === true || isClosedStatus(config, issue.status);
-  if (closed) {
+  if (isClosedStatus(config, issue.status)) {
     return options.force
       ? { action: 'claim', reopen: true }
       : { action: 'closed' };
@@ -198,11 +194,10 @@ export function decideUnclaim(
   config: WorkflowConfig,
   options: {
     force?: boolean;
-    inClosedDir?: boolean;
     elsewhere?: readonly IssueStateElsewhere[];
   } = {},
 ): UnclaimDecision {
-  if (options.inClosedDir === true || isClosedStatus(config, issue.status)) {
+  if (isClosedStatus(config, issue.status)) {
     return { action: 'closed', status: issue.status };
   }
   const newer = newestElsewhere(issue, options.elsewhere);

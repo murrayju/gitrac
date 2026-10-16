@@ -8,13 +8,12 @@ import {
 import { parseIssueFile } from '../core/issue.ts';
 import {
   type IssueQuery,
-  includesClosed,
   type QueryConfig,
   queryIssues,
 } from '../core/query.ts';
 import { parseIssueId } from '../core/slug.ts';
 import type { Issue } from '../core/types.ts';
-import type { WorkflowConfig } from '../core/workflow.ts';
+import { isClosedStatus, type WorkflowConfig } from '../core/workflow.ts';
 import { listClosedIssueFiles, listIssueFiles } from '../fs/issue-store.ts';
 import { issueStatesElsewhere } from '../git/elsewhere.ts';
 
@@ -28,59 +27,43 @@ export interface IssueListing {
   unreadable: string[];
 }
 
+/** An issue file and where it is. */
+interface LoadedFile {
+  issue: Issue;
+  /** Repo-relative path. */
+  path: string;
+}
+
 async function loadDir(
   dir: string,
   subdir: string[],
   files: string[],
   unreadable: string[],
-): Promise<Issue[]> {
-  const issues: Issue[] = [];
+): Promise<LoadedFile[]> {
+  const loaded: LoadedFile[] = [];
   for (const file of files) {
     const rel = join('.issues', ...subdir, file);
     try {
       const content = await readFile(join(dir, rel), 'utf-8');
       // Malformed files (e.g. no frontmatter -> id NaN) count as unreadable.
       const id = parseIssueId(file) ?? Number.NaN;
-      issues.push(parseIssueFile(content, { id, path: rel }));
+      loaded.push({
+        issue: parseIssueFile(content, { id, path: rel }),
+        path: rel,
+      });
     } catch {
       unreadable.push(rel);
     }
   }
-  return issues;
+  return loaded;
 }
 
-/**
- * List issues matching `query` (read-only; no lock). Loads `.issues/` and,
- * only when the query can match closed issues, `.issues/closed/`; then
- * filters and sorts with {@link queryIssues}. Used by both `gitrac ls` and
- * `GET /api/issues`. Unreadable files are skipped and reported.
- */
-export async function listIssues(
-  dir: string,
-  query: IssueQuery,
-  config: QueryConfig,
-): Promise<IssueListing> {
-  const unreadable: string[] = [];
-  const withClosed = includesClosed(query, config);
-  const [openFiles, closedFiles] = await Promise.all([
-    listIssueFiles(dir),
-    withClosed ? listClosedIssueFiles(dir) : Promise.resolve([]),
-  ]);
-  const [open, closed] = await Promise.all([
-    loadDir(dir, [], openFiles, unreadable),
-    loadDir(dir, ['closed'], closedFiles, unreadable),
-  ]);
-  return {
-    issues: queryIssues([...open, ...closed], query, config),
-    unreadable,
-  };
-}
-
-/**
- * Every issue, open and closed (read-only; no lock unless the caller holds
- * it). Unreadable files are skipped and reported.
- */
-export async function loadAllIssues(dir: string): Promise<IssueListing> {
+/** Load `.issues/` and `.issues/closed/`. */
+async function loadDirs(dir: string): Promise<{
+  open: LoadedFile[];
+  closed: LoadedFile[];
+  unreadable: string[];
+}> {
   const unreadable: string[] = [];
   const [openFiles, closedFiles] = await Promise.all([
     listIssueFiles(dir),
@@ -90,7 +73,43 @@ export async function loadAllIssues(dir: string): Promise<IssueListing> {
     loadDir(dir, [], openFiles, unreadable),
     loadDir(dir, ['closed'], closedFiles, unreadable),
   ]);
-  return { issues: [...open, ...closed], unreadable };
+  return { open, closed, unreadable };
+}
+
+/**
+ * List issues matching `query` (read-only; no lock). Loads `.issues/` and
+ * `.issues/closed/`, then filters and sorts with {@link queryIssues}. The
+ * `status` field decides if an issue is open, not its directory: a merge can
+ * leave an open issue in `.issues/closed/` (or a closed one in `.issues/`).
+ * `misplaced` gives the paths of such files, so the CLI can warn. The next
+ * write of the issue moves its file (see `relocateIssue`). Used by both
+ * `gitrac ls` and `GET /api/issues`. Unreadable files are skipped and
+ * reported.
+ */
+export async function listIssues(
+  dir: string,
+  query: IssueQuery,
+  config: QueryConfig,
+): Promise<IssueListing & { misplaced: string[] }> {
+  const { open, closed, unreadable } = await loadDirs(dir);
+  const misplaced = [
+    ...open.filter((f) => isClosedStatus(config, f.issue.status)),
+    ...closed.filter((f) => !isClosedStatus(config, f.issue.status)),
+  ].map((f) => f.path);
+  const issues = [...open, ...closed].map((f) => f.issue);
+  return { issues: queryIssues(issues, query, config), unreadable, misplaced };
+}
+
+/**
+ * Every issue, open and closed (read-only; no lock unless the caller holds
+ * it). Unreadable files are skipped and reported.
+ */
+export async function loadAllIssues(dir: string): Promise<IssueListing> {
+  const { open, closed, unreadable } = await loadDirs(dir);
+  return {
+    issues: [...open, ...closed].map((f) => f.issue),
+    unreadable,
+  };
 }
 
 /**

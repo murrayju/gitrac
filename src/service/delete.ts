@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { extractAssetRefs, isAssetFilename } from '../core/assets.ts';
 import { blockersOf } from '../core/dependencies.ts';
 import type { Config, Issue } from '../core/types.ts';
+import { isClosedStatus, type StatusConfig } from '../core/workflow.ts';
 import {
   listClosedIssueFiles,
   listIssueFiles,
@@ -157,7 +158,11 @@ interface Relink {
  * `id`, loaded fresh (callers hold the lock) with those links removed in
  * memory (see {@link linkingIssues}).
  */
-async function referencingIssues(dir: string, id: number): Promise<Relink[]> {
+async function referencingIssues(
+  dir: string,
+  id: number,
+  config: StatusConfig,
+): Promise<Relink[]> {
   const relinks: Relink[] = [];
   for (const { stored, blockedBy, parent } of await linkingIssues(dir, id)) {
     const { issue } = stored;
@@ -174,7 +179,7 @@ async function referencingIssues(dir: string, id: number): Promise<Relink[]> {
         title: issue.title,
         blockedBy,
         parent,
-        paths: rewritePaths(stored),
+        paths: rewritePaths(stored, config),
       },
     });
   }
@@ -202,7 +207,7 @@ export async function deleteIssue(
     const file = issuePath(stored.filename, stored.closed);
     const assets = (await orphanedAssets(ctx.dir, stored)).map(assetPath);
     const paths = [file, ...assets];
-    const relinks = await referencingIssues(ctx.dir, id);
+    const relinks = await referencingIssues(ctx.dir, id, config);
     const unlinked = relinks.map((r) => r.unlinked);
     const result: IssueDeletion = {
       issue,
@@ -219,7 +224,7 @@ export async function deleteIssue(
     for (const { stored, unlinked: entry } of relinks) {
       stored.issue.updated = now;
       entry.paths = await relocateIssue(ctx.dir, stored.issue, stored, {
-        closed: stored.closed,
+        closed: isClosedStatus(config, stored.issue.status),
       });
       for (const p of [...entry.paths, ...assetPaths(stored.issue)]) {
         committed.add(p);

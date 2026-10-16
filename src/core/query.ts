@@ -4,7 +4,6 @@ import type { Config, Issue, Priority, Status } from './types.ts';
 import {
   isClosedStatus,
   priorityNames,
-  type StatusConfig,
   statusNames,
   statusSortOrder,
 } from './workflow.ts';
@@ -134,18 +133,6 @@ export function parseIssueQuery(
     search: search || undefined,
     sort: sort as SortField,
   };
-}
-
-/**
- * Whether the query can match issues in `.issues/closed/` (so the caller
- * must load them): `status=all`, or any closed status.
- */
-export function includesClosed(
-  query: Pick<IssueQuery, 'status'>,
-  config: StatusConfig,
-): boolean {
-  if (query.status === 'all') return true;
-  return (query.status ?? []).some((s) => isClosedStatus(config, s));
 }
 
 function norm(value: string): string {

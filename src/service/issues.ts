@@ -313,17 +313,19 @@ function validCommentIndex(index: number): void {
 }
 
 /**
- * Rewrite an issue in its current directory after a comment change. Like
- * close/reopen/update, a file whose name no longer matches the title is
- * replaced (renamed), so the issue stays one file. Returns the paths to
- * commit.
+ * Rewrite an issue after a comment change, in the directory its status
+ * requires. Like close/reopen/update, a file whose name or directory no
+ * longer matches is replaced (renamed), so the issue stays one file. This
+ * also repairs a file that a merge left in the wrong directory. Returns the
+ * paths to commit.
  */
 function writeInPlace(
   ctx: ServiceContext,
+  config: Config,
   stored: { issue: Issue; filename: string; closed: boolean },
 ): Promise<string[]> {
   return relocateIssue(ctx.dir, stored.issue, stored, {
-    closed: stored.closed,
+    closed: isClosedStatus(config, stored.issue.status),
   });
 }
 
@@ -348,7 +350,7 @@ export async function addComment(
     issue.comments.push({ author, timestamp: now, body: text });
     issue.updated = now;
 
-    const issuePaths = await writeInPlace(ctx, stored);
+    const issuePaths = await writeInPlace(ctx, config, stored);
     return finish(ctx, config, {
       operation: 'comment',
       issue,
@@ -378,7 +380,7 @@ export async function editComment(
     if (comment) comment.body = text;
     issue.updated = new Date().toISOString();
 
-    const issuePaths = await writeInPlace(ctx, stored);
+    const issuePaths = await writeInPlace(ctx, config, stored);
     return finish(ctx, config, {
       operation: 'edit-comment',
       issue,
@@ -405,7 +407,7 @@ export async function deleteComment(
     issue.comments.splice(index, 1);
     issue.updated = new Date().toISOString();
 
-    const issuePaths = await writeInPlace(ctx, stored);
+    const issuePaths = await writeInPlace(ctx, config, stored);
     return finish(ctx, config, {
       operation: 'delete-comment',
       issue,

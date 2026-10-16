@@ -4,6 +4,7 @@ import { blockersOf } from '../core/dependencies.ts';
 import { GitracError, issueNotFound } from '../core/errors.ts';
 import { normalizeIdList, parseIssueFile } from '../core/issue.ts';
 import type { Config, Issue } from '../core/types.ts';
+import { isClosedStatus } from '../core/workflow.ts';
 import { findIssueFiles, relocateIssue } from '../fs/issue-store.ts';
 import { allocateIssueId } from '../git/ids.ts';
 import { withRepoLock } from '../git/lock.ts';
@@ -249,7 +250,7 @@ export async function renumberIssue(
     });
     // The ID is in the filename, so this is always a rename: [new, old].
     const moved = await relocateIssue(ctx.dir, issue, chosen, {
-      closed: chosen.closed,
+      closed: isClosedStatus(config, issue.status),
     });
     const to = moved[0] as string;
     const committed = new Set<string>(moved);
@@ -265,7 +266,7 @@ export async function renumberIssue(
       if (parent) other.parent = newId;
       other.updated = now;
       const paths = await relocateIssue(ctx.dir, other, stored, {
-        closed: stored.closed,
+        closed: isClosedStatus(config, other.status),
       });
       rewritten.set(other.id, paths);
       for (const p of [...paths, ...assetPaths(other)]) committed.add(p);

@@ -3,7 +3,6 @@ import { createDefaultConfig } from './config.ts';
 import { EXIT_INVALID_INPUT, GitracError } from './errors.ts';
 import {
   filterIssues,
-  includesClosed,
   parseIssueQuery,
   queryIssues,
   sortIssues,
@@ -153,15 +152,6 @@ describe('parseIssueQuery + queryIssues', () => {
   });
 });
 
-describe('includesClosed', () => {
-  test('only when a closed status or all is requested', () => {
-    expect(includesClosed({}, config)).toBe(false);
-    expect(includesClosed({ status: ['todo'] }, config)).toBe(false);
-    expect(includesClosed({ status: ['todo', 'done'] }, config)).toBe(true);
-    expect(includesClosed({ status: 'all' }, config)).toBe(true);
-  });
-});
-
 describe('sortIssues', () => {
   const all = filterIssues(ISSUES, { status: 'all' }, config);
   test('priority: most urgent first, ties by id', () => {
@@ -212,8 +202,6 @@ describe('configured statuses and priorities (#57)', () => {
 
   test('default listing hides the configured closed statuses', () => {
     expect(run({})).toEqual([1, 3, 4]);
-    expect(includesClosed({ status: ['shipped'] }, custom)).toBe(true);
-    expect(includesClosed({ status: ['review'] }, custom)).toBe(false);
   });
 
   test('sorts by the configured orders', () => {

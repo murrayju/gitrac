@@ -1,6 +1,7 @@
 import { blockersOf } from '../core/dependencies.ts';
 import { issueFilename } from '../core/slug.ts';
 import type { Issue } from '../core/types.ts';
+import { isClosedStatus, type StatusConfig } from '../core/workflow.ts';
 import { issuePath } from './context.ts';
 import { loadAllIssues } from './list.ts';
 import { loadStoredIssue, type StoredIssue } from './load.ts';
@@ -56,13 +57,17 @@ export async function linkingIssues(
 
 /**
  * Repo-relative paths a rewrite of `stored` (already changed in memory)
- * touches: the path it will be written to, then the old one if its filename
- * is stale (see `relocateIssue`).
+ * touches: the path it will be written to (in the directory its status
+ * requires), then the old one if its filename or directory is stale (see
+ * `relocateIssue`).
  */
-export function rewritePaths(stored: StoredIssue): string[] {
+export function rewritePaths(
+  stored: StoredIssue,
+  config: StatusConfig,
+): string[] {
   const newPath = issuePath(
     issueFilename(stored.issue.id, stored.issue.title),
-    stored.closed,
+    isClosedStatus(config, stored.issue.status),
   );
   const oldPath = issuePath(stored.filename, stored.closed);
   return newPath === oldPath ? [newPath] : [newPath, oldPath];

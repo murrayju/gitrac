@@ -63,9 +63,18 @@ export function registerListCommand(program: Command): void {
           console.warn(`Warning: ${warning}`);
         }
 
-        const { issues, unreadable } = await listIssues(dir, query, config);
+        const { issues, unreadable, misplaced } = await listIssues(
+          dir,
+          query,
+          config,
+        );
         for (const path of unreadable) {
           console.warn(`Warning: skipping unreadable issue file ${path}`);
+        }
+        for (const path of misplaced) {
+          console.warn(
+            `Warning: issue file ${path} is in the wrong directory for its status; the next change to the issue moves it`,
+          );
         }
 
         const marks = await findMarksElsewhere(dir, issues, config);
