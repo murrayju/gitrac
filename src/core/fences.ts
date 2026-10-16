@@ -20,9 +20,12 @@ export interface Fence {
 const OPEN_FENCE_RE = /^\s*(`{3,}|~{3,})(.*)$/;
 const CLOSE_FENCE_RE = /^\s*(`{3,}|~{3,})\s*$/;
 
-/** Return the fence opened by `line`, or null if it is not a fence opener. */
+/**
+ * Return the fence opened by `line`, or null if it is not a fence opener.
+ * Ignore a trailing `\r` (a line split from CRLF text).
+ */
 export function openFence(line: string): Fence | null {
-  const match = line.match(OPEN_FENCE_RE);
+  const match = line.replace(/\r$/, '').match(OPEN_FENCE_RE);
   const marker = match?.[1];
   if (!marker) {
     return null;

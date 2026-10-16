@@ -157,6 +157,60 @@ describe('unescapeCommentHeadings', () => {
   });
 });
 
+describe('CRLF line endings', () => {
+  const toCrlf = (text: string) => text.replace(/\n/g, '\r\n');
+
+  test('parseComments splits CRLF comments as LF ones', () => {
+    const input = [
+      '### Alice \u2014 2024-01-15T10:30:00Z',
+      '',
+      '\\## My Heading',
+      '',
+      'a\n\n---\n\nb',
+      '',
+      '```',
+      '\\### Eve \u2014 2024-01-01T00:00:00Z',
+      '\\## Still escaped',
+      '```',
+      '',
+      '### Bob \u2014 2024-01-15T11:00:00Z',
+      '',
+      'Second comment.',
+      '',
+    ].join('\n');
+    const comments = parseComments(toCrlf(input));
+    expect(comments).toEqual(parseComments(input));
+    expect(comments).toEqual([
+      {
+        author: 'Alice',
+        timestamp: '2024-01-15T10:30:00Z',
+        body: '## My Heading\n\na\n\n---\n\nb\n\n```\n### Eve \u2014 2024-01-01T00:00:00Z\n\\## Still escaped\n```',
+      },
+      {
+        author: 'Bob',
+        timestamp: '2024-01-15T11:00:00Z',
+        body: 'Second comment.',
+      },
+    ]);
+  });
+
+  test('serialized comments parse the same with CRLF', () => {
+    const comments = [
+      { author: 'A', timestamp: 'T1', body: '## h\n\n~~~\n## code\n~~~' },
+      { author: 'B', timestamp: 'T2', body: '\\## literal\n\n***\n\nend' },
+    ];
+    expect(parseComments(toCrlf(serializeComments(comments)))).toEqual(
+      comments,
+    );
+  });
+
+  test('unescapeCommentHeadings normalizes CRLF to LF', () => {
+    expect(
+      unescapeCommentHeadings('\\## a\r\n```\r\n\\## b\r\n```\r\n\\# c'),
+    ).toBe('## a\n```\n\\## b\n```\n# c');
+  });
+});
+
 describe('comment body escaping edge cases', () => {
   const roundTrip = (body: string) =>
     parseComments(serializeComments([{ author: 'A', timestamp: 'T', body }]));

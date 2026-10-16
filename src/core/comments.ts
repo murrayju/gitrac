@@ -1,4 +1,5 @@
 import { scanFences } from './fences.ts';
+import { splitLines } from './lines.ts';
 import type { Comment } from './types.ts';
 
 /** Matches a comment header line: `### {author} — {timestamp}` (em dash). */
@@ -62,7 +63,7 @@ function transformLines(
   transformText: (line: string) => string,
   transformCode: (line: string) => string,
 ): string {
-  const lines = text.split('\n');
+  const lines = splitLines(text);
   const { kinds } = scanFences(lines);
   return lines
     .map((line, i) => {
@@ -89,7 +90,7 @@ export function parseComments(commentsSection: string): Comment[] {
     return [];
   }
 
-  const lines = commentsSection.split('\n');
+  const lines = splitLines(commentsSection);
   const comments: Comment[] = [];
   let currentAuthor: string | null = null;
   let currentTimestamp: string | null = null;

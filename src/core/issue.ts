@@ -9,6 +9,7 @@ import {
 } from './comments.ts';
 import { GitracError } from './errors.ts';
 import { scanFences } from './fences.ts';
+import { splitLines } from './lines.ts';
 import type {
   ExtraFields,
   Issue,
@@ -83,7 +84,7 @@ const ownValue = (record: object, key: string): unknown =>
 function topLevelBlocks(raw: string): string[] {
   const blocks: string[][] = [];
   let pending: string[] = [];
-  for (const line of raw.split(/\r?\n/)) {
+  for (const line of splitLines(raw)) {
     if (line.trim() === '' || line.startsWith('#')) {
       pending.push(line);
     } else if (/^(?![\s#]|-(?:\s|$))/.test(line)) {
@@ -385,7 +386,7 @@ export function serializeIssue(issue: Issue): string {
   if (issue.comments.length > 0) {
     // An unclosed fence would swallow the separator and every comment, so
     // close it before appending the comments section.
-    const { open } = scanFences(body.split('\n'));
+    const { open } = scanFences(splitLines(body));
     if (open) {
       body = `${body}\n${open.char.repeat(open.length)}`;
     }
@@ -432,7 +433,7 @@ function transformAfterRules(
   description: string,
   transform: (line: string) => string,
 ): string {
-  const lines = description.split('\n');
+  const lines = splitLines(description);
   const { kinds } = scanFences(lines);
   return lines
     .map((line, i) => {
@@ -493,12 +494,12 @@ function splitContent(content: string): {
   description: string;
   commentsSection: string;
 } {
-  const lines = content.split('\n');
+  const lines = splitLines(content);
   const separatorIndex = findSeparator(lines);
 
   if (separatorIndex === -1) {
     return {
-      description: unescapeDescription(content.trim()),
+      description: unescapeDescription(lines.join('\n').trim()),
       commentsSection: '',
     };
   }
@@ -520,7 +521,7 @@ function splitContent(content: string): {
  * untouched. Returns null if the content has no frontmatter block.
  */
 function stripFrontmatterUpdated(markdown: string): string | null {
-  const lines = markdown.split(/\r?\n/);
+  const lines = splitLines(markdown);
   if (lines[0]?.trim() !== '---') {
     return null;
   }

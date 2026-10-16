@@ -438,6 +438,115 @@ describe('horizontal rules and separators', () => {
   });
 });
 
+describe('CRLF line endings', () => {
+  const toCrlf = (text: string) => text.replace(/\n/g, '\r\n');
+
+  /** Parse `lf` and its CRLF form, and expect the same issue from both. */
+  function expectSameAsLf(lf: string): Issue {
+    const fromLf = parseIssue(lf);
+    const fromCrlf = parseIssue(toCrlf(lf));
+    expect(fromCrlf).toEqual(fromLf);
+    expect(fromCrlf.description).not.toContain('\r');
+    for (const comment of fromCrlf.comments) {
+      expect(comment.body).not.toContain('\r');
+    }
+    return fromCrlf;
+  }
+
+  test('description and comments are split as with LF', () => {
+    const issue = expectSameAsLf(FULL_ISSUE);
+    expect(issue.description).toBe(
+      'Users are experiencing timeouts when logging in during peak hours.\n\n## Steps to Reproduce\n\n1. Go to login page\n2. Enter credentials\n3. Wait 30 seconds',
+    );
+    expect(issue.comments).toEqual([
+      {
+        author: 'Alice',
+        timestamp: '2024-01-15T11:00:00Z',
+        body: 'I can reproduce this. Looks like a connection pool issue.',
+      },
+      {
+        author: 'Bob',
+        timestamp: '2024-01-15T12:00:00Z',
+        body: '## Fix Attempt\n\nIncreased pool size to 20.',
+      },
+    ]);
+  });
+
+  test('an issue without comments or description', () => {
+    expect(expectSameAsLf(ISSUE_NO_COMMENTS).description).toBe(
+      'We should add a dark mode option to the UI.',
+    );
+    expect(expectSameAsLf(ISSUE_EMPTY_DESCRIPTION).description).toBe('');
+  });
+
+  test('horizontal rules and escaped header-like lines in the description', () => {
+    const description = `Intro\n\n---\n\n${HEADER('Fake')}\n\n***\n\nmore`;
+    const comments = [
+      { author: 'A', timestamp: 't1', body: 'x\n\n---\n\ny' },
+      { author: 'B', timestamp: 't2', body: '## heading\n\nz' },
+    ];
+    const serialized = serializeIssue(makeIssue(description, comments));
+    expect(serialized).toContain(`\\${HEADER('Fake')}`);
+    const issue = expectSameAsLf(serialized);
+    expect(issue.description).toBe(description);
+    expect(issue.comments).toEqual(comments);
+  });
+
+  test('code fences hide separator-like text in the description', () => {
+    for (const [open, close] of [
+      ['```', '```'],
+      ['~~~ md', '~~~'],
+      ['  ```js', '  ```'],
+    ]) {
+      const description = `Example:\n\n${open}\n---\n\n${HEADER('X')}\n\nbody\n${close}\n\nAfter`;
+      const issue = expectSameAsLf(withBody(description));
+      expect(issue.description).toBe(description);
+      expect(issue.comments).toEqual([]);
+
+      const comments = [
+        {
+          author: 'C',
+          timestamp: 't',
+          body: `${open}\n${HEADER('Y')}\n${close}`,
+        },
+      ];
+      const reparsed = expectSameAsLf(
+        serializeIssue(makeIssue(description, comments)),
+      );
+      expect(reparsed.description).toBe(description);
+      expect(reparsed.comments).toEqual(comments);
+    }
+  });
+
+  test('an unclosed fence closed before the comments', () => {
+    const comments = [{ author: 'A', timestamp: 't', body: 'kept' }];
+    const issue = expectSameAsLf(
+      serializeIssue(makeIssue('Code:\n\n~~~~\nfoo', comments)),
+    );
+    expect(issue.description).toBe('Code:\n\n~~~~\nfoo\n~~~~');
+    expect(issue.comments).toEqual(comments);
+  });
+
+  test('frontmatter, dependencies and unknown keys', () => {
+    const raw = `---\nid: 7\ntitle: T\nstatus: todo\npriority: low\nassignee: ''\nlabels:\n  - bug\nparent: 2\nblockedBy:\n  - 3\ncreated: x\ncreatedBy: bob\nupdated: z\nestimate: 3 # days\n---\n\nDesc\n\n---\n\n${HEADER('A')}\n\nhi\n`;
+    const issue = expectSameAsLf(raw);
+    expect(issue.labels).toEqual(['bug']);
+    expect(issue.parent).toBe(2);
+    expect(issue.blockedBy).toEqual([3]);
+    expect(issue.extra).toEqual({ estimate: 3 });
+    expect(issue.comments).toHaveLength(1);
+    // A rewrite produces LF output, the same as for the LF file.
+    expect(serializeIssue(issue)).toBe(raw);
+  });
+
+  test('scanFences classifies CRLF-split lines as LF ones', () => {
+    const lines = ['a', '```ts', '## code', '```', '~~~~', 'b'];
+    expect(scanFences(lines.map((line) => `${line}\r`))).toEqual(
+      scanFences(lines),
+    );
+  });
+});
+
 describe('round-trip property tests', () => {
   const FRAGMENTS = [
     '',
@@ -519,6 +628,11 @@ describe('round-trip property tests', () => {
         context,
         comments,
       });
+      // CRLF line endings parse to the same issue.
+      expect({
+        context,
+        crlf: parseIssue(serialized.replace(/\n/g, '\r\n')),
+      }).toEqual({ context, crlf: parsed });
       // Serialization is a fixed point after one round-trip.
       expect(serializeIssue(parsed)).toBe(
         serializeIssue(makeIssue(expected, comments)),
