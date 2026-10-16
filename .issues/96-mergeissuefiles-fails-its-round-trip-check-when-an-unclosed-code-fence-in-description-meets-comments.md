@@ -3,14 +3,14 @@ id: 96
 title: >-
   mergeIssueFiles fails its round-trip check when an unclosed code fence in
   description meets comments
-status: backlog
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-16T12:12:42.686Z'
 createdBy: Justin Murray
-updated: '2026-10-16T12:12:42.686Z'
+updated: '2026-10-16T14:13:07.317Z'
 ---
 
 In `src/git/conflict.ts`, `mergeIssueFiles` merges frontmatter, description, and comments into `issue`, calls `serializeIssue(issue)`, and then checks `if (!same(parseIssue(content), issue))` (`throw new Error('the merged issue does not round-trip')`).
