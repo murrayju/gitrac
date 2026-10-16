@@ -6,9 +6,12 @@ priority: medium
 assignee: ''
 labels:
   - feature
+blockedBy:
+  - 93
+  - 94
 created: '2026-10-16T12:13:31.379Z'
 createdBy: Justin Murray
-updated: '2026-10-16T12:13:31.379Z'
+updated: '2026-10-16T12:14:09.084Z'
 ---
 
 In an orchestrator-subagent workflow (such as `.opencode/commands/work-backlog.md`), a subagent claims an issue (`in_progress`), implements the fix on its worktree branch, and hands it off for review before the orchestrator verifies, merges, and closes it (`done`).
