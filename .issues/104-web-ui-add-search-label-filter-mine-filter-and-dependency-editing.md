@@ -1,14 +1,14 @@
 ---
 id: 104
 title: 'Web UI: add search, label filter, mine filter, and dependency editing'
-status: backlog
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - feature
 created: '2026-10-16T12:13:30.127Z'
 createdBy: Justin Murray
-updated: '2026-10-16T12:13:30.127Z'
+updated: '2026-10-16T20:02:27.733Z'
 ---
 
 The backend (`GET /api/issues`, `POST /api/issues/:id/link`, `POST /api/issues/:id/unlink`) and `src/web/ui/api.ts` already support `search`, `label`, and `mine` filters and link mutations, but the web UI does not expose them:
