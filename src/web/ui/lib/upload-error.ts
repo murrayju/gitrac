@@ -32,8 +32,8 @@ function serverMessage(body: string): string | undefined {
 }
 
 /**
- * Why a request failed (an upload, a link change, ...): the server's message
- * if it sent one, else a short generic reason.
+ * Why a request failed (an upload, a link change, a comment save, ...), for
+ * the user: the server's message if it sent one, else a short generic reason.
  */
 export function requestErrorReason(err: unknown): string {
   if (err instanceof ApiError) {

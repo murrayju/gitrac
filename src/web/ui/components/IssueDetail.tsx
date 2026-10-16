@@ -112,7 +112,8 @@ export function IssueDetail() {
     }
   }
 
-  function handleDescriptionSaved(saved: Issue, savedVersion: string | null) {
+  /** A save returned the issue: show it, then check for newer changes. */
+  function handleIssueSaved(saved: Issue, savedVersion: string | null) {
     applyIssue(saved, savedVersion);
     // Pick up anything that changed while the save was in flight
     refetch();
@@ -164,7 +165,7 @@ export function IssueDetail() {
               issueId={issue.id}
               description={issue.description}
               version={version}
-              onSaved={handleDescriptionSaved}
+              onSaved={handleIssueSaved}
             />
           </div>
 
@@ -180,6 +181,7 @@ export function IssueDetail() {
               comments={issue.comments}
               issueId={issue.id}
               version={version}
+              onConflict={applyIssue}
             />
           </div>
 
@@ -189,7 +191,7 @@ export function IssueDetail() {
 
         {/* Metadata sidebar */}
         <div className="w-56 shrink-0">
-          <MetadataPanel issue={issue} />
+          <MetadataPanel issue={issue} onSaved={handleIssueSaved} />
           <DependenciesPanel issueId={issue.id} />
           <div className="mt-8 pt-4 border-t border-gray-200 dark:border-gray-800">
             <button

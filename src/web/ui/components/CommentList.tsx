@@ -6,11 +6,14 @@ import StarterKit from '@tiptap/starter-kit';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Markdown } from 'tiptap-markdown';
 import type { Comment } from '../../../core/types.ts';
-import { ConflictError, deleteComment, updateComment } from '../api.ts';
+import { type ApiIssue, deleteComment, updateComment } from '../api.ts';
+import { commentKeys, guardedCommentWrite } from '../lib/comment-write.ts';
 import { ImageUpload } from '../lib/image-upload-plugin.ts';
 import { getEditorMarkdown } from '../lib/markdown.ts';
+import { trackRequest } from '../lib/request-state.ts';
 import { tableExtensions } from '../lib/table-extensions.ts';
 import { relativeTime } from '../lib/time.ts';
+import { requestErrorReason } from '../lib/upload-error.ts';
 import { useIssueLinks } from '../lib/use-issue-links.ts';
 import { MarkdownContent } from './MarkdownContent.tsx';
 import { UploadError, useUploadError } from './UploadError.tsx';
@@ -109,10 +112,11 @@ function InlineCommentEditor({
   onCancel,
 }: {
   initialBody: string;
-  onSave: (body: string) => void;
+  onSave: (body: string) => Promise<void>;
   onCancel: () => void;
 }) {
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const saveRef = useRef<() => void>(null);
 
   const SubmitShortcut = Extension.create({
@@ -156,14 +160,13 @@ function InlineCommentEditor({
   const handleSave = useCallback(async () => {
     if (!editor) return;
     const md = getEditorMarkdown(editor);
-    if (!md.trim()) return;
-    setSaving(true);
-    try {
-      onSave(md);
-    } finally {
-      setSaving(false);
-    }
-  }, [editor, onSave]);
+    if (!md.trim() || saving) return;
+    // Keep "Saving..." until the request settles, and show a failure
+    await trackRequest(() => onSave(md), {
+      setBusy: setSaving,
+      setError: setSaveError,
+    });
+  }, [editor, onSave, saving]);
 
   saveRef.current = handleSave;
 
@@ -173,6 +176,11 @@ function InlineCommentEditor({
         <EditorContent editor={editor} />
       </div>
       <UploadError error={uploadError.error} onDismiss={uploadError.dismiss} />
+      {saveError && (
+        <div role="alert" className="mt-2 text-sm text-red-500">
+          Failed to save comment: {saveError}
+        </div>
+      )}
       <div className="flex gap-2 justify-end mt-2">
         <button
           type="button"
@@ -202,34 +210,40 @@ function CommentItem({
   index,
   issueId,
   version,
+  onConflict,
 }: {
   comment: Comment;
   index: number;
   issueId: number;
   version: string | null;
+  onConflict: (current: ApiIssue, version: string | null) => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const notifyConflict = () => window.alert(CONFLICT_MESSAGE);
 
   // Comments are addressed by index, so guard edits/deletes with the issue
   // version we rendered: if comments shifted underneath us, get a 409
-  // instead of touching the wrong comment.
+  // instead of touching the wrong comment. On a 409, show the latest issue.
+  // The editor stays open with the draft. Other errors go to the editor.
   async function handleSave(body: string) {
-    try {
-      await updateComment(issueId, index, body, version);
-      setEditing(false);
-    } catch (e) {
-      if (!(e instanceof ConflictError)) throw e;
-      window.alert(CONFLICT_MESSAGE);
-    }
+    const saved = await guardedCommentWrite(
+      () => updateComment(issueId, index, body, version),
+      onConflict,
+      notifyConflict,
+    );
+    if (saved) setEditing(false);
   }
 
   async function handleDelete() {
     if (!window.confirm('Delete this comment?')) return;
     try {
-      await deleteComment(issueId, index, version);
+      await guardedCommentWrite(
+        () => deleteComment(issueId, index, version),
+        onConflict,
+        notifyConflict,
+      );
     } catch (e) {
-      if (!(e instanceof ConflictError)) throw e;
-      window.alert(CONFLICT_MESSAGE);
+      window.alert(`Failed to delete comment: ${requestErrorReason(e)}`);
     }
   }
 
@@ -276,25 +290,30 @@ export function CommentList({
   comments,
   issueId,
   version,
+  onConflict,
 }: {
   comments: Comment[];
   issueId: number;
   /** Version (ETag) of the issue the comments were loaded from. */
   version: string | null;
+  /** A comment edit/delete got a 409: show this latest issue. */
+  onConflict: (current: ApiIssue, version: string | null) => void;
 }) {
   if (comments.length === 0) {
     return <div className="text-gray-500 text-sm py-4">No comments yet.</div>;
   }
 
+  const keys = commentKeys(comments);
   return (
     <div className="space-y-4">
       {comments.map((comment, index) => (
         <CommentItem
-          key={`${comment.author}-${comment.timestamp}`}
+          key={keys[index]}
           comment={comment}
           index={index}
           issueId={issueId}
           version={version}
+          onConflict={onConflict}
         />
       ))}
     </div>

@@ -8,6 +8,7 @@ import { Markdown } from 'tiptap-markdown';
 import { addComment } from '../api.ts';
 import { ImageUpload } from '../lib/image-upload-plugin.ts';
 import { getEditorMarkdown } from '../lib/markdown.ts';
+import { trackRequest } from '../lib/request-state.ts';
 import { tableExtensions } from '../lib/table-extensions.ts';
 import { useIssueLinks } from '../lib/use-issue-links.ts';
 import { useIdentityStore } from '../stores/identityStore.ts';
@@ -15,6 +16,7 @@ import { UploadError, useUploadError } from './UploadError.tsx';
 
 export function CommentEditor({ issueId }: { issueId: number }) {
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const submitRef = useRef<() => void>(null);
   const author = useIdentityStore((s) => s.author);
 
@@ -59,16 +61,17 @@ export function CommentEditor({ issueId }: { issueId: number }) {
   const handleSubmit = useCallback(async () => {
     if (!editor) return;
     const md = getEditorMarkdown(editor);
-    if (!md.trim()) return;
+    if (!md.trim() || submitting) return;
 
-    setSubmitting(true);
-    try {
-      await addComment(issueId, md, author || undefined);
-      editor.commands.clearContent();
-    } finally {
-      setSubmitting(false);
-    }
-  }, [editor, issueId, author]);
+    // On a failure, keep the draft and show why
+    await trackRequest(
+      async () => {
+        await addComment(issueId, md, author || undefined);
+        editor.commands.clearContent();
+      },
+      { setBusy: setSubmitting, setError: setSubmitError },
+    );
+  }, [editor, issueId, author, submitting]);
 
   submitRef.current = handleSubmit;
 
@@ -78,6 +81,11 @@ export function CommentEditor({ issueId }: { issueId: number }) {
         <EditorContent editor={editor} />
       </div>
       <UploadError error={uploadError.error} onDismiss={uploadError.dismiss} />
+      {submitError && (
+        <div role="alert" className="mt-2 text-sm text-red-500">
+          Failed to post comment: {submitError}
+        </div>
+      )}
       <div className="flex justify-end mt-2">
         <button
           type="button"
