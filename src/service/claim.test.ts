@@ -1,6 +1,16 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { writeFile } from 'node:fs/promises';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  setSystemTime,
+  test,
+} from 'bun:test';
+import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import simpleGit from 'simple-git';
+import { claimedElsewhere } from '../core/elsewhere.ts';
 import type { GitracError } from '../core/errors.ts';
 import { serializeIssue } from '../core/issue.ts';
 import type { Issue } from '../core/types.ts';
@@ -11,6 +21,7 @@ import {
   readIssue,
   writeIssue,
 } from '../fs/issue-store.ts';
+import { issueStatesElsewhere } from '../git/elsewhere.ts';
 import { claimIssue, unclaimIssue } from './claim.ts';
 import {
   ADA,
@@ -276,4 +287,88 @@ describe('identity validation (#98)', () => {
     );
     expect(result.issue.assignee).toBe('Ada \u2014 L');
   });
+});
+
+describe('superseding a claim elsewhere on a tied or later clock (#94)', () => {
+  const NOW = '2026-01-02T00:00:00.000Z';
+  let tmp: string;
+  let wt: string;
+
+  beforeEach(async () => {
+    tmp = await realpath(await mkdtemp(join(tmpdir(), 'gitrac-claim-skew-')));
+    const git = simpleGit(fx.dir);
+    await git.raw(['init', '-b', 'main']);
+    await git.addConfig('user.email', 'test@test.com');
+    await git.addConfig('user.name', 'Test');
+    await git.addConfig('commit.gpgsign', 'false');
+    await writeIssue(
+      fx.dir,
+      makeIssue({ id: 1, title: 'Task', status: 'todo' }),
+    );
+    await git.add('.');
+    await git.commit('init');
+    wt = join(tmp, 'wt-1');
+    await git.raw(['worktree', 'add', '-b', 'agent-1', wt]);
+  });
+
+  afterEach(async () => {
+    setSystemTime();
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  /** Claim issue #1 in the other worktree, as `assignee`, at `updated`. */
+  async function claimInWorktree(assignee: string, updated: string) {
+    await writeIssue(
+      wt,
+      makeIssue({
+        id: 1,
+        title: 'Task',
+        status: 'in_progress',
+        assignee,
+        updated,
+      }),
+    );
+  }
+
+  /** The claim elsewhere that is in effect for the local issue #1, if any. */
+  async function effectiveClaimElsewhere() {
+    const local = await readIssue(fx.dir, 1);
+    const states = (await issueStatesElsewhere(fx.dir, { ids: [1] })).get(1);
+    return claimedElsewhere(local, await readConfig(fx.dir), states);
+  }
+
+  for (const [label, updated, expected] of [
+    ['in the same millisecond', NOW, '2026-01-02T00:00:00.001Z'],
+    [
+      'from a clock ahead of ours',
+      '2026-01-02T00:05:00.000Z',
+      '2026-01-02T00:05:00.001Z',
+    ],
+  ] as const) {
+    test(`unclaim releases my claim made ${label}`, async () => {
+      await claimInWorktree(ADA.email, updated);
+      setSystemTime(new Date(NOW));
+      const result = await unclaimIssue(fx.context(), 1);
+      expect(result.changed).toBe(true);
+      if (!result.changed) return;
+      expect(result.elsewhere?.ref).toBe('agent-1');
+      expect(result.issue.updated).toBe(expected);
+      expect(await effectiveClaimElsewhere()).toBeUndefined();
+    });
+
+    test(`claim --force takes over a claim made ${label}`, async () => {
+      await claimInWorktree('bob@example.com', updated);
+      setSystemTime(new Date(NOW));
+      const result = await claimIssue(fx.context(), 1, {
+        force: true,
+        comment: 'taking over',
+      });
+      expect(result.changed).toBe(true);
+      if (!result.changed) return;
+      expect(result.issue.updated).toBe(expected);
+      // The claim comment has the same timestamp as `updated`.
+      expect(result.issue.comments.at(-1)?.timestamp).toBe(expected);
+      expect(await effectiveClaimElsewhere()).toBeUndefined();
+    });
+  }
 });

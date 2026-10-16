@@ -3,6 +3,7 @@ import { join, normalize } from 'node:path';
 import { blockersOf } from '../core/dependencies.ts';
 import { GitracError, issueNotFound } from '../core/errors.ts';
 import { normalizeIdList, parseIssueFile } from '../core/issue.ts';
+import { nextTimestamp } from '../core/timestamp.ts';
 import type { Config, Issue } from '../core/types.ts';
 import { isClosedStatus } from '../core/workflow.ts';
 import { findIssueFiles, relocateIssue } from '../fs/issue-store.ts';
@@ -238,7 +239,8 @@ export async function renumberIssue(
     const relinks = options.updateRefs ? await linkingIssues(ctx.dir, id) : [];
 
     const newId = await allocateIssueId(ctx.dir);
-    const now = new Date().toISOString();
+    const clock = Date.now();
+    const now = nextTimestamp([issue.updated], clock);
     issue.id = newId;
     issue.updated = now;
     // Record where it came from: old `#<id>` mentions elsewhere (and in
@@ -264,7 +266,7 @@ export async function renumberIssue(
         );
       }
       if (parent) other.parent = newId;
-      other.updated = now;
+      other.updated = nextTimestamp([other.updated], clock);
       const paths = await relocateIssue(ctx.dir, other, stored, {
         closed: isClosedStatus(config, other.status),
       });

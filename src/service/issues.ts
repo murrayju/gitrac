@@ -6,6 +6,7 @@ import {
   closingStatus,
   reopenStatus,
 } from '../core/lifecycle.ts';
+import { nextTimestamp } from '../core/timestamp.ts';
 import type { Config, Issue, Status } from '../core/types.ts';
 import { validateIssue, validateIssueFields } from '../core/validate.ts';
 import { isClosedStatus } from '../core/workflow.ts';
@@ -259,7 +260,7 @@ export async function updateIssue(
     if (!changed && !options.comment?.trim()) {
       return { changed: false, issue, paths: [], config, commit: null };
     }
-    const now = new Date().toISOString();
+    const now = nextTimestamp([issue.updated]);
     issue.updated = now;
     appendComment(issue, author, options.comment, now);
 
@@ -346,7 +347,7 @@ export async function addComment(
     const stored = await loadStoredIssue(ctx.dir, id, options.precondition);
     const { issue } = stored;
 
-    const now = new Date().toISOString();
+    const now = nextTimestamp([issue.updated]);
     issue.comments.push({ author, timestamp: now, body: text });
     issue.updated = now;
 
@@ -378,7 +379,7 @@ export async function editComment(
 
     const comment = issue.comments[index];
     if (comment) comment.body = text;
-    issue.updated = new Date().toISOString();
+    issue.updated = nextTimestamp([issue.updated]);
 
     const issuePaths = await writeInPlace(ctx, config, stored);
     return finish(ctx, config, {
@@ -405,7 +406,7 @@ export async function deleteComment(
     assertCommentIndex(issue, index);
 
     issue.comments.splice(index, 1);
-    issue.updated = new Date().toISOString();
+    issue.updated = nextTimestamp([issue.updated]);
 
     const issuePaths = await writeInPlace(ctx, config, stored);
     return finish(ctx, config, {
@@ -447,7 +448,7 @@ export async function closeIssue(
     assertCanClose(issue, stored.closed, config);
 
     issue.status = status;
-    const now = new Date().toISOString();
+    const now = nextTimestamp([issue.updated]);
     issue.updated = now;
     appendComment(issue, author, options.comment, now);
 
@@ -494,7 +495,7 @@ export async function reopenIssue(
     assertCanReopen(issue, stored.closed, config);
 
     issue.status = status;
-    const now = new Date().toISOString();
+    const now = nextTimestamp([issue.updated]);
     issue.updated = now;
     appendComment(issue, author, options.comment, now);
 

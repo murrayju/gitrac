@@ -2,6 +2,7 @@ import { readdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { extractAssetRefs, isAssetFilename } from '../core/assets.ts';
 import { blockersOf } from '../core/dependencies.ts';
+import { nextTimestamp } from '../core/timestamp.ts';
 import type { Config, Issue } from '../core/types.ts';
 import { isClosedStatus, type StatusConfig } from '../core/workflow.ts';
 import {
@@ -220,9 +221,9 @@ export async function deleteIssue(
     if (options.dryRun) return result;
 
     const committed = new Set(paths);
-    const now = new Date().toISOString();
+    const now = Date.now();
     for (const { stored, unlinked: entry } of relinks) {
-      stored.issue.updated = now;
+      stored.issue.updated = nextTimestamp([stored.issue.updated], now);
       entry.paths = await relocateIssue(ctx.dir, stored.issue, stored, {
         closed: isClosedStatus(config, stored.issue.status),
       });

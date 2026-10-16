@@ -11,6 +11,7 @@ import {
   toClosedElsewhere,
 } from '../core/elsewhere.ts';
 import { GitracError, invalidInput } from '../core/errors.ts';
+import { nextTimestamp } from '../core/timestamp.ts';
 import type { Config, Issue } from '../core/types.ts';
 import { authorError, hasLineBreak } from '../core/validate.ts';
 import { activeStatus } from '../core/workflow.ts';
@@ -168,7 +169,11 @@ export async function claimIssue(
       await writeConfig(ctx.dir, config);
       configChanged = true;
     }
-    const now = new Date().toISOString();
+    // Strictly later than every version, so this one supersedes them.
+    const now = nextTimestamp([
+      issue.updated,
+      ...(elsewhere ?? []).map((s) => s.updated),
+    ]);
     issue.updated = now;
     addClaimComment(issue, user.name, options.comment, now);
 
@@ -266,7 +271,11 @@ export async function unclaimIssue(
 
     issue.assignee = '';
     issue.status = decision.status;
-    const now = new Date().toISOString();
+    // Strictly later than every version, so this one supersedes them.
+    const now = nextTimestamp([
+      issue.updated,
+      ...(elsewhere ?? []).map((s) => s.updated),
+    ]);
     issue.updated = now;
     addClaimComment(issue, user.name, options.comment, now);
 

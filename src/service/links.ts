@@ -8,6 +8,7 @@ import {
   validateLinks,
 } from '../core/dependencies.ts';
 import { dependencyFields, normalizeIdList } from '../core/issue.ts';
+import { nextTimestamp } from '../core/timestamp.ts';
 import type { Config, Issue } from '../core/types.ts';
 import { isClosedStatus } from '../core/workflow.ts';
 import { relocateIssue } from '../fs/issue-store.ts';
@@ -57,7 +58,7 @@ async function writeLinks(
       commit: null,
     };
   }
-  issue.updated = new Date().toISOString();
+  issue.updated = nextTimestamp([issue.updated]);
   // Write to the directory the status requires (repairs a misplaced file).
   const paths = await relocateIssue(ctx.dir, issue, stored, {
     closed: isClosedStatus(config, issue.status),

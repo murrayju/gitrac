@@ -1,4 +1,11 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  setSystemTime,
+  test,
+} from 'bun:test';
 import { readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { GitracError } from '../core/errors.ts';
@@ -22,6 +29,7 @@ import {
   reopenIssue,
   updateIssue,
 } from './issues.ts';
+import { linkIssue, unlinkIssue } from './links.ts';
 import type { StoredIssue } from './load.ts';
 import {
   makeIssue,
@@ -790,14 +798,16 @@ describe('line breaks and comment-header delimiters (#98)', () => {
     const ctx = fx.context({ identity: async () => ({ name, email: '' }) });
     await writeIssue(fx.dir, makeIssue({ id: 1 }));
     const before = await snapshot();
+    // Start each attempt only when it is awaited, so no rejection is left
+    // unhandled and no write runs after the test ends.
     const attempts = [
-      createIssue(ctx, { title: 'A' }),
-      addComment(ctx, 1, 'hi'),
-      updateIssue(ctx, 1, { priority: 'high' }, { comment: 'note' }),
-      closeIssue(ctx, 1, { comment: 'bye' }),
+      () => createIssue(ctx, { title: 'A' }),
+      () => addComment(ctx, 1, 'hi'),
+      () => updateIssue(ctx, 1, { priority: 'high' }, { comment: 'note' }),
+      () => closeIssue(ctx, 1, { comment: 'bye' }),
     ];
     for (const attempt of attempts) {
-      const err = await rejection(attempt);
+      const err = await rejection(attempt());
       expect((err as GitracError).code).toBe('invalid_input');
       expect((err as GitracError).message).toStartWith('Invalid author');
     }
@@ -824,5 +834,57 @@ describe('line breaks and comment-header delimiters (#98)', () => {
     expect(issue.comments).toMatchObject([
       { author: 'Jean-Luc - Picard', body: 'first' },
     ]);
+  });
+});
+
+describe('`updated` always increases (#94)', () => {
+  const NOW = '2026-01-02T00:00:00.000Z';
+
+  afterEach(() => {
+    setSystemTime();
+  });
+
+  test('quick writes in the same millisecond get strictly later timestamps', async () => {
+    await writeIssue(fx.dir, makeIssue({ id: 1, title: 'Task' }));
+    await writeIssue(fx.dir, makeIssue({ id: 2, title: 'Blocker' }));
+    // Freeze the clock: every write below is in the same millisecond.
+    setSystemTime(new Date(NOW));
+    const ctx = fx.context();
+    const writes: (() => Promise<{ issue: { updated: string } }>)[] = [
+      () => updateIssue(ctx, 1, { title: 'Renamed' }),
+      () => updateIssue(ctx, 1, {}, { comment: 'note' }),
+      () => addComment(ctx, 1, 'hello'),
+      () => editComment(ctx, 1, 0, 'edited'),
+      () => deleteComment(ctx, 1, 0),
+      () => linkIssue(ctx, 1, { blockedBy: [2] }),
+      () => unlinkIssue(ctx, 1, { blockedBy: [2] }),
+      () => closeIssue(ctx, 1),
+      () => reopenIssue(ctx, 1),
+    ];
+    const stamps: string[] = [];
+    for (const write of writes) stamps.push((await write()).issue.updated);
+    expect(stamps[0]).toBe(NOW);
+    for (let i = 1; i < stamps.length; i++) {
+      expect(Date.parse(stamps[i] as string)).toBe(Date.parse(NOW) + i);
+    }
+    expect((await readIssue(fx.dir, 1)).updated).toBe(stamps.at(-1) ?? '');
+  });
+
+  test('a future-dated `updated` (clock skew) is still superseded', async () => {
+    const future = '2026-01-02T00:05:00.000Z';
+    await writeIssue(fx.dir, makeIssue({ id: 1, updated: future }));
+    setSystemTime(new Date(NOW));
+    const result = await addComment(fx.context(), 1, 'hello');
+    expect(result.issue.updated).toBe('2026-01-02T00:05:00.001Z');
+    // The comment keeps the same timestamp as `updated`.
+    expect(result.issue.comments.at(-1)?.timestamp).toBe(result.issue.updated);
+  });
+
+  test('the close comment has the new `updated` timestamp', async () => {
+    await writeIssue(fx.dir, makeIssue({ id: 1, updated: NOW }));
+    setSystemTime(new Date(NOW));
+    const result = await closeIssue(fx.context(), 1, { comment: 'done' });
+    expect(result.issue.updated).toBe('2026-01-02T00:00:00.001Z');
+    expect(result.issue.comments.at(-1)?.timestamp).toBe(result.issue.updated);
   });
 });
