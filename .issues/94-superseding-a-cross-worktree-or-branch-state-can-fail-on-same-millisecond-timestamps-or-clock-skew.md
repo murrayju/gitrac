@@ -8,9 +8,11 @@ priority: medium
 assignee: ''
 labels:
   - bug
+blockedBy:
+  - 93
 created: '2026-10-16T12:12:40.589Z'
 createdBy: Justin Murray
-updated: '2026-10-16T12:12:40.589Z'
+updated: '2026-10-16T12:14:06.930Z'
 ---
 
 `unclaimIssue` and `claimIssue --force` (`src/service/claim.ts`) release or override a claim held in another worktree or branch by writing a local version whose `updated` timestamp supersedes `elsewhere.updated`.
