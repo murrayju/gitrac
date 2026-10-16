@@ -142,6 +142,7 @@ export function useIssue(id: number): {
  */
 export function useIssueDependencies(id: number): {
   dependencies: IssueDependencies | null;
+  refetch: () => void;
 } {
   const [dependencies, setDependencies] = useState<IssueDependencies | null>(
     null,
@@ -174,7 +175,7 @@ export function useIssueDependencies(id: number): {
 
   useSSE(refetch);
 
-  return { dependencies };
+  return { dependencies, refetch };
 }
 
 // Config is shared by every component (each list row reads label colors), so

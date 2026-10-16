@@ -1,8 +1,8 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Issue } from '../../../core/types.ts';
 import { statusSortOrder } from '../../../core/workflow.ts';
-import type { IssueFilters } from '../api.ts';
 import { useConfig, useIssues, useWorkflow } from '../hooks.ts';
+import { labelFilterOptions, listFilters } from '../lib/list-filters.ts';
 import type { SortField } from '../stores/filterStore.ts';
 import { useFilterStore } from '../stores/filterStore.ts';
 import { IssueRow } from './IssueRow.tsx';
@@ -16,15 +16,26 @@ export function IssueList() {
   const setPriorityFilter = useFilterStore((s) => s.setPriorityFilter);
   const assigneeFilter = useFilterStore((s) => s.assigneeFilter);
   const setAssigneeFilter = useFilterStore((s) => s.setAssigneeFilter);
+  const labelFilter = useFilterStore((s) => s.labelFilter);
+  const setLabelFilter = useFilterStore((s) => s.setLabelFilter);
+  const searchText = useFilterStore((s) => s.searchText);
+  const setSearchText = useFilterStore((s) => s.setSearchText);
+  const mineFilter = useFilterStore((s) => s.mineFilter);
+  const setMineFilter = useFilterStore((s) => s.setMineFilter);
   const sortField = useFilterStore((s) => s.sortField);
   const setSortField = useFilterStore((s) => s.setSortField);
   const sortDir = useFilterStore((s) => s.sortDir);
   const setSortDir = useFilterStore((s) => s.setSortDir);
 
-  const filters: IssueFilters = {};
-  if (statusFilter) filters.status = statusFilter;
-  if (priorityFilter) filters.priority = priorityFilter;
-  if (assigneeFilter) filters.assignee = assigneeFilter;
+  const search = useDebounced(searchText, SEARCH_DEBOUNCE_MS);
+  const filters = listFilters({
+    statusFilter,
+    priorityFilter,
+    assigneeFilter,
+    labelFilter,
+    search,
+    mineFilter,
+  });
 
   const { issues, loading, error } = useIssues(filters);
 
@@ -84,7 +95,16 @@ export function IssueList() {
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-lg font-semibold">Issues</h1>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <input
+            type="search"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            placeholder="Search"
+            aria-label="Search title and description"
+            title="Every word must appear in the title or description"
+            className="w-44 bg-white border border-gray-300 rounded px-2 py-1 text-sm text-gray-700 placeholder-gray-400 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-300 dark:placeholder-gray-600"
+          />
           <FilterSelect
             value={statusFilter}
             onChange={setStatusFilter}
@@ -122,6 +142,29 @@ export function IssueList() {
               })),
             ]}
           />
+          <FilterSelect
+            value={labelFilter}
+            onChange={setLabelFilter}
+            placeholder="Label"
+            options={[
+              { value: '', label: 'All labels' },
+              ...labelFilterOptions(config?.labels, labelFilter).map((l) => ({
+                value: l,
+                label: l,
+              })),
+            ]}
+          />
+          <label
+            className="flex items-center gap-1 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none"
+            title="Only issues assigned to the server's git identity (not the identity picked in the UI)"
+          >
+            <input
+              type="checkbox"
+              checked={mineFilter}
+              onChange={(e) => setMineFilter(e.target.checked)}
+            />
+            Mine
+          </label>
         </div>
       </div>
 
@@ -189,6 +232,19 @@ export function IssueList() {
       )}
     </div>
   );
+}
+
+/** Wait this long after the last keystroke before searching. */
+const SEARCH_DEBOUNCE_MS = 250;
+
+/** `value`, updated only once it has stayed the same for `delayMs`. */
+function useDebounced<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(timer);
+  }, [value, delayMs]);
+  return debounced;
 }
 
 function SortHeader({

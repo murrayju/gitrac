@@ -31,8 +31,11 @@ function serverMessage(body: string): string | undefined {
   return text;
 }
 
-/** Why an upload failed, without naming the file. */
-function reason(err: unknown): string {
+/**
+ * Why a request failed (an upload, a link change, ...): the server's message
+ * if it sent one, else a short generic reason.
+ */
+export function requestErrorReason(err: unknown): string {
   if (err instanceof ApiError) {
     const message = serverMessage(err.body);
     if (message) return message;
@@ -55,5 +58,5 @@ export function uploadErrorMessage(err: unknown, fileName?: string): string {
   const prefix = fileName
     ? `Couldn't upload "${fileName}"`
     : "Couldn't upload image";
-  return `${prefix}: ${reason(err)}`;
+  return `${prefix}: ${requestErrorReason(err)}`;
 }

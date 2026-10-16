@@ -140,7 +140,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return (await requestVersioned<T>(path, options)).data;
 }
 
-export async function fetchIssues(filters?: IssueFilters): Promise<ApiIssue[]> {
+/** The `GET /api/issues` query string for `filters` (`''` if none). */
+export function issueListQuery(filters?: IssueFilters): string {
   const params = new URLSearchParams();
   if (filters?.status) params.set('status', filters.status);
   if (filters?.assignee) params.set('assignee', filters.assignee);
@@ -150,7 +151,11 @@ export async function fetchIssues(filters?: IssueFilters): Promise<ApiIssue[]> {
   if (filters?.mine) params.set('mine', '1');
   if (filters?.sort) params.set('sort', filters.sort);
   const qs = params.toString();
-  return request<ApiIssue[]>(`/api/issues${qs ? `?${qs}` : ''}`);
+  return qs ? `?${qs}` : '';
+}
+
+export async function fetchIssues(filters?: IssueFilters): Promise<ApiIssue[]> {
+  return request<ApiIssue[]>(`/api/issues${issueListQuery(filters)}`);
 }
 
 export async function fetchIssue(id: number): Promise<ApiIssue> {
@@ -169,6 +174,44 @@ export async function fetchIssueDependencies(
   id: number,
 ): Promise<IssueDependencies> {
   return request<IssueDependencies>(`/api/issues/${id}/dependencies`);
+}
+
+/** Links to add with {@link linkIssue}. */
+export interface LinkInput {
+  /** Add these issues to `blockedBy`. */
+  blockedBy?: number[];
+  /** Set (replace) the parent. */
+  parent?: number;
+}
+
+/** Links to remove with {@link unlinkIssue}. */
+export interface UnlinkInput {
+  /** Remove these issues from `blockedBy`. */
+  blockedBy?: number[];
+  /** Clear the parent. */
+  parent?: true;
+}
+
+/**
+ * Add blockers to issue `id` or set its parent. Rejects with an `ApiError`
+ * (400) if a target is missing, is the issue itself, or would make a cycle.
+ */
+export async function linkIssue(id: number, input: LinkInput): Promise<Issue> {
+  return request<Issue>(`/api/issues/${id}/link`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+/** Remove blockers from issue `id` or clear its parent. */
+export async function unlinkIssue(
+  id: number,
+  input: UnlinkInput,
+): Promise<Issue> {
+  return request<Issue>(`/api/issues/${id}/unlink`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
 }
 
 export async function createIssue(input: CreateIssueInput): Promise<Issue> {
