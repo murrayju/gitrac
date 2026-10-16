@@ -1,14 +1,14 @@
 ---
 id: 102
 title: Include resolved dependencies in gitrac show -o json|yaml
-status: backlog
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - enhancement
 created: '2026-10-16T12:13:28.014Z'
 createdBy: Justin Murray
-updated: '2026-10-16T12:13:28.014Z'
+updated: '2026-10-16T19:54:47.203Z'
 ---
 
 In `src/cli/commands/show.ts:31-35`, `describeDependencies` (`parent`, `children`/sub-issues, `blockedBy` with each blocker's title/status/`resolved`, `blocks`, and `blocked`) is only computed when `globalOpts.output === 'human'`.
