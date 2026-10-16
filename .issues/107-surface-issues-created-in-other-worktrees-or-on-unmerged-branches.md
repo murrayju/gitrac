@@ -6,9 +6,11 @@ priority: low
 assignee: ''
 labels:
   - feature
+blockedBy:
+  - 93
 created: '2026-10-16T12:13:33.538Z'
 createdBy: Justin Murray
-updated: '2026-10-16T12:13:33.538Z'
+updated: '2026-10-16T12:14:11.094Z'
 ---
 
 `listIssues` and `listReadyIssues` only load `.issues/*.md` files present in the current worktree's filesystem, then overlay `issueStatesElsewhere` for those IDs.
