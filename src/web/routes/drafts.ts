@@ -1,8 +1,18 @@
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Hono } from 'hono';
+import { isAssetFilename } from '../../core/assets.ts';
 import { writeIssuesGitignore } from '../../fs/gitignore.ts';
+import { readJsonBody } from '../request-body.ts';
 import type { ServerContext } from '../server.ts';
+
+/**
+ * Whether `name` is a safe draft filename: a plain `.json` filename with no
+ * path separators, `..` or NUL bytes.
+ */
+function isDraftFilename(name: string): boolean {
+  return name.endsWith('.json') && isAssetFilename(name);
+}
 
 export function draftRoutes(ctx: ServerContext): Hono {
   const app = new Hono();
@@ -43,19 +53,20 @@ export function draftRoutes(ctx: ServerContext): Hono {
   app.put('/drafts/:filename', async (c) => {
     const { dir } = ctx;
     const filename = c.req.param('filename');
-    if (
-      !filename.endsWith('.json') ||
-      filename.includes('/') ||
-      filename.includes('..')
-    ) {
+    if (!isDraftFilename(filename)) {
       return c.json({ error: 'Invalid filename' }, 400);
     }
+    // readJsonBody gives undefined for invalid JSON.
+    const json = await readJsonBody(c);
+    if (typeof json !== 'object' || json === null || Array.isArray(json)) {
+      return c.json({ error: 'Draft body must be a JSON object' }, 400);
+    }
+    const body = json as Record<string, unknown>;
     await ensureDraftsDir(dir);
     // Drafts are local: make sure git ignores them, even in a project
     // initialized before `init` wrote `.issues/.gitignore` (left uncommitted;
     // `install-merge-driver` commits it). Idempotent.
     await writeIssuesGitignore(dir);
-    const body = await c.req.json();
     body.savedAt = new Date().toISOString();
     await Bun.write(
       join(draftsDir(dir), filename),
@@ -68,11 +79,7 @@ export function draftRoutes(ctx: ServerContext): Hono {
   app.delete('/drafts/:filename', async (c) => {
     const { dir } = ctx;
     const filename = c.req.param('filename');
-    if (
-      !filename.endsWith('.json') ||
-      filename.includes('/') ||
-      filename.includes('..')
-    ) {
+    if (!isDraftFilename(filename)) {
       return c.json({ error: 'Invalid filename' }, 400);
     }
     try {

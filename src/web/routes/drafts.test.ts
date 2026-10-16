@@ -71,4 +71,51 @@ describe('PUT /api/drafts/:filename', () => {
       false,
     );
   });
+  test.each([
+    ['a backslash', 'a%5Cb.json'],
+    ['a NUL byte', 'a%00b.json'],
+    ['..', '..x.json'],
+  ])('rejects a filename with %s with 400', async (_name, filename) => {
+    expect((await put(filename, { title: 'Draft' })).status).toBe(400);
+    expect(await Bun.file(join(dir, ISSUES_GITIGNORE_PATH)).exists()).toBe(
+      false,
+    );
+  });
+
+  const rawPut = (body: string) =>
+    app.request('http://localhost/api/drafts/d3.json', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
+
+  test.each([
+    ['malformed JSON', '{not json'],
+    ['null', 'null'],
+    ['an array', '[]'],
+    ['a string', '"str"'],
+    ['a number', '42'],
+  ])('rejects %s with 400 { error }, writing nothing', async (_name, body) => {
+    const res = await rawPut(body);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: 'Draft body must be a JSON object',
+    });
+    expect(
+      await Bun.file(join(dir, '.issues', 'drafts', 'd3.json')).exists(),
+    ).toBe(false);
+  });
+});
+
+describe('DELETE /api/drafts/:filename', () => {
+  test.each([
+    'a%5Cb.json',
+    'a%00b.json',
+    'x.txt',
+  ])('rejects %s with 400', async (filename) => {
+    const res = await app.request(`http://localhost/api/drafts/${filename}`, {
+      method: 'DELETE',
+    });
+    expect(res.status).toBe(400);
+  });
 });

@@ -122,4 +122,28 @@ describe('serving assets', () => {
     expect(res.headers.get('content-disposition')).toBe('attachment');
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
   });
+  test('rejects a filename with a backslash with 400', async () => {
+    // A backslash is a path separator on Windows. On POSIX it is a legal
+    // filename character, so put a file there to show it is not served.
+    await put('a\\b.png', 'png');
+    for (const path of [
+      '/.issues/assets/a%5Cb.png',
+      '/api/issues/assets/a%5Cb.png',
+    ]) {
+      const res = await app.request(`http://localhost${path}`);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'Invalid filename' });
+    }
+  });
+
+  test('rejects a filename with a NUL byte with 400', async () => {
+    for (const path of [
+      '/.issues/assets/a%00b.png',
+      '/api/issues/assets/a%00b.png',
+    ]) {
+      const res = await app.request(`http://localhost${path}`);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'Invalid filename' });
+    }
+  });
 });

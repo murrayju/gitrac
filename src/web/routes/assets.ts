@@ -3,6 +3,7 @@ import { extname, join } from 'node:path';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { nanoid } from 'nanoid';
+import { isAssetFilename } from '../../core/assets.ts';
 import type { ServerContext } from '../server.ts';
 
 /** Maximum size of an uploaded asset (and of the upload request body). */
@@ -55,7 +56,7 @@ export function serveAsset(
     const filename = c.req.param('filename');
 
     // Prevent path traversal
-    if (filename.includes('/') || filename.includes('..')) {
+    if (!isAssetFilename(filename)) {
       return Response.json({ error: 'Invalid filename' }, { status: 400 });
     }
 

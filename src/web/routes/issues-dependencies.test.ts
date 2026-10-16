@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Hono } from 'hono';
@@ -157,5 +157,23 @@ describe('POST /api/issues/:id/link and /unlink', () => {
     const issue = await readIssue(dir, 3);
     expect(issue.blockedBy).toBeUndefined();
     expect(issue.parent).toBeUndefined();
+  });
+});
+
+describe('GET /api/issues/:id/dependencies with a malformed issue file', () => {
+  test('answers 409 invalid_issue, like GET /api/issues/:id', async () => {
+    await writeFile(join(dir, '.issues', '9-bad.md'), 'no frontmatter here\n');
+    const expected = {
+      code: 'invalid_issue',
+      file: join('.issues', '9-bad.md'),
+    };
+    const get = await req('/issues/9');
+    expect(get.status).toBe(409);
+    expect(await get.json()).toMatchObject(expected);
+    const res = await req('/issues/9/dependencies');
+    expect(res.status).toBe(409);
+    const json = (await res.json()) as { error: string };
+    expect(json).toMatchObject(expected);
+    expect(json.error).toContain('no YAML frontmatter');
   });
 });

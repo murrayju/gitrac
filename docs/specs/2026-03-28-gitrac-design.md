@@ -536,7 +536,7 @@ The server has no authentication, so exposure is limited instead (`src/web/secur
 | POST | `/api/issues/:id/comments` | Add comment (`body`; optional `author`) |
 | PUT | `/api/issues/:id/comments/:index` | Edit comment |
 | DELETE | `/api/issues/:id/comments/:index` | Delete comment |
-| GET | `/api/issues/:id/dependencies` | `{ parent, children, blockedBy, blocks, blocked }`: the linked issues as `{ id, title, status, resolved }` (`status: null`, `resolved: true` for a missing issue); `blocks`/`children` are derived. The issue itself (`GET /api/issues/:id`) carries `parent` / `blockedBy` when set |
+| GET | `/api/issues/:id/dependencies` | `{ parent, children, blockedBy, blocks, blocked }`: the linked issues as `{ id, title, status, resolved }` (`status: null`, `resolved: true` for a missing issue); `blocks`/`children` are derived. The issue itself (`GET /api/issues/:id`) carries `parent` / `blockedBy` when set. **409** `duplicate_issue` / `invalid_issue` as for `GET /api/issues/:id` |
 | POST | `/api/issues/:id/link` | `{ blockedBy?: id \| id[], parent?: id }`: add blockers / set the parent. **400** `{ error, errors }` for a missing target, a self-link or a cycle. Honors `If-Match` |
 | POST | `/api/issues/:id/unlink` | `{ blockedBy?: id \| id[], parent?: true }`: remove blockers / clear the parent. Honors `If-Match` |
 | PATCH | `/api/issues/:id/close` | Close issue with the configured close status (`done`); optional body `{ status }` (a configured closed status) or `{ cancelled: true }` (the cancel status), else 400. **409** `{ error, code: "invalid_state", current }` if already closed |
@@ -548,6 +548,11 @@ The server has no authentication, so exposure is limited instead (`src/web/secur
 | GET | `/api/git/status` | Branch, push state, warnings |
 | GET | `/api/events` | SSE stream for live updates: `connected` on (re)connect, `issues-changed` on file changes, `: keep-alive` comments every 5s |
 | POST | `/api/issues/assets` | Upload an image (multipart `file`; no SVG; max 10 MiB) |
+| GET | `/api/drafts` | List the web UI's new-issue drafts (`.issues/drafts/*.json`, untracked), newest first |
+| PUT | `/api/drafts/:filename` | Save a draft (a JSON object; `savedAt` is set). **400** `{ error }` for a body that isn't a JSON object (including malformed JSON, `null`, an array) or a bad filename |
+| DELETE | `/api/drafts/:filename` | Delete a draft (no error if it is already gone) |
+
+Draft filenames must end in `.json`; draft and asset filenames must not contain `/`, `\`, `..` or a NUL byte (**400** `{ error: "Invalid filename" }`, the same rule as `isAssetFilename`, `src/core/assets.ts`).
 
 Any other `/api` or `/api/*` request (any method) is a **404** `{ "error": "Not found", "code": "not_found" }` — never the SPA's `index.html`.
 

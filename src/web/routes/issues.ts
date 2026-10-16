@@ -455,6 +455,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
       loaded = await loadIssue(ctx.dir, id);
     } catch (err) {
       if (isDuplicateIssue(err)) return duplicateResponse(c, err);
+      if (isInvalidIssue(err)) return invalidIssueResponse(c, err);
       throw err;
     }
     if (!loaded) {
