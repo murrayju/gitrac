@@ -3,14 +3,14 @@ id: 93
 title: >-
   Issues closed in another worktree or branch lose their elsewhere indicator and
   can be re-claimed without --force
-status: backlog
+status: in_progress
 priority: high
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-16T12:12:39.477Z'
 createdBy: Justin Murray
-updated: '2026-10-16T12:12:39.477Z'
+updated: '2026-10-16T19:28:08.923Z'
 ---
 
 When a subagent in another worktree (or on an unmerged branch) finishes an issue and closes it (`gitrac close <id>`), two problems occur in other worktrees (such as `main`):
