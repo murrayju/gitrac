@@ -3,14 +3,14 @@ id: 97
 title: >-
   Post-merge directory/status mismatch hides open issues sitting in
   .issues/closed/
-status: backlog
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-16T12:12:43.845Z'
 createdBy: Justin Murray
-updated: '2026-10-16T12:12:43.845Z'
+updated: '2026-10-16T19:28:09.925Z'
 ---
 
 When branch A closes an issue at `T1` (moving `.issues/1-foo.md` to `.issues/closed/1-foo.md`) and branch B updates it at `T2 > T1` with an open status (keeping it in `.issues/1-foo.md`), `git merge` resolves the rename to `.issues/closed/1-foo.md` and invokes `gitrac merge-driver`. `mergeIssueFrontmatter` picks branch B's open status (`T2 > T1`), leaving an issue with an open status inside `.issues/closed/` (or, in the inverse case, a closed status inside `.issues/`).
