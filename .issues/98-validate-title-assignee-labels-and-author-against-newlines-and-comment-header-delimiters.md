@@ -3,14 +3,14 @@ id: 98
 title: >-
   Validate title, assignee, labels, and author against newlines and
   comment-header delimiters
-status: backlog
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-16T12:12:44.936Z'
 createdBy: Justin Murray
-updated: '2026-10-16T12:12:44.936Z'
+updated: '2026-10-16T19:28:10.908Z'
 ---
 
 `validateIssueFields` (`src/core/validate.ts`) and `resolveAuthor` (`src/service/context.ts`) only check `typeof === 'string'` and `.trim()`, allowing `\r` and `\n` in `title`, `assignee`, `labels`, and `author`, as well as ` — ` (`\u2014`) in `author`:
