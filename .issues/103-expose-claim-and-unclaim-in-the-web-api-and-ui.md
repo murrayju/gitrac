@@ -6,9 +6,12 @@ priority: medium
 assignee: ''
 labels:
   - feature
+blockedBy:
+  - 93
+  - 94
 created: '2026-10-16T12:13:29.051Z'
 createdBy: Justin Murray
-updated: '2026-10-16T12:13:29.051Z'
+updated: '2026-10-16T12:14:07.978Z'
 ---
 
 The CLI provides `gitrac claim <id>` and `gitrac unclaim <id>` (backed by `claimIssue` and `unclaimIssue` in `src/service/claim.ts`), which enforce exclusive claims across worktrees and branches and register new assignees.
