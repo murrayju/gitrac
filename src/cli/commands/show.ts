@@ -26,14 +26,11 @@ export function registerShowCommand(program: Command): void {
       }
 
       const issue = await readIssue(dir, id);
-      // The human view lists linked issues (and the derived "blocks" /
-      // sub-issues), which needs every issue; json/yaml are the issue only.
-      let deps: ReturnType<typeof describeDependencies> | undefined;
-      if (globalOpts.output === 'human') {
-        const byId = indexIssues((await loadAllIssues(dir)).issues);
-        byId.set(issue.id, issue);
-        deps = describeDependencies(issue, byId, config);
-      }
+      // Resolve the linked issues (and the derived "blocks" / sub-issues)
+      // against every issue. All output formats show them.
+      const byId = indexIssues((await loadAllIssues(dir)).issues);
+      byId.set(issue.id, issue);
+      const deps = describeDependencies(issue, byId, config);
       const mark = (await findMarksElsewhere(dir, [issue], config)).get(
         issue.id,
       );

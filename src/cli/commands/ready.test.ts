@@ -9,6 +9,7 @@ import {
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import yaml from 'js-yaml';
 import simpleGit from 'simple-git';
 import type { Issue } from '../../core/types.ts';
 import { readIssue } from '../../fs/issue-store.ts';
@@ -85,6 +86,36 @@ describe('link / unlink', () => {
     await ok('unlink', '3', '-b', '1', '--parent');
     expect(await readIssue(dir, 3)).toMatchObject({ blockedBy: [2] });
     expect((await readIssue(dir, 3)).parent).toBeUndefined();
+  });
+
+  test('show -o json / yaml include resolved dependencies (#102)', async () => {
+    await ok('link', '3', '--blocked-by', '1,2', '--parent', '1');
+    await ok('close', '1');
+    const closed = (await readIssue(dir, 1)).status;
+    const third = JSON.parse(await ok('show', '3', '-o', 'json'));
+    expect(third).toMatchObject({ parent: 1, blockedBy: [1, 2] });
+    expect(third.dependencies).toEqual({
+      parent: { id: 1, title: 'First', status: closed, resolved: true },
+      children: [],
+      blockedBy: [
+        { id: 1, title: 'First', status: closed, resolved: true },
+        { id: 2, title: 'Second', status: 'todo', resolved: false },
+      ],
+      blocks: [],
+      blocked: true,
+    });
+
+    const first = yaml.load(await ok('show', '1', '-o', 'yaml')) as Issue & {
+      dependencies: unknown;
+    };
+    expect(first.id).toBe(1);
+    expect(first.dependencies).toEqual({
+      parent: null,
+      children: [{ id: 3, title: 'Third', status: 'todo', resolved: false }],
+      blockedBy: [],
+      blocks: [{ id: 3, title: 'Third', status: 'todo', resolved: false }],
+      blocked: false,
+    });
   });
 
   test('cycles, self links and missing targets exit 2', async () => {

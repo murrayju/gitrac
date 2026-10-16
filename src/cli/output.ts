@@ -213,11 +213,12 @@ export function formatIssueList(
 }
 
 /**
- * Format a single issue detail in the specified output format. `deps`
- * (resolved links) enriches the human output only; json/yaml are the issue
- * itself (`parent` / `blockedBy` included when set), plus `claimedElsewhere`
- * or `closedElsewhere` when `mark` says it is claimed or closed on another
- * branch or worktree.
+ * Format a single issue detail in the specified output format. json/yaml are
+ * the issue itself (`parent` / `blockedBy` included when set), plus
+ * `claimedElsewhere` or `closedElsewhere` when `mark` says it is claimed or
+ * closed on another branch or worktree. `deps` (resolved links) adds the
+ * linked issues to the human output and, in json/yaml, a `dependencies`
+ * field (`{ parent, children, blockedBy, blocks, blocked }`).
  */
 export function formatIssueDetail(
   issue: Issue,
@@ -226,12 +227,15 @@ export function formatIssueDetail(
   mark?: ElsewhereMarks,
 ): string {
   const marks = mark ? new Map([[issue.id, mark]]) : undefined;
+  const data = deps
+    ? { ...issueData(issue, marks), dependencies: deps }
+    : issueData(issue, marks);
   switch (format) {
     case 'human':
       return formatHumanDetail(issue, deps, mark);
     case 'json':
-      return JSON.stringify(issueData(issue, marks), null, 2);
+      return JSON.stringify(data, null, 2);
     case 'yaml':
-      return yaml.dump(issueData(issue, marks), { lineWidth: -1 });
+      return yaml.dump(data, { lineWidth: -1 });
   }
 }

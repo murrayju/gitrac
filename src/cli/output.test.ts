@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import yaml from 'js-yaml';
 import { parseIssue } from '../core/issue.ts';
 import type { Issue } from '../core/types.ts';
 import { formatIssueDetail, formatIssueList } from './output.ts';
@@ -146,6 +147,52 @@ describe('formatIssueDetail', () => {
     expect(result).toContain('id: 1');
     expect(result).toContain('title: Fix Login Timeout');
     expect(result).toContain('priority: high');
+  });
+});
+
+describe('detail with resolved dependencies (#102)', () => {
+  const linked: Issue = { ...SAMPLE_ISSUE_2, parent: 5, blockedBy: [1, 9] };
+  const deps = {
+    parent: { id: 5, title: 'Epic', status: 'todo', resolved: false },
+    children: [{ id: 7, title: 'Child', status: 'backlog', resolved: false }],
+    blockedBy: [
+      { id: 1, title: 'Fix Login Timeout', status: 'done', resolved: true },
+      { id: 9, title: '', status: null, resolved: true },
+    ],
+    blocks: [{ id: 8, title: 'Later', status: 'todo', resolved: false }],
+    blocked: false,
+  };
+  const mark = {
+    claimedElsewhere: {
+      ref: 'agent-1',
+      assignee: 'bob@example.com',
+      updated: '2024-01-17T00:00:00Z',
+    },
+  };
+
+  test('json adds a dependencies field and keeps parent / blockedBy', () => {
+    const parsed = JSON.parse(formatIssueDetail(linked, 'json', deps, mark));
+    expect(parsed.dependencies).toEqual(deps);
+    expect(parsed.parent).toBe(5);
+    expect(parsed.blockedBy).toEqual([1, 9]);
+    expect(parsed.claimedElsewhere).toEqual(mark.claimedElsewhere);
+  });
+
+  test('yaml adds a dependencies field and keeps parent / blockedBy', () => {
+    const parsed = yaml.load(
+      formatIssueDetail(linked, 'yaml', deps, mark),
+    ) as Record<string, unknown>;
+    expect(parsed.dependencies).toEqual(deps);
+    expect(parsed.parent).toBe(5);
+    expect(parsed.blockedBy).toEqual([1, 9]);
+    expect(parsed.claimedElsewhere).toEqual(mark.claimedElsewhere);
+  });
+
+  test('without deps, json/yaml have no dependencies field', () => {
+    expect(JSON.parse(formatIssueDetail(linked, 'json'))).not.toHaveProperty(
+      'dependencies',
+    );
+    expect(formatIssueDetail(linked, 'yaml')).not.toContain('dependencies:');
   });
 });
 

@@ -86,7 +86,7 @@ gitrac ready     # only what you can start now (unblocked, not someone else's â€
 
 Review the open issues. Pick one that matches the task at hand. To just take the most important unblocked issue, `gitrac next --claim` picks and claims it in one step (under the repo lock, so parallel agents never get the same one) â€” then skip step 2.
 
-**Dependencies.** `blockedBy` lists issues that must be closed first; `ready`/`next` skip an issue while any blocker is open. A blocker counts as resolved when it is `done` **or** `cancelled` (or deleted). `parent` is informational (sub-issues), it doesn't block. `gitrac show <id>` lists the parent, sub-issues, blockers and the issues it blocks. When you discover that an issue depends on another, record it: `gitrac link <id> --blocked-by <other>`.
+**Dependencies.** `blockedBy` lists issues that must be closed first; `ready`/`next` skip an issue while any blocker is open. A blocker counts as resolved when it is `done` **or** `cancelled` (or deleted). `parent` is informational (sub-issues), it doesn't block. `gitrac show <id>` lists the parent, sub-issues, blockers and the issues it blocks; `show <id> -o json` adds them as `dependencies: { parent, children, blockedBy, blocks, blocked }`, each linked issue as `{ id, title, status, resolved }` (`resolved`: closed or deleted). When you discover that an issue depends on another, record it: `gitrac link <id> --blocked-by <other>`.
 
 ### 2. Claim it
 
@@ -187,7 +187,7 @@ Use `-o json` or `-o yaml` for machine-readable output:
 
 ```bash
 gitrac ls -o json                    # all open issues as JSON array
-gitrac show <id> -o json             # single issue as JSON
+gitrac show <id> -o json             # single issue as JSON, plus resolved `dependencies`
 gitrac ls -o json --status all       # include closed issues
 gitrac ls -o json --mine --status todo,in_progress  # my active work
 gitrac ready -o json                 # what can be started now
