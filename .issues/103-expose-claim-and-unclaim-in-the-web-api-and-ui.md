@@ -1,9 +1,9 @@
 ---
 id: 103
 title: Expose claim and unclaim in the web API and UI
-status: backlog
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - feature
 blockedBy:
@@ -11,7 +11,7 @@ blockedBy:
   - 94
 created: '2026-10-16T12:13:29.051Z'
 createdBy: Justin Murray
-updated: '2026-10-16T12:14:07.978Z'
+updated: '2026-10-16T20:35:14.125Z'
 ---
 
 The CLI provides `gitrac claim <id>` and `gitrac unclaim <id>` (backed by `claimIssue` and `unclaimIssue` in `src/service/claim.ts`), which enforce exclusive claims across worktrees and branches and register new assignees.
