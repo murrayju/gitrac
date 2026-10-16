@@ -411,6 +411,62 @@ describe('mergeIssueFiles', () => {
     );
   });
 
+  test('closes an open code fence in the description when the other side adds a comment', async () => {
+    // Regression test for #96.
+    const ours = issueFile({
+      description: 'line one\n```ts\nconst x = 1;',
+      updated: '2025-01-02T00:00:00Z',
+    });
+    const theirs = issueFile({
+      updated: '2025-01-03T00:00:00Z',
+      comments: [
+        { author: 'bob', timestamp: '2025-01-03T00:00:00Z', body: 'theirs' },
+      ],
+    });
+    const result = await mergeIssueFiles(base, ours, theirs);
+    expect(result.conflict).toBe(false);
+    const merged = parseIssue(result.content);
+    expect(merged.description).toBe('line one\n```ts\nconst x = 1;\n```');
+    expect(merged.comments.map((c) => c.body)).toEqual(['theirs']);
+    expect(serializeIssue(merged)).toBe(result.content);
+  });
+
+  test('closes an open tilde fence left by the text merger when comments exist', async () => {
+    const withComment = {
+      comments: [
+        { author: 'bob', timestamp: '2025-01-03T00:00:00Z', body: 'note' },
+      ],
+    };
+    const result = await mergeIssueFiles(
+      issueFile(withComment),
+      issueFile({ ...withComment, description: 'ours' }),
+      issueFile({ ...withComment, description: 'theirs' }),
+      async () => ({ text: 'merged\n~~~~\ncode\n', conflict: false }),
+    );
+    const merged = parseIssue(result.content);
+    expect(merged.description).toBe('merged\n~~~~\ncode\n~~~~');
+    expect(merged.comments.map((c) => c.body)).toEqual(['note']);
+  });
+
+  test('trims blank lines that the text merger leaves around the description', async () => {
+    // Regression test for #96.
+    const ours = issueFile({ description: 'ours' });
+    const theirs = issueFile({
+      description: 'theirs',
+      comments: [
+        { author: 'bob', timestamp: '2025-01-03T00:00:00Z', body: 'theirs' },
+      ],
+    });
+    const result = await mergeIssueFiles(base, ours, theirs, async () => ({
+      text: '\n\n  merged line\n\n\n',
+      conflict: false,
+    }));
+    expect(result.conflict).toBe(false);
+    const merged = parseIssue(result.content);
+    expect(merged.description).toBe('merged line');
+    expect(merged.comments.map((c) => c.body)).toEqual(['theirs']);
+  });
+
   test('returns a side verbatim when only the other one changed', async () => {
     const ours = issueFile({ priority: 'high' });
     expect((await mergeIssueFiles(base, ours, base)).content).toBe(ours);

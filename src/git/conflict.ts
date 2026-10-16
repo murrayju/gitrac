@@ -9,6 +9,7 @@ import {
   parseIssue,
   pickExtraFields,
   serializeIssue,
+  storedDescription,
 } from '../core/issue.ts';
 import type {
   Assignee,
@@ -356,18 +357,22 @@ export async function mergeIssueFiles(
     conflict = merged.conflict;
   }
 
+  const comments = mergeComments(
+    ours.comments,
+    theirs.comments,
+    base?.comments ?? null,
+  );
   const issue: Issue = {
     ...mergeIssueFrontmatter(
       frontmatterOf(ours),
       frontmatterOf(theirs),
       base ? frontmatterOf(base) : null,
     ),
-    description,
-    comments: mergeComments(
-      ours.comments,
-      theirs.comments,
-      base?.comments ?? null,
-    ),
+    // Use the description as it reads back from the file. The text merge
+    // can leave blank lines at the ends. A side without comments can leave
+    // a code fence open, and the serializer closes it when comments follow.
+    description: storedDescription(description, comments.length > 0),
+    comments,
   };
   const content = serializeIssue(issue);
 

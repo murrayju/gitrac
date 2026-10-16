@@ -365,6 +365,29 @@ export function parseIssueFile(
 }
 
 /**
+ * Add a closing fence line to `text` if it ends inside a code fence.
+ * Otherwise return `text` unchanged.
+ */
+export function closeOpenFence(text: string): string {
+  const { open } = scanFences(splitLines(text));
+  return open ? `${text}\n${open.char.repeat(open.length)}` : text;
+}
+
+/**
+ * Return the description that {@link parseIssue} reads back after
+ * {@link serializeIssue} writes `description`. The parser trims the
+ * description. When the issue has comments, the serializer also closes a
+ * code fence that the description leaves open.
+ */
+export function storedDescription(
+  description: string,
+  hasComments: boolean,
+): string {
+  const trimmed = description.trim();
+  return hasComments ? closeOpenFence(trimmed) : trimmed;
+}
+
+/**
  * Serialize an Issue object back to a markdown file string.
  */
 export function serializeIssue(issue: Issue): string {
@@ -386,10 +409,7 @@ export function serializeIssue(issue: Issue): string {
   if (issue.comments.length > 0) {
     // An unclosed fence would swallow the separator and every comment, so
     // close it before appending the comments section.
-    const { open } = scanFences(splitLines(body));
-    if (open) {
-      body = `${body}\n${open.char.repeat(open.length)}`;
-    }
+    body = closeOpenFence(body);
     const commentStr = serializeComments(issue.comments);
     body = `${body}\n\n${SEPARATOR}\n\n${commentStr}`;
   }
