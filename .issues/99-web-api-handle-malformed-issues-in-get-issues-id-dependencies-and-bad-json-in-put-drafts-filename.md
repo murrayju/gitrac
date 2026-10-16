@@ -3,14 +3,14 @@ id: 99
 title: >-
   Web API: handle malformed issues in GET /issues/:id/dependencies and bad JSON
   in PUT /drafts/:filename
-status: backlog
+status: in_progress
 priority: low
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-16T12:12:46.052Z'
 createdBy: Justin Murray
-updated: '2026-10-16T12:12:46.052Z'
+updated: '2026-10-16T19:28:11.945Z'
 ---
 
 Several small input/error-handling gaps in the web routes:
