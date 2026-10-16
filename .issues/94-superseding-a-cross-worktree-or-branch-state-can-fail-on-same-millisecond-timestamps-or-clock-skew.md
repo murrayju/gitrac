@@ -3,16 +3,16 @@ id: 94
 title: >-
   Superseding a cross-worktree or branch state can fail on same-millisecond
   timestamps or clock skew
-status: backlog
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 blockedBy:
   - 93
 created: '2026-10-16T12:12:40.589Z'
 createdBy: Justin Murray
-updated: '2026-10-16T12:14:06.930Z'
+updated: '2026-10-16T19:54:46.033Z'
 ---
 
 `unclaimIssue` and `claimIssue --force` (`src/service/claim.ts`) release or override a claim held in another worktree or branch by writing a local version whose `updated` timestamp supersedes `elsewhere.updated`.
