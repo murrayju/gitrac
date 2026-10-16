@@ -12,6 +12,7 @@ describe('readGitIdentity', () => {
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'gitrac-identity-'));
     await simpleGit(dir).init();
+    await simpleGit(dir).addConfig('commit.gpgsign', 'false');
   });
 
   afterEach(async () => {

@@ -57,6 +57,7 @@ describe('initProject', () => {
     await rm(join(fx.dir, '.issues'), { recursive: true });
     const git = simpleGit(fx.dir);
     await git.init();
+    await git.addConfig('commit.gpgsign', 'false');
     await git.raw(['symbolic-ref', 'HEAD', 'refs/heads/master']);
     const result = await initProject(fx.context());
     expect(result.config.git.defaultBranch).toBe('master');

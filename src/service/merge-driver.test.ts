@@ -69,6 +69,7 @@ describe('merge driver git config', () => {
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'gitrac-service-md-'));
     await simpleGit(dir).init();
+    await simpleGit(dir).addConfig('commit.gpgsign', 'false');
   });
   afterEach(() => rm(dir, { recursive: true, force: true }));
 

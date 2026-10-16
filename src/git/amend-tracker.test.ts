@@ -11,6 +11,7 @@ beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'gitrac-amend-test-'));
   const git = simpleGit(dir);
   await git.init();
+  await git.addConfig('commit.gpgsign', 'false');
   await git.addConfig('user.email', 'test@test.com');
   await git.addConfig('user.name', 'Test');
   // Create initial commit
@@ -575,6 +576,7 @@ describe('AmendTracker', () => {
       try {
         const git = simpleGit(rootDir);
         await git.init();
+        await git.addConfig('commit.gpgsign', 'false');
         await git.addConfig('user.email', 'test@test.com');
         await git.addConfig('user.name', 'Test');
         await Bun.write(join(rootDir, 'issue.md'), '---\nid: 1\n---\n');

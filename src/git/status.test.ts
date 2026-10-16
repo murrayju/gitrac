@@ -22,6 +22,7 @@ beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'gitrac-git-test-'));
   const git = simpleGit(dir);
   await git.init();
+  await git.addConfig('commit.gpgsign', 'false');
   await git.addConfig('user.email', 'test@test.com');
   await git.addConfig('user.name', 'Test');
 });

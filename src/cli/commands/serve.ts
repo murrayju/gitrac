@@ -1,7 +1,6 @@
 import type { Command } from 'commander';
 import { GitracError, invalidInput } from '../../core/errors.ts';
 import { readConfig } from '../../fs/issue-store.ts';
-import { startServer } from '../../web/server.ts';
 import { getGlobalOptions, resolveProjectRoot } from '../global-options.ts';
 
 export interface ServeOptions {
@@ -69,6 +68,9 @@ export async function runServe(options: ServeOptions): Promise<void> {
   }
   const dir = await resolveProjectRoot(options.dir);
   const config = await readConfig(dir);
+  // Load the web server only here. Other CLI commands then do not load Hono
+  // and the web routes at startup.
+  const { startServer } = await import('../../web/server.ts');
   try {
     await startServer({ dir, port, host, config, author: options.author });
   } catch (err) {

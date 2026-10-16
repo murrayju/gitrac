@@ -42,6 +42,7 @@ describe('writeIssuesGitignore', () => {
   test('makes git ignore drafts', async () => {
     const git = simpleGit(dir);
     await git.init();
+    await git.addConfig('commit.gpgsign', 'false');
     await writeIssuesGitignore(dir);
     await mkdir(join(dir, '.issues', 'drafts'));
     await writeFile(join(dir, '.issues', 'drafts', 'd.json'), '{}');

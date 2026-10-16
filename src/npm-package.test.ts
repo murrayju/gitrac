@@ -18,9 +18,18 @@ const PLATFORM_SUFFIX = `cli-${process.platform}-${process.arch}`;
 let dir: string;
 let binaries: string;
 
-/** A stand-in binary: prints its args and exits with $FAKE_EXIT (default 0). */
-const FAKE_BINARY =
-  '#!/bin/sh\necho "fake gitrac $*"\nexit "${FAKE_EXIT:-0}"\n';
+/**
+ * A stand-in binary: prints its args and exits with $FAKE_EXIT (default 0).
+ * The script does not use the `${VAR:-default}` shell form, because Biome
+ * reads `${` in a plain string as a template placeholder.
+ */
+const FAKE_BINARY = [
+  '#!/bin/sh',
+  'echo "fake gitrac $*"',
+  '[ -n "$FAKE_EXIT" ] || FAKE_EXIT=0',
+  'exit "$FAKE_EXIT"',
+  '',
+].join('\n');
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'gitrac-npm-'));

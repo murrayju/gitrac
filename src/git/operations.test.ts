@@ -17,6 +17,7 @@ beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'gitrac-ops-test-'));
   const git = simpleGit(dir);
   await git.init();
+  await git.addConfig('commit.gpgsign', 'false');
   await git.addConfig('user.email', 'test@test.com');
   await git.addConfig('user.name', 'Test');
   // Create initial commit so HEAD exists
@@ -198,6 +199,7 @@ describe('commitIssueChange', () => {
       try {
         const git = simpleGit(fresh);
         await git.init();
+        await git.addConfig('commit.gpgsign', 'false');
         await git.addConfig('user.email', 'test@test.com');
         await git.addConfig('user.name', 'Test');
         await Bun.write(join(fresh, 'code.txt'), 'secret');

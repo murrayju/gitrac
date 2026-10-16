@@ -404,6 +404,7 @@ describe('startServer', () => {
   async function gitDir(): Promise<void> {
     const git = simpleGit(dir);
     await git.init();
+    await git.addConfig('commit.gpgsign', 'false');
     await git.raw(['checkout', '-b', 'main']);
   }
 
