@@ -5,6 +5,7 @@ import {
   type ClosedElsewhere,
   describeLocation,
   type ElsewhereMarks,
+  type FoundElsewhere,
 } from '../core/elsewhere.ts';
 import type { Comment, Issue, OutputFormat } from '../core/types.ts';
 
@@ -47,18 +48,27 @@ export function describeCloseElsewhere(closed: ClosedElsewhere): string {
   return `closed (${closed.status}) ${describeLocation(closed)}`;
 }
 
-/** The human description of `mark` (a claim or a close elsewhere), if any. */
+/** `only on branch X` / `only in worktree P (branch X)`. */
+export function describeFoundElsewhere(found: FoundElsewhere): string {
+  return `only ${describeLocation(found)}`;
+}
+
+/**
+ * The human description of `mark` (a claim or a close elsewhere, or an
+ * issue that is only elsewhere), if any.
+ */
 function describeMark(mark: ElsewhereMarks | undefined): string | undefined {
   if (mark?.claimedElsewhere)
     return describeClaimElsewhere(mark.claimedElsewhere);
   if (mark?.closedElsewhere)
     return describeCloseElsewhere(mark.closedElsewhere);
+  if (mark?.foundElsewhere) return describeFoundElsewhere(mark.foundElsewhere);
   return undefined;
 }
 
 /**
- * The issue as output by json/yaml: plus `claimedElsewhere` or
- * `closedElsewhere` when set.
+ * The issue as output by json/yaml: plus `claimedElsewhere`,
+ * `closedElsewhere` or `foundElsewhere` when set.
  */
 function issueData(issue: Issue, marks?: MarksElsewhere): object {
   const mark = marks?.get(issue.id);
@@ -164,7 +174,7 @@ function formatHumanDetail(
     `Status:     ${issue.status}`,
     `Priority:   ${issue.priority}`,
     `Assignee:   ${issue.assignee || '-'}`,
-    ...(where ? [`Elsewhere:  ${where} (${when})`] : []),
+    ...(where ? [`Elsewhere:  ${where}${when ? ` (${when})` : ''}`] : []),
     `Labels:     ${issue.labels.length > 0 ? issue.labels.join(', ') : '-'}`,
     ...dependencyLines(issue, deps),
     `Created:    ${issue.created} by ${issue.createdBy}`,
@@ -187,8 +197,9 @@ function formatHumanDetail(
 
 /**
  * Format a list of issues in the specified output format. `marks` flags
- * issues claimed or closed on another branch or worktree (json/yaml: a
- * `claimedElsewhere` or `closedElsewhere` field).
+ * issues claimed or closed on another branch or worktree, or only found
+ * there (json/yaml: a `claimedElsewhere`, `closedElsewhere` or
+ * `foundElsewhere` field).
  */
 export function formatIssueList(
   issues: Issue[],
@@ -216,7 +227,8 @@ export function formatIssueList(
  * Format a single issue detail in the specified output format. json/yaml are
  * the issue itself (`parent` / `blockedBy` included when set), plus
  * `claimedElsewhere` or `closedElsewhere` when `mark` says it is claimed or
- * closed on another branch or worktree. `deps` (resolved links) adds the
+ * closed on another branch or worktree, or `foundElsewhere` when it is only
+ * there. `deps` (resolved links) adds the
  * linked issues to the human output and, in json/yaml, a `dependencies`
  * field (`{ parent, children, blockedBy, blocks, blocked }`).
  */

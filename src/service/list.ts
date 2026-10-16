@@ -1,9 +1,11 @@
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import {
   type ElsewhereMarks,
   elsewhereMarks,
+  type IssueOnlyElsewhere,
   type IssueStateElsewhere,
+  issuesOnlyElsewhere,
 } from '../core/elsewhere.ts';
 import { parseIssueFile } from '../core/issue.ts';
 import {
@@ -76,6 +78,9 @@ async function loadDirs(dir: string): Promise<{
   return { open, closed, unreadable };
 }
 
+/** Issue versions found elsewhere, by ID (`issueStatesElsewhere`). */
+type States = ReadonlyMap<number, readonly IssueStateElsewhere[]>;
+
 /**
  * List issues matching `query` (read-only; no lock). Loads `.issues/` and
  * `.issues/closed/`, then filters and sorts with {@link queryIssues}. The
@@ -85,19 +90,99 @@ async function loadDirs(dir: string): Promise<{
  * write of the issue moves its file (see `relocateIssue`). Used by both
  * `gitrac ls` and `GET /api/issues`. Unreadable files are skipped and
  * reported.
+ *
+ * With `options.elsewhere` (a scan with `withIssues`, maybe cached),
+ * `elsewhere` gives the issues that have no file here but exist in another
+ * worktree or on another branch (newest version, see `issuesOnlyElsewhere`),
+ * filtered and sorted per `query` too. Else it is empty.
  */
 export async function listIssues(
   dir: string,
   query: IssueQuery,
   config: QueryConfig,
-): Promise<IssueListing & { misplaced: string[] }> {
-  const { open, closed, unreadable } = await loadDirs(dir);
+  options: { elsewhere?: States | Promise<States> } = {},
+): Promise<
+  IssueListing & { misplaced: string[]; elsewhere: IssueOnlyElsewhere[] }
+> {
+  const [{ open, closed, unreadable }, states] = await Promise.all([
+    loadDirs(dir),
+    options.elsewhere,
+  ]);
   const misplaced = [
     ...open.filter((f) => isClosedStatus(config, f.issue.status)),
     ...closed.filter((f) => !isClosedStatus(config, f.issue.status)),
   ].map((f) => f.path);
   const issues = [...open, ...closed].map((f) => f.issue);
-  return { issues: queryIssues(issues, query, config), unreadable, misplaced };
+  return {
+    issues: queryIssues(issues, query, config),
+    unreadable,
+    misplaced,
+    elsewhere: states
+      ? queryElsewhere(localIds(issues, unreadable), states, query, config)
+      : [],
+  };
+}
+
+/**
+ * The IDs that have a file in this working tree: those of `issues` and of
+ * the `unreadable` files (by file name), so a broken local file doesn't
+ * make its ID look like it's only elsewhere.
+ */
+function localIds(
+  issues: readonly Issue[],
+  unreadable: readonly string[],
+): Set<number> {
+  const ids = new Set(issues.map((i) => i.id));
+  for (const path of unreadable) {
+    const id = parseIssueId(basename(path));
+    if (id !== null) ids.add(id);
+  }
+  return ids;
+}
+
+/** `issuesOnlyElsewhere`, with their issues filtered and sorted by `query`. */
+function queryElsewhere(
+  ids: ReadonlySet<number>,
+  states: States,
+  query: IssueQuery,
+  config: QueryConfig,
+): IssueOnlyElsewhere[] {
+  const found = issuesOnlyElsewhere(ids, states);
+  const byId = new Map(found.map((f) => [f.issue.id, f]));
+  const issues = queryIssues(
+    found.map((f) => f.issue),
+    query,
+    config,
+  );
+  return issues.flatMap((issue) => {
+    const f = byId.get(issue.id);
+    return f ? [f] : [];
+  });
+}
+
+/**
+ * Every issue's versions elsewhere, with their parsed issues (for
+ * `listIssues`' `elsewhere` option and `marksFromStates`). Read-only; one
+ * scan.
+ */
+export function scanElsewhere(dir: string): Promise<States> {
+  return issueStatesElsewhere(dir, { withIssues: true });
+}
+
+/**
+ * Issue `id` as found in another worktree or on another branch (its newest
+ * version and where), for when this working tree has no file for it; null
+ * if there's none. Read-only; one scan.
+ */
+export async function findIssueElsewhere(
+  dir: string,
+  id: number,
+): Promise<IssueOnlyElsewhere | null> {
+  const states = await issueStatesElsewhere(dir, {
+    ids: [id],
+    withIssues: true,
+  });
+  return issuesOnlyElsewhere(new Set(), states)[0] ?? null;
 }
 
 /**

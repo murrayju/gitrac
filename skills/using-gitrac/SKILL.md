@@ -71,6 +71,7 @@ gitrac --version
 | `gitrac install-merge-driver` | Once per clone: issue-aware `git merge`/`rebase` for `.issues/` (`init` does it too); also commits `.issues/.gitignore` (ignores web UI `drafts/`) if missing |
 | `gitrac ls -o json` | Machine-readable output |
 | `gitrac ls --mine` | Issues assigned to you |
+| `gitrac ls --elsewhere` | Also list issues that exist only in another worktree or on an unmerged branch |
 | `gitrac ls --priority urgent,high --label bug` | Filters take comma-separated values (any of); `--status all` includes closed |
 | `gitrac ls --search "login timeout"` | Title/description contains every word |
 | `gitrac serve -p 4000` | Start the web UI (bare `gitrac` also serves, on :3000). Binds 127.0.0.1; `--host 0.0.0.0` exposes it to the network (no auth). Web changes are attributed to your git `user.name` (or `--author`); the sidebar's "Acting as" picker can switch to a configured assignee |
@@ -156,7 +157,8 @@ Recommended workflow when an orchestrator runs several agents at once:
 2. Each agent runs gitrac **inside its own worktree** and claims there: `gitrac claim <id>` (or `gitrac next --claim`). The claim is visible to every other worktree immediately — committed or not — so other agents' `claim` fails with exit 3 and their `ready`/`next` skip it. Agents sharing one git identity still get different issues from `next --claim`.
 3. When done, the agent closes with `gitrac close <id> --no-commit -c "summary"` and commits the code and the issue file together on its branch. Until that branch is merged, the issue no longer shows up in `ready`/`next` elsewhere.
 4. If an agent gives up or dies, release its claim from anywhere (e.g. the main worktree): `gitrac unclaim <id>` (add `--force` if the agent used a different identity). The newer release supersedes the claim in its worktree, so `ready`/`next` offer the issue again.
-5. The orchestrator merges the branches; the gitrac merge driver (below) merges the `.issues/` files. Delete merged/abandoned agent branches so stale claims don't linger.
+5. Agents can file new issues (bugs found, sub-tasks) with `gitrac create` in their worktree. Before the branch is merged, the orchestrator sees them from `main` with `gitrac ls --elsewhere` (marked `[only in worktree P (branch X)]` / `[only on branch X]`; `foundElsewhere` in `-o json`) and `gitrac show <id>` (a stderr note says where the version comes from). They are read-only there: `claim`, `edit`, `close` etc. need the file, so merge the branch first (exit 5 until then).
+6. The orchestrator merges the branches; the gitrac merge driver (below) merges the `.issues/` files. Delete merged/abandoned agent branches so stale claims don't linger.
 
 ## Merging Branches
 

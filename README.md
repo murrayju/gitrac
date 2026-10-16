@@ -250,7 +250,7 @@ The server binds to `127.0.0.1` by default and rejects cross-origin and DNS-rebi
 |---|---|
 | `init` | Create `.issues/` and install the merge driver |
 | `create` / `new` | Create an issue: `-t` title, `-d`/`--description-file`, `-p`, `-l`, `-a`, `-s` |
-| `list` / `ls` | List issues: `--status` (`all`), `--priority`, `--label`, `--assignee`, `--mine`, `--search`, `--sort`. Multi-value filters are comma-separated |
+| `list` / `ls` | List issues: `--status` (`all`), `--priority`, `--label`, `--assignee`, `--mine`, `--search`, `--sort`, `--elsewhere` (also issues only in other worktrees/branches). Multi-value filters are comma-separated |
 | `show` / `view <id>` | Show an issue with comments, dependencies and claims elsewhere |
 | `edit <id>` | Change title, status, priority, assignee, labels, description |
 | `comment` / `c <id> [body]` | Add a comment (argument, `--body-file`, or stdin) |

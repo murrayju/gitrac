@@ -199,6 +199,24 @@ describe('issueStatesElsewhere', () => {
     ]);
   });
 
+  test('withIssues keeps the parsed issue of each version (#107)', async () => {
+    const wt = join(tmp, 'wt-1');
+    await simpleGit(repo).raw(['worktree', 'add', '-b', 'agent-1', wt]);
+    const created = makeIssue({ id: 3, title: 'New', ...CLAIMED });
+    await writeIssue(wt, created);
+    await commitAll(wt, 'create #3');
+
+    const states = await issueStatesElsewhere(repo, { withIssues: true });
+    expect(states.get(3)).toEqual([
+      { ref: 'agent-1', worktree: wt, ...CLAIMED, issue: created },
+      { ref: 'agent-1', ...CLAIMED, issue: created },
+    ]);
+    // Without it, no issue (as before).
+    expect((await issueStatesElsewhere(repo)).get(3)?.[0]).not.toHaveProperty(
+      'issue',
+    );
+  });
+
   test('outside a git repo: empty', async () => {
     const plain = join(tmp, 'plain');
     await mkdir(plain);

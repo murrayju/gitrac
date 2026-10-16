@@ -29,6 +29,26 @@ export interface IssueStateElsewhere {
   status: Status;
   assignee: string;
   updated: string;
+  /**
+   * The full parsed issue of this version; only set when the scan was asked
+   * for it (`withIssues`), e.g. to show issues that are only elsewhere.
+   */
+  issue?: Issue;
+}
+
+/**
+ * Where an issue was found when this working tree has no file for it (e.g.
+ * an agent created it in its worktree or on its branch, not merged yet).
+ */
+export interface FoundElsewhere {
+  ref: string;
+  worktree?: string;
+}
+
+/** An issue that exists only elsewhere: its newest version and where. */
+export interface IssueOnlyElsewhere {
+  issue: Issue;
+  foundElsewhere: FoundElsewhere;
 }
 
 /** Where (and by whom) an issue is claimed, when that's not this working tree. */
@@ -53,12 +73,15 @@ export interface ClosedElsewhere {
 
 /**
  * Marks for an issue whose effective state is on another branch or in
- * another worktree. At most one is set: the newest version is either a claim
- * or a close.
+ * another worktree. At most one of `claimedElsewhere` and `closedElsewhere`
+ * is set: the newest version is either a claim or a close.
+ * `foundElsewhere` is set alone, on an issue that has no file in this
+ * working tree (see {@link issuesOnlyElsewhere}).
  */
 export interface ElsewhereMarks {
   claimedElsewhere?: ClaimedElsewhere;
   closedElsewhere?: ClosedElsewhere;
+  foundElsewhere?: FoundElsewhere;
 }
 
 /** Whether ISO timestamp `a` is later than `b` (string order if unparseable). */
@@ -85,6 +108,36 @@ export function newestElsewhere(
     }
   }
   return newest;
+}
+
+/**
+ * The issues that have no file in this working tree (their ID is not in
+ * `localIds`) but have a version elsewhere, by ascending ID. For each, the
+ * newest version in `states` that has its parsed issue (by `updated`; ties
+ * go to the earlier state, so worktrees win over branches), plus where it
+ * was found.
+ */
+export function issuesOnlyElsewhere(
+  localIds: ReadonlySet<number>,
+  states: ReadonlyMap<number, readonly IssueStateElsewhere[]>,
+): IssueOnlyElsewhere[] {
+  const found: IssueOnlyElsewhere[] = [];
+  for (const [id, list] of states) {
+    if (localIds.has(id)) continue;
+    let newest: IssueStateElsewhere | undefined;
+    for (const state of list) {
+      if (state.issue && (!newest || isLater(state.updated, newest.updated))) {
+        newest = state;
+      }
+    }
+    if (!newest?.issue) continue;
+    const { ref, worktree } = newest;
+    found.push({
+      issue: newest.issue,
+      foundElsewhere: worktree === undefined ? { ref } : { ref, worktree },
+    });
+  }
+  return found.sort((a, b) => a.issue.id - b.issue.id);
 }
 
 /**

@@ -1,8 +1,14 @@
 import type { Command } from 'commander';
+import type { ElsewhereMarks } from '../../core/elsewhere.ts';
 import { parseIssueQuery, SORT_FIELDS } from '../../core/query.ts';
 import { readConfig } from '../../fs/issue-store.ts';
 import { getBranchWarning } from '../../git/status.ts';
-import { findMarksElsewhere, listIssues } from '../../service/list.ts';
+import {
+  findMarksElsewhere,
+  listIssues,
+  marksFromStates,
+  scanElsewhere,
+} from '../../service/list.ts';
 import { resolveProjectOptions } from '../global-options.ts';
 import { formatIssueList } from '../output.ts';
 import { resolveClaimUser } from '../service-context.ts';
@@ -39,6 +45,10 @@ export function registerListCommand(program: Command): void {
       'Only issues whose title or description contains every word of <text>',
     )
     .option('--sort <field>', `Sort by field (${SORT_FIELDS.join(', ')})`, 'id')
+    .option(
+      '--elsewhere',
+      'Also list issues that exist only in another worktree or on another branch',
+    )
     .action(
       async (options: {
         status?: string[];
@@ -48,6 +58,7 @@ export function registerListCommand(program: Command): void {
         priority?: string[];
         search?: string;
         sort?: string;
+        elsewhere?: boolean;
       }) => {
         const globalOpts = await resolveProjectOptions(program);
         const { dir } = globalOpts;
@@ -63,10 +74,14 @@ export function registerListCommand(program: Command): void {
           console.warn(`Warning: ${warning}`);
         }
 
-        const { issues, unreadable, misplaced } = await listIssues(
+        // `--elsewhere`: one scan of every issue (with the parsed issues)
+        // gives both the issues only elsewhere and the marks.
+        const states = options.elsewhere ? scanElsewhere(dir) : undefined;
+        const { issues, unreadable, misplaced, elsewhere } = await listIssues(
           dir,
           query,
           config,
+          { elsewhere: states },
         );
         for (const path of unreadable) {
           console.warn(`Warning: skipping unreadable issue file ${path}`);
@@ -77,8 +92,19 @@ export function registerListCommand(program: Command): void {
           );
         }
 
-        const marks = await findMarksElsewhere(dir, issues, config);
-        console.log(formatIssueList(issues, globalOpts.output, marks));
+        const marks: Map<number, ElsewhereMarks> = states
+          ? marksFromStates(issues, config, await states)
+          : await findMarksElsewhere(dir, issues, config);
+        for (const { issue, foundElsewhere } of elsewhere) {
+          marks.set(issue.id, { foundElsewhere });
+        }
+        console.log(
+          formatIssueList(
+            [...issues, ...elsewhere.map((e) => e.issue)],
+            globalOpts.output,
+            marks,
+          ),
+        );
       },
     );
 }

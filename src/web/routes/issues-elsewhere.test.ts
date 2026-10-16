@@ -15,8 +15,8 @@ import {
   writeIssue,
 } from '../../fs/issue-store.ts';
 import { AmendTracker } from '../../git/amend-tracker.ts';
-import { issueStatesElsewhere } from '../../git/elsewhere.ts';
 import { IdentityResolver } from '../../git/identity.ts';
+import { scanElsewhere } from '../../service/list.ts';
 import { ElsewhereCache } from '../elsewhere-cache.ts';
 import type { ServerContext } from '../server.ts';
 import { createApp } from '../server.ts';
@@ -110,7 +110,7 @@ beforeEach(async () => {
     generation: () => ctx.watcher.generation(),
     scan: (dir) => {
       clock.scans++;
-      return issueStatesElsewhere(dir);
+      return scanElsewhere(dir);
     },
   });
 });
@@ -345,5 +345,44 @@ describe('closedElsewhere in the web API (#93)', () => {
     expect(res.status).toBe(409);
     const body = (await res.json()) as { current: Served };
     expect(body.current.closedElsewhere).toEqual({ ...CLOSED, worktree: wt1 });
+  });
+});
+
+/** Regression tests for #107: issues that exist only elsewhere. */
+describe('foundElsewhere in the web API', () => {
+  type Found = Served & { foundElsewhere?: { ref: string; worktree?: string } };
+
+  test('?elsewhere=1 adds issues only in another worktree or on a branch', async () => {
+    // Uncommitted in the agent's worktree.
+    await writeIssue(wt1, makeIssue({ id: 3, title: 'Found a bug' }));
+    // Committed on a branch not checked out anywhere.
+    const git = simpleGit(main);
+    await git.checkout(['-b', 'other']);
+    await writeIssue(
+      main,
+      makeIssue({ id: 4, title: 'Sub task', labels: ['chore'] }),
+    );
+    // Also a newer version of #1 there: #1 is still listed once.
+    await claimIn(main, 1, WHERE.updated);
+    await git.add('.');
+    await git.commit('create #4');
+    await git.checkout('main');
+
+    // Without the parameter: unchanged.
+    expect((await get<Found[]>('/issues')).map((i) => i.id)).toEqual([1, 2]);
+
+    const list = await get<Found[]>('/issues?elsewhere=1');
+    expect(list.map((i) => [i.id, i.foundElsewhere])).toEqual([
+      [1, undefined],
+      [2, undefined],
+      [3, { ref: 'agent-1', worktree: wt1 }],
+      [4, { ref: 'other' }],
+    ]);
+    expect(list[0]?.claimedElsewhere?.ref).toBe('other');
+    // Filters apply to them too.
+    const chores = await get<Found[]>('/issues?elsewhere=1&label=chore');
+    expect(chores.map((i) => i.id)).toEqual([4]);
+    // One cached scan for all of it.
+    expect(clock.scans).toBe(1);
   });
 });

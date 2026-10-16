@@ -177,8 +177,8 @@ async function errorResponse(
 }
 
 /**
- * An issue as served: plus `claimedElsewhere` or `closedElsewhere` when set
- * (as in the CLI's JSON).
+ * An issue as served: plus `claimedElsewhere` or `closedElsewhere` when set,
+ * or `foundElsewhere` for an issue only elsewhere (as in the CLI's JSON).
  */
 type ServedIssue = Issue & ElsewhereMarks;
 
@@ -255,8 +255,20 @@ export function issueRoutes(ctx: ServerContext): Hono {
     } catch (err) {
       return errorResponse(c, ctx, err);
     }
-    const { issues } = await listIssues(dir, query, config);
-    return c.json(await withClaims(ctx, issues));
+    // `elsewhere=1`: also the issues that exist only in another worktree or
+    // on another branch, after the local ones (from the cached scan).
+    const { issues, elsewhere } = await listIssues(dir, query, config, {
+      elsewhere: isTruthy(c.req.query('elsewhere'))
+        ? elsewhereCache(ctx).states()
+        : undefined,
+    });
+    return c.json([
+      ...(await withClaims(ctx, issues)),
+      ...elsewhere.map(({ issue, foundElsewhere }) => ({
+        ...issue,
+        foundElsewhere,
+      })),
+    ]);
   });
 
   // GET /issues/:id — get a single issue

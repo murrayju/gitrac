@@ -52,12 +52,21 @@ async function realpathOrSelf(path: string): Promise<string> {
   }
 }
 
+/** Options of {@link issueStatesElsewhere}. */
+export interface ScanOptions {
+  /** Only these issue IDs (default: all). */
+  ids?: Iterable<number>;
+  /** Keep each version's parsed issue in `IssueStateElsewhere.issue`. */
+  withIssues?: boolean;
+}
+
 /** Parse an issue file's content into a state; null if malformed. */
 function toState(
   content: string,
   id: number,
   path: string,
   where: Pick<IssueStateElsewhere, 'ref' | 'worktree'>,
+  withIssues: boolean,
 ): IssueStateElsewhere | null {
   try {
     const issue = parseIssueFile(content, { id, path });
@@ -66,6 +75,7 @@ function toState(
       status: issue.status,
       assignee: issue.assignee,
       updated: issue.updated,
+      ...(withIssues ? { issue } : {}),
     };
   } catch {
     return null;
@@ -80,7 +90,8 @@ function wanted(id: number | null, ids?: ReadonlySet<number>): id is number {
 async function worktreeStates(
   root: string,
   worktree: Worktree,
-  ids?: ReadonlySet<number>,
+  ids: ReadonlySet<number> | undefined,
+  withIssues: boolean,
 ): Promise<{ id: number; state: IssueStateElsewhere }[]> {
   const found: { id: number; state: IssueStateElsewhere }[] = [];
   for (const sub of ['', 'closed']) {
@@ -97,10 +108,16 @@ async function worktreeStates(
         if (!file.endsWith('.md') || !wanted(id, ids)) return;
         try {
           const content = await readFile(join(dir, file), 'utf-8');
-          const state = toState(content, id, join('.issues', sub, file), {
-            ref: worktree.ref,
-            worktree: worktree.path,
-          });
+          const state = toState(
+            content,
+            id,
+            join('.issues', sub, file),
+            {
+              ref: worktree.ref,
+              worktree: worktree.path,
+            },
+            withIssues,
+          );
           if (state) found.push({ id, state });
         } catch {
           // Unreadable (e.g. removed meanwhile): skip.
@@ -123,14 +140,16 @@ async function worktreeStates(
  * worktree's `HEAD` (it's already here). Uses five git processes regardless
  * of the number of refs (`for-each-ref`, `worktree list`, one
  * `cat-file --batch-check` and two `cat-file --batch`), plus plain file reads
- * of the other worktrees. Best effort: an empty map outside a git repo or on
- * error.
+ * of the other worktrees. With `withIssues`, each state also has the full
+ * parsed issue (from the same reads), e.g. to show issues that are only
+ * elsewhere. Best effort: an empty map outside a git repo or on error.
  */
 export async function issueStatesElsewhere(
   dir: string,
-  options: { ids?: Iterable<number> } = {},
+  options: ScanOptions = {},
 ): Promise<Map<number, IssueStateElsewhere[]>> {
   const ids = options.ids === undefined ? undefined : new Set(options.ids);
+  const withIssues = options.withIssues === true;
   const result = new Map<number, IssueStateElsewhere[]>();
   if (ids?.size === 0) return result;
   const add = (id: number, state: IssueStateElsewhere) => {
@@ -167,7 +186,7 @@ export async function issueStatesElsewhere(
   const prefix = current ? relative(current.real, here) : '';
   const others = worktrees.filter((w) => w !== current);
   const fromWorktrees = await Promise.all(
-    others.map((w) => worktreeStates(join(w.path, prefix), w, ids)),
+    others.map((w) => worktreeStates(join(w.path, prefix), w, ids, withIssues)),
   );
   for (const found of fromWorktrees) {
     for (const { id, state } of found) add(id, state);
@@ -232,7 +251,13 @@ export async function issueStatesElsewhere(
   for (const [oid, { id, path, ref }] of blobs) {
     const object = contents.get(oid);
     if (!object) continue;
-    const state = toState(decoder.decode(object.content), id, path, { ref });
+    const state = toState(
+      decoder.decode(object.content),
+      id,
+      path,
+      { ref },
+      withIssues,
+    );
     if (state) add(id, state);
   }
   return result;

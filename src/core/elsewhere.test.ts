@@ -8,8 +8,10 @@ import {
   elsewhereMarks,
   type IssueStateElsewhere,
   isLater,
+  issuesOnlyElsewhere,
   newestElsewhere,
 } from './elsewhere.ts';
+import type { Issue } from './types.ts';
 
 /** Regression tests for #56: claims visible across worktrees and branches. */
 
@@ -225,5 +227,63 @@ describe('describeLocation', () => {
     expect(describeLocation({ ref: 'HEAD', worktree: '/wt' })).toBe(
       'in worktree /wt (detached HEAD)',
     );
+  });
+});
+
+/** Regression tests for #107: issues that exist only elsewhere. */
+describe('issuesOnlyElsewhere', () => {
+  function issue(id: number, title: string): Issue {
+    return {
+      id,
+      title,
+      status: 'todo',
+      priority: 'medium',
+      assignee: '',
+      labels: [],
+      created: '2026-01-01T00:00:00Z',
+      createdBy: 'tester',
+      updated: '2026-01-01T00:00:00Z',
+      description: '',
+      comments: [],
+    };
+  }
+
+  test('newest version of each ID with no local file, by ID', () => {
+    const states = new Map<number, IssueStateElsewhere[]>([
+      [
+        5,
+        [
+          state('2026-01-02T00:00:00Z', {
+            worktree: '/wt',
+            ref: 'a',
+            issue: issue(5, 'Old'),
+          }),
+          state('2026-01-03T00:00:00Z', { ref: 'b', issue: issue(5, 'New') }),
+          // Ties go to the earlier state.
+          state('2026-01-03T00:00:00Z', { ref: 'c', issue: issue(5, 'Tie') }),
+        ],
+      ],
+      [1, [state('2026-01-02T00:00:00Z', { issue: issue(1, 'Local') })]],
+      [
+        3,
+        [
+          state('2026-01-02T00:00:00Z', {
+            ref: 'a',
+            worktree: '/wt',
+            issue: issue(3, 'Three'),
+          }),
+          // Without the parsed issue (not asked for): ignored.
+          state('2026-01-09T00:00:00Z', { ref: 'z' }),
+        ],
+      ],
+      [4, [state('2026-01-02T00:00:00Z')]],
+    ]);
+    expect(issuesOnlyElsewhere(new Set([1]), states)).toEqual([
+      {
+        issue: issue(3, 'Three'),
+        foundElsewhere: { ref: 'a', worktree: '/wt' },
+      },
+      { issue: issue(5, 'New'), foundElsewhere: { ref: 'b' } },
+    ]);
   });
 });

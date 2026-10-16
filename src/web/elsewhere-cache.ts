@@ -1,8 +1,7 @@
 import type { ElsewhereMarks, IssueStateElsewhere } from '../core/elsewhere.ts';
 import type { Issue } from '../core/types.ts';
 import type { WorkflowConfig } from '../core/workflow.ts';
-import { issueStatesElsewhere } from '../git/elsewhere.ts';
-import { marksFromStates } from '../service/list.ts';
+import { marksFromStates, scanElsewhere } from '../service/list.ts';
 
 /**
  * How long a scan of other worktrees/branches (`issueStatesElsewhere`) is
@@ -23,7 +22,10 @@ export interface ElsewhereCacheOptions {
    * a cached scan is dropped as soon as it moves.
    */
   generation?: () => number;
-  /** The scan (default: every issue, via `issueStatesElsewhere`). */
+  /**
+   * The scan (default: every issue, with their parsed issues, via
+   * `scanElsewhere`).
+   */
   scan?: (dir: string) => Promise<States>;
   now?: () => number;
 }
@@ -38,8 +40,9 @@ interface Entry {
  * Short-lived cache of the issue versions found on other branches and in
  * other worktrees, so list polling and SSE refetch bursts in the web server
  * share one scan (five git processes plus file reads) instead of running
- * one per request. Scans every issue, so the list and single-issue routes
- * share it; concurrent requests share an in-flight scan. Entries expire
+ * one per request. Scans every issue (with the parsed issues, for
+ * `GET /api/issues?elsewhere=1`), so the list and single-issue routes share
+ * it; concurrent requests share an in-flight scan. Entries expire
  * after `ttlMs` or when this worktree's `.issues/` changes (file watcher).
  *
  * Read-only use only: mutations (e.g. claim) scan fresh, under the lock.
@@ -57,7 +60,7 @@ export class ElsewhereCache {
   ) {
     this.ttlMs = options.ttlMs ?? ELSEWHERE_CACHE_TTL_MS;
     this.generation = options.generation ?? (() => 0);
-    this.scan = options.scan ?? ((d) => issueStatesElsewhere(d));
+    this.scan = options.scan ?? scanElsewhere;
     this.now = options.now ?? Date.now;
   }
 

@@ -376,3 +376,88 @@ describe('closes across worktrees and branches (#93)', () => {
     );
   });
 });
+
+/** Regression tests for #107: issues created in other worktrees / on branches. */
+describe('issues that exist only elsewhere', () => {
+  type Found = Listed & {
+    title: string;
+    foundElsewhere?: { ref: string; worktree?: string };
+  };
+
+  test('ls --elsewhere and show see them; mutations still need the local file', async () => {
+    // Uncommitted in an agent's worktree.
+    await ok(wt1, 'Bob', 'create', '-t', 'Found a bug', '--no-commit');
+    // Committed on a branch whose worktree is gone.
+    await ok(wt2, 'Cy', 'create', '-t', 'Sub task', '-l', 'chore');
+    await simpleGit(main).raw(['worktree', 'remove', wt2]);
+    const inWt1 = `in worktree ${wt1} (branch agent-1)`;
+
+    // Without the flag, ls is unchanged.
+    expect((await json<Found[]>(main, 'Ada', 'ls')).map((i) => i.id)).toEqual([
+      1, 2,
+    ]);
+
+    const listed = await json<Found[]>(main, 'Ada', 'ls', '--elsewhere');
+    expect(listed.map((i) => [i.id, i.title, i.foundElsewhere])).toEqual([
+      [1, 'First', undefined],
+      [2, 'Second', undefined],
+      [3, 'Found a bug', { ref: 'agent-1', worktree: wt1 }],
+      [4, 'Sub task', { ref: 'agent-2' }],
+    ]);
+    const human = await ok(main, 'Ada', 'ls', '--elsewhere');
+    expect(human).toContain(`[only ${inWt1}]`);
+    expect(human).toContain('[only on branch agent-2]');
+    // Filters apply to them too.
+    expect(
+      (
+        await json<Found[]>(
+          main,
+          'Ada',
+          'ls',
+          '--elsewhere',
+          '--label',
+          'chore',
+        )
+      ).map((i) => i.id),
+    ).toEqual([4]);
+    expect(
+      (
+        await json<Found[]>(main, 'Ada', 'ls', '--elsewhere', '--search', 'bug')
+      ).map((i) => i.id),
+    ).toEqual([3]);
+
+    // show: the version elsewhere, with a note on stderr.
+    const shown = await cli(main, 'Ada', 'show', '3');
+    expect(shown.code).toBe(0);
+    expect(shown.stdout).toContain('# #3: Found a bug');
+    expect(shown.stdout).toContain(`Elsewhere:  only ${inWt1}\n`);
+    expect(shown.stderr).toContain(
+      `Note: issue #3 is not in this working tree; showing the version ${inWt1}.`,
+    );
+    const shownJson = await json<Found>(main, 'Ada', 'show', '4');
+    expect(shownJson).toMatchObject({
+      id: 4,
+      title: 'Sub task',
+      foundElsewhere: { ref: 'agent-2' },
+    });
+    expect(shownJson.foundElsewhere).not.toHaveProperty('worktree');
+    // Nowhere at all: still not_found (exit 5).
+    expect((await cli(main, 'Ada', 'show', '9')).code).toBe(5);
+
+    // Mutations are unchanged: they need the local file.
+    expect((await cli(main, 'Ada', 'claim', '3')).code).toBe(5);
+    expect((await cli(main, 'Ada', 'close', '4')).code).toBe(5);
+  });
+
+  test('an issue that also exists locally is not duplicated', async () => {
+    // #1 edited (newer) in an agent's worktree: listed once, as the local one.
+    await ok(wt1, 'Bob', 'claim', '1', '--no-commit');
+    const listed = await json<Found[]>(main, 'Ada', 'ls', '--elsewhere');
+    expect(listed.map((i) => i.id)).toEqual([1, 2]);
+    expect(listed[0]?.foundElsewhere).toBeUndefined();
+    expect(listed[0]?.claimedElsewhere).toMatchObject({ ref: 'agent-1' });
+    // Its show is the local one, without a note.
+    const shown = await cli(main, 'Ada', 'show', '1');
+    expect(shown.stderr).not.toContain('Note:');
+  });
+});
