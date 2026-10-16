@@ -8,7 +8,7 @@ import type { Issue } from '../core/types.ts';
 import type { WorkflowConfig } from '../core/workflow.ts';
 import { issueStatesElsewhere } from '../git/elsewhere.ts';
 import { withRepoLock } from '../git/lock.ts';
-import { type ClaimResult, claimIssue } from './claim.ts';
+import { assertValidUser, type ClaimResult, claimIssue } from './claim.ts';
 import { loadConfig, type ServiceContext } from './context.ts';
 import { type IssueListing, loadAllIssues, marksFromStates } from './list.ts';
 
@@ -98,6 +98,7 @@ export async function claimNextIssue(
   options: { comment?: string } = {},
 ): Promise<ClaimResult & { unreadable: string[] }> {
   const user = await ctx.identity();
+  assertValidUser(user, options.comment, { claim: true });
   return withRepoLock(ctx.dir, async () => {
     const config = await loadConfig(ctx);
     const { issue, unreadable } = await findNextIssue(

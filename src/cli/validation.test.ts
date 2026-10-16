@@ -137,3 +137,61 @@ describe('edit validation', () => {
     expect((await readIssue(root, 1)).labels).toEqual([]);
   });
 });
+
+/** #98: line breaks and comment-header delimiters are invalid_input. */
+describe('line break and author validation', () => {
+  test.each([
+    [
+      'a title',
+      ['create', '-t', 'Two\nlines'],
+      /Invalid title: must not contain line breaks/,
+    ],
+    ['an assignee', ['create', '-t', 'New', '-a', 'a\nb'], /Invalid assignee/],
+    [
+      'a label',
+      ['create', '-t', 'New', '-l', 'ok,bad\rlabel'],
+      /Invalid labels/,
+    ],
+    ['an edited title', ['edit', '1', '-t', 'New\ntitle'], /Invalid title/],
+    ['an edited label', ['edit', '1', '-l', 'x\ny'], /Invalid labels/],
+  ])('rejects a line break in %s', async (_name, args, pattern) => {
+    const before = await snapshot();
+    const res = await cli(...args);
+    expect(res.code).toBe(EXIT_INVALID_INPUT);
+    expect(res.stderr).toMatch(pattern);
+    expect(await snapshot()).toEqual(before);
+  });
+
+  test.each([
+    ['a line break', 'Bad\nAuthor'],
+    ['an em dash', 'Bad \u2014 2026-01-01T00:00:00Z'],
+  ])('rejects an --author with %s for every write that uses it', async (_name, author) => {
+    const before = await snapshot();
+    for (const args of [
+      ['create', '-t', 'New'],
+      ['comment', '1', 'hello'],
+      ['close', '1', '--comment', 'bye'],
+      ['claim', '1', '--comment', 'mine'],
+    ]) {
+      const res = await cli('--author', author, ...args);
+      expect(res.code).toBe(EXIT_INVALID_INPUT);
+      expect(res.stderr).toContain('Invalid author');
+      expect(res.stderr).not.toMatch(/^\s+at /m);
+    }
+    expect(await snapshot()).toEqual(before);
+  });
+
+  test('-o json reports invalid_input', async () => {
+    const res = await cli(
+      '-o',
+      'json',
+      '--author',
+      'A\nB',
+      'comment',
+      '1',
+      'x',
+    );
+    expect(res.code).toBe(EXIT_INVALID_INPUT);
+    expect(JSON.parse(res.stderr).error.code).toBe('invalid_input');
+  });
+});

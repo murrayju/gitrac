@@ -715,3 +715,113 @@ describe('closeIssue / reopenIssue', () => {
     expect(open).toBeInstanceOf(ValidationError);
   });
 });
+
+describe('line breaks and comment-header delimiters (#98)', () => {
+  const BAD_AUTHORS = [
+    'Ada\nLovelace',
+    'Ada\rLovelace',
+    'Ada \u2014 2026-01-01T00:00:00Z',
+  ];
+
+  test.each([
+    [{ title: 'Two\nlines' }, 'Invalid title: must not contain line breaks'],
+    [
+      { title: 'A', assignee: 'alice\nbob' },
+      'Invalid assignee: must not contain line breaks',
+    ],
+    [
+      { title: 'A', labels: ['bug', 'x\r\ny'] },
+      'Invalid labels: a label must not contain line breaks',
+    ],
+  ])('createIssue rejects %j and writes nothing', async (fields, message) => {
+    const before = await snapshot();
+    const err = await rejection(createIssue(fx.context(), fields));
+    expect(err).toBeInstanceOf(ValidationError);
+    expect((err as ValidationError).errors).toEqual([message]);
+    expect(await snapshot()).toEqual(before);
+    expect(fx.events).toEqual([]);
+  });
+
+  test('updateIssue rejects a title, assignee or label with a line break', async () => {
+    await writeIssue(fx.dir, makeIssue({ id: 1, title: 'Old' }));
+    const before = await snapshot();
+    for (const fields of [
+      { title: 'New\ntitle' },
+      { assignee: 'a\rb' },
+      { labels: ['a\nb'] },
+    ]) {
+      const err = await rejection(updateIssue(fx.context(), 1, fields));
+      expect((err as GitracError).code).toBe('invalid_input');
+    }
+    expect(await snapshot()).toEqual(before);
+  });
+
+  test.each(
+    BAD_AUTHORS,
+  )('createIssue rejects the author %j', async (author) => {
+    const before = await snapshot();
+    const err = await rejection(
+      createIssue(fx.context(), { title: 'A' }, { author }),
+    );
+    expect(err).toBeInstanceOf(ValidationError);
+    expect((err as GitracError).code).toBe('invalid_input');
+    expect((err as GitracError).message).toStartWith('Invalid author');
+    expect(await snapshot()).toEqual(before);
+  });
+
+  test.each(BAD_AUTHORS)('addComment rejects the author %j', async (author) => {
+    await writeIssue(fx.dir, makeIssue({ id: 1 }));
+    const before = await snapshot();
+    const err = await rejection(addComment(fx.context(), 1, 'hi', { author }));
+    expect((err as GitracError).code).toBe('invalid_input');
+    expect((err as GitracError).message).toStartWith('Invalid author');
+    expect(await snapshot()).toEqual(before);
+    // The author is checked before the issue is looked up.
+    const missing = await rejection(
+      addComment(fx.context(), 99, 'hi', { author }),
+    );
+    expect((missing as GitracError).code).toBe('invalid_input');
+  });
+
+  test.each(
+    BAD_AUTHORS,
+  )('an identity named %j cannot write a comment', async (name) => {
+    const ctx = fx.context({ identity: async () => ({ name, email: '' }) });
+    await writeIssue(fx.dir, makeIssue({ id: 1 }));
+    const before = await snapshot();
+    const attempts = [
+      createIssue(ctx, { title: 'A' }),
+      addComment(ctx, 1, 'hi'),
+      updateIssue(ctx, 1, { priority: 'high' }, { comment: 'note' }),
+      closeIssue(ctx, 1, { comment: 'bye' }),
+    ];
+    for (const attempt of attempts) {
+      const err = await rejection(attempt);
+      expect((err as GitracError).code).toBe('invalid_input');
+      expect((err as GitracError).message).toStartWith('Invalid author');
+    }
+    expect(await snapshot()).toEqual(before);
+    // Without a comment, the identity's name is not written, so it is fine.
+    const updated = await updateIssue(ctx, 1, { priority: 'high' });
+    expect(updated.issue.priority).toBe('high');
+  });
+
+  test('reopenIssue checks the comment author before the issue state', async () => {
+    const ctx = fx.context({
+      identity: async () => ({ name: 'A\nB', email: '' }),
+    });
+    await writeIssue(fx.dir, makeIssue({ id: 1 }));
+    const err = await rejection(reopenIssue(ctx, 1, { comment: 'back' }));
+    expect((err as GitracError).code).toBe('invalid_input');
+  });
+
+  test('a valid author round-trips through the comment header', async () => {
+    await writeIssue(fx.dir, makeIssue({ id: 1 }));
+    await addComment(fx.context(), 1, 'first', { author: 'Jean-Luc - Picard' });
+    const issue = await readIssue(fx.dir, 1);
+    expect(issue.description).toBe('A test issue description.');
+    expect(issue.comments).toMatchObject([
+      { author: 'Jean-Luc - Picard', body: 'first' },
+    ]);
+  });
+});

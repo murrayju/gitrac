@@ -2,6 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import { createDefaultConfig } from './config.ts';
 import type { Issue } from './types.ts';
 import {
+  authorError,
+  hasLineBreak,
+  INVALID_AUTHOR,
   parseLabelList,
   validateIssue,
   validateIssueFields,
@@ -169,6 +172,12 @@ describe('validateIssueFields', () => {
     [{ labels: [''] }, 'labels'],
     [{ labels: { bug: true } }, 'labels'],
     [{ description: { text: 'x' } }, 'description'],
+    [{ title: 'Two\nlines' }, 'title'],
+    [{ title: 'Carriage\rreturn' }, 'title'],
+    [{ assignee: 'alice\nbob' }, 'assignee'],
+    [{ assignee: 'alice\rbob' }, 'assignee'],
+    [{ labels: ['ok', 'bad\nlabel'] }, 'labels'],
+    [{ labels: ['bad\r\nlabel'] }, 'labels'],
   ])('rejects %j', (input, field) => {
     const result = validateIssueFields(input, config);
     expect(result.valid).toBe(false);
@@ -208,6 +217,78 @@ describe('validateIssueFields', () => {
   ])('rejects non-object input %j', (input) => {
     const result = validateIssueFields(input, config);
     expect(result.valid).toBe(false);
+  });
+});
+
+describe('validateIssueFields line breaks', () => {
+  const config = createDefaultConfig();
+
+  test('names the problem in the message', () => {
+    const result = validateIssueFields(
+      { title: 'a\nb', assignee: 'c\nd', labels: ['e\nf'] },
+      config,
+    );
+    expect(result.errors).toEqual([
+      'Invalid title: must not contain line breaks',
+      'Invalid assignee: must not contain line breaks',
+      'Invalid labels: a label must not contain line breaks',
+    ]);
+  });
+
+  test('a leading or trailing line break is trimmed away, not rejected', () => {
+    const result = validateIssueFields(
+      { title: ' Title \n', assignee: '\nalice\r\n', labels: ['bug\n'] },
+      config,
+    );
+    expect(result.valid).toBe(true);
+    expect(result.values).toEqual({
+      title: 'Title',
+      assignee: 'alice',
+      labels: ['bug'],
+    });
+  });
+});
+
+describe('authorError', () => {
+  test.each([
+    ['Ada'],
+    ['Grace Hopper'],
+    ['ada@example.com'],
+    ['Jean-Luc - Picard'],
+  ])('accepts %j', (name) => {
+    expect(authorError(name)).toBeNull();
+  });
+
+  test.each([
+    [undefined],
+    [null],
+    [42],
+    [''],
+    ['   '],
+  ])('rejects %j as not a non-empty string', (name) => {
+    expect(authorError(name)).toBe(INVALID_AUTHOR);
+  });
+
+  test.each([
+    ['Ada\nLovelace', 'line breaks'],
+    ['Ada\r', 'line breaks'],
+    ['\nAda', 'line breaks'],
+    ['Ada\r\nLovelace', 'line breaks'],
+    ['Ada \u2014 2026-01-01T00:00:00Z', 'em dash'],
+    ['Ada\u2014Lovelace', 'em dash'],
+  ])('rejects %j (%s)', (name, problem) => {
+    const error = authorError(name);
+    expect(error).toStartWith('Invalid author');
+    expect(error).toContain(problem);
+  });
+});
+
+describe('hasLineBreak', () => {
+  test('detects \\n and \\r only', () => {
+    expect(hasLineBreak('a\nb')).toBe(true);
+    expect(hasLineBreak('a\rb')).toBe(true);
+    expect(hasLineBreak('a\tb')).toBe(false);
+    expect(hasLineBreak('plain')).toBe(false);
   });
 });
 

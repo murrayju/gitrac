@@ -21,7 +21,7 @@ import {
   CONFIG_PATH,
   commitChange,
   commitMessage,
-  INVALID_AUTHOR,
+  identityName,
   issuePath,
   loadConfig,
   type Operation,
@@ -75,22 +75,30 @@ function validFields(
 }
 
 /**
- * Append a comment by the context's identity (CLI `-c/--comment`). The body
- * is trimmed, like every comment; a blank one adds nothing.
+ * The author of an optional comment (CLI `-c/--comment`): the context's
+ * identity, or undefined if the comment is blank. Call it before the issue is
+ * loaded, so an invalid identity is `invalid_input` first.
  */
-async function appendComment(
+async function commentAuthor(
   ctx: ServiceContext,
+  body: string | undefined,
+): Promise<string | undefined> {
+  return body?.trim() ? identityName(ctx) : undefined;
+}
+
+/**
+ * Append a comment by `author` (from {@link commentAuthor}). The body is
+ * trimmed, like every comment; a blank one adds nothing.
+ */
+function appendComment(
   issue: Issue,
+  author: string | undefined,
   body: string | undefined,
   timestamp: string,
-): Promise<void> {
+): void {
   const text = body?.trim();
-  if (!text) return;
-  issue.comments.push({
-    author: (await ctx.identity()).name,
-    timestamp,
-    body: text,
-  });
+  if (!text || author === undefined) return;
+  issue.comments.push({ author, timestamp, body: text });
 }
 
 /** Commit an issue change and assemble the result. */
@@ -130,8 +138,11 @@ export async function createIssue(
     // Validate everything before touching disk (allocating the ID bumps the
     // shared high-water mark).
     const values = validFields(fields, config, { requireTitle: true });
-    const createdBy = await resolveAuthor(ctx, options.author);
-    if (createdBy === null) throw new ValidationError([INVALID_AUTHOR]);
+    const createdBy = await resolveAuthor(
+      ctx,
+      options.author,
+      (message) => new ValidationError([message]),
+    );
 
     const now = new Date().toISOString();
     const issue: Issue = {
@@ -211,6 +222,7 @@ export async function updateIssue(
     // Input errors take precedence over issue errors (missing, If-Match...).
     const { title, status, priority, assignee, labels, description } =
       validFields(fields, config);
+    const author = await commentAuthor(ctx, options.comment);
     const stored = await loadStoredIssue(ctx.dir, id, options.precondition);
     const { issue } = stored;
 
@@ -249,7 +261,7 @@ export async function updateIssue(
     }
     const now = new Date().toISOString();
     issue.updated = now;
-    await appendComment(ctx, issue, options.comment, now);
+    appendComment(issue, author, options.comment, now);
 
     // Write to the directory matching the status; drop the old file if the
     // path changed (moved between directories or renamed).
@@ -329,7 +341,6 @@ export async function addComment(
     const config = await loadConfig(ctx);
     const text = commentBody(body);
     const author = await resolveAuthor(ctx, options.author);
-    if (author === null) throw invalidInput(INVALID_AUTHOR);
     const stored = await loadStoredIssue(ctx.dir, id, options.precondition);
     const { issue } = stored;
 
@@ -428,6 +439,7 @@ export async function closeIssue(
     const config = await loadConfig(ctx);
     // Input errors take precedence over issue errors (missing, closed...).
     const status = validStatus(() => closingStatus(config, options));
+    const author = await commentAuthor(ctx, options.comment);
     const stored = await loadStoredIssue(ctx.dir, id, options.precondition);
     const { issue } = stored;
     assertCanClose(issue, stored.closed, config);
@@ -435,7 +447,7 @@ export async function closeIssue(
     issue.status = status;
     const now = new Date().toISOString();
     issue.updated = now;
-    await appendComment(ctx, issue, options.comment, now);
+    appendComment(issue, author, options.comment, now);
 
     // Write into .issues/closed/ and remove the open copy
     const paths = await relocateIssue(ctx.dir, issue, stored, {
@@ -474,6 +486,7 @@ export async function reopenIssue(
     const config = await loadConfig(ctx);
     // Input errors take precedence over issue errors (missing, open...).
     const status = validStatus(() => reopenStatus(config, options.status));
+    const author = await commentAuthor(ctx, options.comment);
     const stored = await loadStoredIssue(ctx.dir, id, options.precondition);
     const { issue } = stored;
     assertCanReopen(issue, stored.closed, config);
@@ -481,7 +494,7 @@ export async function reopenIssue(
     issue.status = status;
     const now = new Date().toISOString();
     issue.updated = now;
-    await appendComment(ctx, issue, options.comment, now);
+    appendComment(issue, author, options.comment, now);
 
     // Write into .issues/ and remove the closed copy
     const paths = await relocateIssue(ctx.dir, issue, stored, {

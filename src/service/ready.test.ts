@@ -105,3 +105,15 @@ describe('claimNextIssue', () => {
     expect(fx.commits).toEqual([]);
   });
 });
+
+describe('claimNextIssue identity validation (#98)', () => {
+  test('an identity with a line break is invalid_input before an issue is picked', async () => {
+    const ctx = fx.context({
+      identity: async () => ({ name: 'Ada\nL', email: '' }),
+    });
+    const err = await rejection(claimNextIssue(ctx, query));
+    expect(err.code).toBe('invalid_input');
+    expect((await readIssue(fx.dir, 4)).assignee).toBe('');
+    expect(fx.events).toEqual([]);
+  });
+});

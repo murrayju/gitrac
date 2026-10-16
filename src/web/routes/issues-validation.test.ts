@@ -104,6 +104,10 @@ const invalidBodies: [string, unknown][] = [
   ['empty label', { labels: [''] }],
   ['non-string assignee', { assignee: { name: 'x' } }],
   ['non-string description', { description: 42 }],
+  ['title with a newline', { title: 'Two\nlines' }],
+  ['title with a carriage return', { title: 'Two\rlines' }],
+  ['assignee with a newline', { assignee: 'alice\nbob' }],
+  ['label with a newline', { labels: ['ok', 'bad\nlabel'] }],
 ];
 
 describe('POST /api/issues validation', () => {
@@ -118,6 +122,19 @@ describe('POST /api/issues validation', () => {
     expect(data.error).toMatch(/Invalid|required/);
     expect(data.errors.length).toBeGreaterThan(0);
     // No issue written and no ID allocated
+    expect(await snapshot()).toEqual(before);
+  });
+
+  test.each([
+    ['a newline', 'Bad\nAuthor'],
+    ['an em dash', 'Bad \u2014 Author'],
+  ])('rejects an author with %s without allocating an ID (#98)', async (_name, author) => {
+    const before = await snapshot();
+    const res = await send('POST', '/issues', { title: 'x', author });
+    expect(res.status).toBe(400);
+    const data = (await res.json()) as { error: string; errors: string[] };
+    expect(data.errors).toHaveLength(1);
+    expect(data.error).toContain('Invalid author');
     expect(await snapshot()).toEqual(before);
   });
 
@@ -232,6 +249,22 @@ describe('POST /api/issues/:id/comments validation', () => {
       author: 123,
     });
     expect(res.status).toBe(400);
+    expect(await snapshot()).toEqual(before);
+  });
+
+  test.each([
+    ['a newline', 'Bad\nAuthor'],
+    ['a carriage return', 'Bad\rAuthor'],
+    ['an em dash', 'Bad \u2014 2026-01-01T00:00:00Z'],
+  ])('rejects an author with %s (#98)', async (_name, author) => {
+    const before = await snapshot();
+    const res = await send('POST', '/issues/1/comments', {
+      body: 'hi',
+      author,
+    });
+    expect(res.status).toBe(400);
+    const data = (await res.json()) as { error: string };
+    expect(data.error).toContain('Invalid author');
     expect(await snapshot()).toEqual(before);
   });
 

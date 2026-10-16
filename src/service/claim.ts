@@ -1,12 +1,18 @@
-import { claimAssignee, decideClaim, decideUnclaim } from '../core/claim.ts';
+import {
+  type ClaimUser,
+  claimAssignee,
+  decideClaim,
+  decideUnclaim,
+} from '../core/claim.ts';
 import { findAssigneeByEmail } from '../core/config.ts';
 import {
   type ClaimedElsewhere,
   describeLocation,
   toClosedElsewhere,
 } from '../core/elsewhere.ts';
-import { GitracError } from '../core/errors.ts';
+import { GitracError, invalidInput } from '../core/errors.ts';
 import type { Config, Issue } from '../core/types.ts';
+import { authorError, hasLineBreak } from '../core/validate.ts';
 import { activeStatus } from '../core/workflow.ts';
 import { relocateIssue, writeConfig } from '../fs/issue-store.ts';
 import { issueStatesElsewhere } from '../git/elsewhere.ts';
@@ -53,6 +59,27 @@ export interface ClaimOptions {
   force?: boolean;
 }
 
+/**
+ * Check the acting user before the lock is taken. The name is the author of
+ * a (non-blank) comment, so it must then be a valid author (see
+ * `authorError`). A claim writes the email or name as the assignee (and both
+ * into `config.assignees`), so for a claim they must have no line break.
+ * Throws `invalid_input` if not.
+ */
+export function assertValidUser(
+  user: ClaimUser,
+  comment: string | undefined,
+  options: { claim: boolean },
+): void {
+  const error = comment?.trim() ? authorError(user.name) : null;
+  if (error) throw invalidInput(error);
+  if (options.claim && (hasLineBreak(user.name) || hasLineBreak(user.email))) {
+    throw invalidInput(
+      `Invalid user ${JSON.stringify(claimAssignee(user))}: name and email must not contain line breaks`,
+    );
+  }
+}
+
 /** Append the (trimmed) comment, if not blank. */
 function addClaimComment(
   issue: Issue,
@@ -81,6 +108,7 @@ export async function claimIssue(
   options: ClaimOptions = {},
 ): Promise<ClaimResult> {
   const user = await ctx.identity();
+  assertValidUser(user, options.comment, { claim: true });
   return withRepoLock(ctx.dir, async () => {
     const config = await loadConfig(ctx);
     const stored = await loadStoredIssue(ctx.dir, id);
@@ -187,6 +215,7 @@ export async function unclaimIssue(
   options: ClaimOptions = {},
 ): Promise<ClaimResult> {
   const user = await ctx.identity();
+  assertValidUser(user, options.comment, { claim: false });
   return withRepoLock(ctx.dir, async () => {
     const config = await loadConfig(ctx);
     const stored = await loadStoredIssue(ctx.dir, id);

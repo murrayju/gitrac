@@ -104,6 +104,8 @@ export interface ValidateIssueFieldsOptions {
  * type-checked. Only the editable fields are inspected; absent (`undefined`)
  * fields are left out of the result so callers can apply them as a partial
  * update. Normalization: title is trimmed, labels are trimmed and de-duplicated.
+ * A title, assignee or label must not contain a line break (after trimming):
+ * it would break the `gitrac ls` table and the commit subject.
  *
  * Unknown labels are allowed — callers register them in the config (with a
  * color) via `registerLabels` so CLI and web behave the same.
@@ -123,6 +125,8 @@ export function validateIssueFields(
   if (raw.title !== undefined) {
     if (typeof raw.title !== 'string' || !raw.title.trim()) {
       errors.push('Invalid title: must be a non-empty string');
+    } else if (hasLineBreak(raw.title.trim())) {
+      errors.push('Invalid title: must not contain line breaks');
     } else {
       values.title = raw.title.trim();
     }
@@ -158,6 +162,8 @@ export function validateIssueFields(
   if (raw.assignee !== undefined) {
     if (typeof raw.assignee !== 'string') {
       errors.push('Invalid assignee: must be a string');
+    } else if (hasLineBreak(raw.assignee.trim())) {
+      errors.push('Invalid assignee: must not contain line breaks');
     } else {
       values.assignee = raw.assignee.trim();
     }
@@ -168,6 +174,8 @@ export function validateIssueFields(
       errors.push('Invalid labels: must be an array of strings');
     } else if (raw.labels.some((l) => typeof l !== 'string' || !l.trim())) {
       errors.push('Invalid labels: each label must be a non-empty string');
+    } else if ((raw.labels as string[]).some((l) => hasLineBreak(l.trim()))) {
+      errors.push('Invalid labels: a label must not contain line breaks');
     } else {
       values.labels = [
         ...new Set((raw.labels as string[]).map((l) => l.trim())),
@@ -185,6 +193,33 @@ export function validateIssueFields(
 
   if (errors.length > 0) return { valid: false, errors };
   return { valid: true, values, errors: [] };
+}
+
+/** True if `text` contains a line break (`\r` or `\n`). */
+export function hasLineBreak(text: string): boolean {
+  return /[\r\n]/.test(text);
+}
+
+/** Message for an author that is not a non-empty string. */
+export const INVALID_AUTHOR = 'Invalid author: must be a non-empty string';
+
+/**
+ * Check an author name (a comment author or `createdBy`). Return the error
+ * message, or null if the name is valid. A comment header is one line,
+ * `### {author} \u2014 {timestamp}` (`COMMENT_HEADER_RE`), so an author must
+ * not contain a line break or the em dash (U+2014). Otherwise the header does
+ * not parse back to the same author and timestamp. Pass the name as it is
+ * written (trim it first if the caller trims).
+ */
+export function authorError(name: unknown): string | null {
+  if (typeof name !== 'string' || !name.trim()) return INVALID_AUTHOR;
+  if (hasLineBreak(name)) {
+    return `Invalid author ${JSON.stringify(name)}: must not contain line breaks`;
+  }
+  if (name.includes('\u2014')) {
+    return `Invalid author ${JSON.stringify(name)}: must not contain the em dash (U+2014)`;
+  }
+  return null;
 }
 
 /**

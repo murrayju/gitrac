@@ -11,6 +11,7 @@ import {
   assetPaths,
   commitChange,
   commitMessage,
+  identityName,
   loadConfig,
   type ServiceContext,
 } from './context.ts';
@@ -188,6 +189,8 @@ export async function renumberIssue(
 ): Promise<IssueRenumbering> {
   return withRepoLock(ctx.dir, async () => {
     const config = await loadConfig(ctx);
+    // The author of the renumber comment. Check it before anything else.
+    const author = await identityName(ctx);
     const candidates = await renumberCandidates(ctx.dir, id);
     if (candidates.length === 0) throw issueNotFound(id);
     const files = candidates.map((c) => c.path);
@@ -233,7 +236,6 @@ export async function renumberIssue(
     // anything is written or an ID allocated).
     const relinks = options.updateRefs ? await linkingIssues(ctx.dir, id) : [];
 
-    const author = (await ctx.identity()).name;
     const newId = await allocateIssueId(ctx.dir);
     const now = new Date().toISOString();
     issue.id = newId;

@@ -326,3 +326,17 @@ describe('renumberIssue', () => {
     });
   });
 });
+
+describe('renumberIssue identity validation (#98)', () => {
+  test('an identity that is not a valid comment author is invalid_input; nothing changes', async () => {
+    const before = await snapshot();
+    for (const name of ['Ada\nL', 'Ada \u2014 2026-01-01T00:00:00Z']) {
+      const ctx = fx.context({ identity: async () => ({ name, email: '' }) });
+      const err = await rejection(renumberIssue(ctx, 1, { file: BETA }));
+      expect(err.code).toBe('invalid_input');
+      expect(err.message).toStartWith('Invalid author');
+    }
+    expect(await snapshot()).toEqual(before);
+    expect(fx.events).toEqual([]);
+  });
+});

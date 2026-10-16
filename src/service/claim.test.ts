@@ -233,3 +233,47 @@ describe('unclaimIssue', () => {
     expect(forced.issue.assignee).toBe('');
   });
 });
+
+describe('identity validation (#98)', () => {
+  test('a claim comment by an identity with a line break or em dash is rejected', async () => {
+    await writeIssue(fx.dir, makeIssue({ id: 1, title: 'Task' }));
+    const before = await Bun.file(join(fx.dir, '.issues', '1-task.md')).text();
+    for (const name of ['Ada\nL', 'Ada \u2014 x']) {
+      const ctx = fx.context({ identity: async () => ({ name, email: '' }) });
+      const claim = await rejection(claimIssue(ctx, 1, { comment: 'mine' }));
+      expect(claim.code).toBe('invalid_input');
+      const unclaim = await rejection(
+        unclaimIssue(ctx, 1, { comment: 'yours', force: true }),
+      );
+      expect(unclaim.code).toBe('invalid_input');
+    }
+    expect(await Bun.file(join(fx.dir, '.issues', '1-task.md')).text()).toBe(
+      before,
+    );
+    expect(fx.events).toEqual([]);
+  });
+
+  test('a claim by an identity with a line break is rejected (it is the assignee)', async () => {
+    await writeIssue(fx.dir, makeIssue({ id: 1, title: 'Task' }));
+    for (const user of [
+      { name: 'Ada\nL', email: '' },
+      { name: 'Ada', email: 'ada@x\n.com' },
+    ]) {
+      const err = await rejection(
+        claimIssue(fx.context({ identity: async () => user }), 1),
+      );
+      expect(err.code).toBe('invalid_input');
+    }
+    expect((await readIssue(fx.dir, 1)).assignee).toBe('');
+  });
+
+  test('an em dash in the name is fine for a claim without a comment', async () => {
+    await writeIssue(fx.dir, makeIssue({ id: 1, title: 'Task' }));
+    const user = { name: 'Ada \u2014 L', email: '' };
+    const result = await claimIssue(
+      fx.context({ identity: async () => user }),
+      1,
+    );
+    expect(result.issue.assignee).toBe('Ada \u2014 L');
+  });
+});

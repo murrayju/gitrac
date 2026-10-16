@@ -1,7 +1,9 @@
 import { join } from 'node:path';
 import { extractAssetRefs, isAssetFilename } from '../core/assets.ts';
 import type { ClaimUser } from '../core/claim.ts';
+import { type GitracError, invalidInput } from '../core/errors.ts';
 import type { Config, Issue } from '../core/types.ts';
+import { authorError } from '../core/validate.ts';
 import { readConfig } from '../fs/issue-store.ts';
 import { pushIfConfigured } from '../git/operations.ts';
 import { type CommitStrategy, commitStrategy } from './commit.ts';
@@ -111,23 +113,38 @@ export function assetPaths(issue: Issue): string[] {
     .map((f) => join('.issues', 'assets', f));
 }
 
-/** Message for an invalid explicit author. */
-export const INVALID_AUTHOR = 'Invalid author: must be a non-empty string';
-
 /**
- * The author for a write: an explicit non-empty `requested` name (e.g. the
- * identity picked in the web UI) wins, else the context's identity. Returns
- * null if `requested` is present but not a non-empty string.
+ * The author for a write: an explicit `requested` name (e.g. the identity
+ * picked in the web UI) wins, else the context's identity. An explicit name
+ * is trimmed. Throws the error from `fail` (default: `invalid_input`) if the
+ * name is not a valid author (see `authorError`).
  */
 export async function resolveAuthor(
   ctx: ServiceContext,
   requested: unknown,
-): Promise<string | null> {
-  if (requested !== undefined) {
-    if (typeof requested !== 'string' || !requested.trim()) return null;
-    return requested.trim();
-  }
-  return (await ctx.identity()).name;
+  fail: (message: string) => GitracError = invalidInput,
+): Promise<string> {
+  if (requested === undefined) return identityName(ctx, fail);
+  const name = typeof requested === 'string' ? requested.trim() : requested;
+  const error = authorError(name);
+  if (error) throw fail(error);
+  return name as string;
+}
+
+/**
+ * The context's identity name, for an author it writes (a comment, or a
+ * claim). Throws the error from `fail` (default: `invalid_input`) if the
+ * name is not a valid author (for example, a git `user.name` with a line
+ * break).
+ */
+export async function identityName(
+  ctx: ServiceContext,
+  fail: (message: string) => GitracError = invalidInput,
+): Promise<string> {
+  const { name } = await ctx.identity();
+  const error = authorError(name);
+  if (error) throw fail(error);
+  return name;
 }
 
 /**
