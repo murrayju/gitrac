@@ -3,14 +3,14 @@ id: 95
 title: >-
   IssueWatcher never watches .issues/closed/ if the directory did not exist at
   server startup
-status: backlog
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-16T12:12:41.648Z'
 createdBy: Justin Murray
-updated: '2026-10-16T12:12:41.648Z'
+updated: '2026-10-16T14:13:06.222Z'
 ---
 
 Git does not track empty directories, so in a fresh clone/worktree or a repository with no closed issues yet, `.issues/closed/` does not exist on disk when `gitrac serve` starts (see #71).
