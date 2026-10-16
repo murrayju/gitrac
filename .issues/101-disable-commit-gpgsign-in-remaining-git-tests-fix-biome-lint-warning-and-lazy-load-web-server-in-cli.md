@@ -3,14 +3,14 @@ id: 101
 title: >-
   Disable commit.gpgsign in remaining git tests, fix Biome lint warning, and
   lazy-load web server in CLI
-status: backlog
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - chore
 created: '2026-10-16T12:13:26.873Z'
 createdBy: Justin Murray
-updated: '2026-10-16T12:13:26.873Z'
+updated: '2026-10-16T14:13:08.574Z'
 ---
 
 Three developer-experience, test-speed, and startup hygiene items:
