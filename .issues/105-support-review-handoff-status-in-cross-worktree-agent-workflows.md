@@ -1,9 +1,9 @@
 ---
 id: 105
 title: Support review / handoff status in cross-worktree agent workflows
-status: backlog
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - feature
 blockedBy:
@@ -11,7 +11,7 @@ blockedBy:
   - 94
 created: '2026-10-16T12:13:31.379Z'
 createdBy: Justin Murray
-updated: '2026-10-16T12:14:09.084Z'
+updated: '2026-10-16T20:16:22.230Z'
 ---
 
 In an orchestrator-subagent workflow (such as `.opencode/commands/work-backlog.md`), a subagent claims an issue (`in_progress`), implements the fix on its worktree branch, and hands it off for review before the orchestrator verifies, merges, and closes it (`done`).
