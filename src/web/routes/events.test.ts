@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Server } from 'bun';
@@ -141,6 +141,37 @@ describe('GET /api/events over a real Bun.serve', () => {
     // Keep-alives don't get in the way of real events.
     await touchIssues();
     await client.waitFor(/event: issues-changed/);
+  });
+
+  test('delivers events for .issues/closed/ created after start', async () => {
+    // Git does not track the empty `.issues/closed/`, so a fresh clone has
+    // none when the server starts. Start a watcher without it.
+    ctx.watcher.stop();
+    await rm(join(dir, '.issues', 'closed'), { recursive: true, force: true });
+    ctx.watcher = new IssueWatcher(dir);
+    ctx.watcher.start();
+    server = Bun.serve({
+      hostname: '127.0.0.1',
+      port: 0,
+      fetch: createApp(ctx).fetch,
+    });
+    const client = await connect(`http://127.0.0.1:${server.port}/api/events`);
+    await client.waitFor(/event: connected/);
+
+    // The first close creates the directory.
+    await mkdir(join(dir, '.issues', 'closed'));
+    await client.waitFor(/event: issues-changed/);
+    await waitUntil(() => ctx.watcher.watchedDirCount() === 2);
+    await Bun.sleep(300);
+
+    // An edit inside `.issues/closed/` gives a new event and generation.
+    const seen = client.text().length;
+    const gen = ctx.watcher.generation();
+    await writeFile(join(dir, '.issues', 'closed', '1-closed.md'), 'x');
+    await waitUntil(() => ctx.watcher.generation() > gen);
+    await waitUntil(() =>
+      client.text().slice(seen).includes('event: issues-changed'),
+    );
   });
 
   test('removes watcher listeners when clients disconnect', async () => {
