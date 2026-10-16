@@ -109,22 +109,38 @@ describe('ElsewhereCache', () => {
     expect(clock.scans).toBe(2);
   });
 
-  test('claims() applies the claimedElsewhere rules to the cached scan', async () => {
+  test('marks() applies the claimedElsewhere rules to the cached scan', async () => {
     const { cache, clock } = setup();
     const config = createDefaultConfig();
-    const claims = await cache.claims([issue(1), issue(2)], config);
-    expect([...claims.keys()]).toEqual([1]);
-    expect(claims.get(1)).toEqual({
-      ref: 'agent-1',
-      worktree: '/tmp/agent-1',
-      assignee: 'bob@example.com',
-      updated: '2026-01-02T00:00:00Z',
+    const marks = await cache.marks([issue(1), issue(2)], config);
+    expect([...marks.keys()]).toEqual([1]);
+    expect(marks.get(1)).toEqual({
+      claimedElsewhere: {
+        ref: 'agent-1',
+        worktree: '/tmp/agent-1',
+        assignee: 'bob@example.com',
+        updated: '2026-01-02T00:00:00Z',
+      },
     });
     // A newer local version supersedes the claim elsewhere.
     const newer = { ...issue(1), updated: '2026-01-03T00:00:00Z' };
-    expect((await cache.claims([newer], config)).size).toBe(0);
+    expect((await cache.marks([newer], config)).size).toBe(0);
     // No issues: no scan needed.
-    expect((await cache.claims([], config)).size).toBe(0);
+    expect((await cache.marks([], config)).size).toBe(0);
     expect(clock.scans).toBe(1);
+  });
+
+  test('marks() reports a newer close elsewhere as closedElsewhere (#93)', async () => {
+    const { cache, setScan } = setup();
+    setScan(async () => new Map([[1, [{ ...CLAIM, status: 'done' }]]]));
+    const marks = await cache.marks([issue(1)], createDefaultConfig());
+    expect(marks.get(1)).toEqual({
+      closedElsewhere: {
+        ref: 'agent-1',
+        worktree: '/tmp/agent-1',
+        status: 'done',
+        updated: '2026-01-02T00:00:00Z',
+      },
+    });
   });
 });

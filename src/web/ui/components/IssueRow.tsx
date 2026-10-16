@@ -5,6 +5,7 @@ import { type ApiIssue, updateIssue } from '../api.ts';
 import { useConfig, useWorkflow } from '../hooks.ts';
 import { relativeTime } from '../lib/time.ts';
 import { ClaimedElsewhereBadge } from './ClaimedElsewhereBadge.tsx';
+import { ClosedElsewhereBadge } from './ClosedElsewhereBadge.tsx';
 import { Dropdown } from './Dropdown.tsx';
 import { LabelBadge } from './LabelBadge.tsx';
 import { PriorityBadge } from './PriorityBadge.tsx';
@@ -35,6 +36,11 @@ export function IssueRow({ issue }: { issue: ApiIssue }) {
           {issue.claimedElsewhere && (
             <span className="shrink-0">
               <ClaimedElsewhereBadge claim={issue.claimedElsewhere} />
+            </span>
+          )}
+          {issue.closedElsewhere && (
+            <span className="shrink-0">
+              <ClosedElsewhereBadge closed={issue.closedElsewhere} />
             </span>
           )}
         </div>

@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
-  type ClaimedElsewhere,
-  claimedElsewhere,
+  type ElsewhereMarks,
+  elsewhereMarks,
   type IssueStateElsewhere,
 } from '../core/elsewhere.ts';
 import { parseIssueFile } from '../core/issue.ts';
@@ -94,37 +94,38 @@ export async function loadAllIssues(dir: string): Promise<IssueListing> {
 }
 
 /**
- * Which of `issues` are claimed on another branch or in another worktree
- * (their newest version is a claim there; see `src/core/elsewhere.ts`), by
- * ID, given the versions found elsewhere (`issueStatesElsewhere`, possibly
- * cached; extra IDs are ignored). Pure.
+ * Which of `issues` are claimed or closed on another branch or in another
+ * worktree (their newest version is a claim or a close there; see
+ * `elsewhereMarks` in `src/core/elsewhere.ts`), by ID, given the versions
+ * found elsewhere (`issueStatesElsewhere`, possibly cached; extra IDs are
+ * ignored). Pure.
  */
-export function claimsFromStates(
+export function marksFromStates(
   issues: readonly Issue[],
   config: WorkflowConfig,
   states: ReadonlyMap<number, readonly IssueStateElsewhere[]>,
-): Map<number, ClaimedElsewhere> {
-  const claims = new Map<number, ClaimedElsewhere>();
+): Map<number, ElsewhereMarks> {
+  const marks = new Map<number, ElsewhereMarks>();
   for (const issue of issues) {
-    const claim = claimedElsewhere(issue, config, states.get(issue.id));
-    if (claim) claims.set(issue.id, claim);
+    const mark = elsewhereMarks(issue, config, states.get(issue.id));
+    if (mark) marks.set(issue.id, mark);
   }
-  return claims;
+  return marks;
 }
 
 /**
- * Which of `issues` are claimed on another branch or in another worktree,
- * by ID ({@link claimsFromStates}). Read-only; one scan of the repository's
- * refs and worktrees.
+ * Which of `issues` are claimed or closed on another branch or in another
+ * worktree, by ID ({@link marksFromStates}). Read-only; one scan of the
+ * repository's refs and worktrees.
  */
-export async function findClaimsElsewhere(
+export async function findMarksElsewhere(
   dir: string,
   issues: readonly Issue[],
   config: WorkflowConfig,
-): Promise<Map<number, ClaimedElsewhere>> {
+): Promise<Map<number, ElsewhereMarks>> {
   if (issues.length === 0) return new Map();
   const states = await issueStatesElsewhere(dir, {
     ids: issues.map((i) => i.id),
   });
-  return claimsFromStates(issues, config, states);
+  return marksFromStates(issues, config, states);
 }

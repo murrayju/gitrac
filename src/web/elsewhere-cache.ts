@@ -1,17 +1,15 @@
-import type {
-  ClaimedElsewhere,
-  IssueStateElsewhere,
-} from '../core/elsewhere.ts';
+import type { ElsewhereMarks, IssueStateElsewhere } from '../core/elsewhere.ts';
 import type { Issue } from '../core/types.ts';
 import type { WorkflowConfig } from '../core/workflow.ts';
 import { issueStatesElsewhere } from '../git/elsewhere.ts';
-import { claimsFromStates } from '../service/list.ts';
+import { marksFromStates } from '../service/list.ts';
 
 /**
  * How long a scan of other worktrees/branches (`issueStatesElsewhere`) is
- * reused by read-only API requests. Bounds how stale `claimedElsewhere` in
- * `GET /api/issues` / `GET /api/issues/:id` can be: changes in other
- * worktrees and to refs aren't watched, so they show up within this long.
+ * reused by read-only API requests. Bounds how stale `claimedElsewhere` and
+ * `closedElsewhere` in `GET /api/issues` / `GET /api/issues/:id` can be:
+ * changes in other worktrees and to refs aren't watched, so they show up
+ * within this long.
  */
 export const ELSEWHERE_CACHE_TTL_MS = 5000;
 
@@ -89,13 +87,16 @@ export class ElsewhereCache {
     this.entry = null;
   }
 
-  /** Which of `issues` are claimed elsewhere, by ID (`claimsFromStates`). */
-  async claims(
+  /**
+   * Which of `issues` are claimed or closed elsewhere, by ID
+   * (`marksFromStates`).
+   */
+  async marks(
     issues: readonly Issue[],
     config: WorkflowConfig,
-  ): Promise<Map<number, ClaimedElsewhere>> {
+  ): Promise<Map<number, ElsewhereMarks>> {
     if (issues.length === 0) return new Map();
-    return claimsFromStates(issues, config, await this.states());
+    return marksFromStates(issues, config, await this.states());
   }
 }
 

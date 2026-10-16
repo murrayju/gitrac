@@ -1,6 +1,6 @@
 import type { ClaimUser } from '../core/claim.ts';
 import { indexIssues } from '../core/dependencies.ts';
-import { type ClaimedElsewhere, claimedElsewhere } from '../core/elsewhere.ts';
+import type { ElsewhereMarks } from '../core/elsewhere.ts';
 import { GitracError } from '../core/errors.ts';
 import type { IssueQuery, QueryConfig } from '../core/query.ts';
 import { nextIssue, readyIssues } from '../core/ready.ts';
@@ -10,7 +10,7 @@ import { issueStatesElsewhere } from '../git/elsewhere.ts';
 import { withRepoLock } from '../git/lock.ts';
 import { type ClaimResult, claimIssue } from './claim.ts';
 import { loadConfig, type ServiceContext } from './context.ts';
-import { type IssueListing, loadAllIssues } from './list.ts';
+import { type IssueListing, loadAllIssues, marksFromStates } from './list.ts';
 
 /**
  * `gitrac ready` / `gitrac next [--claim]`: the rules are in
@@ -19,8 +19,11 @@ import { type IssueListing, loadAllIssues } from './list.ts';
  */
 
 export interface ReadyListing extends IssueListing {
-  /** Ready issues (the user's own) claimed on another branch or worktree. */
-  claimedElsewhere: Map<number, ClaimedElsewhere>;
+  /**
+   * Ready issues (the user's own) claimed on another branch or worktree
+   * (`claimedElsewhere`). Ready issues are never closed elsewhere.
+   */
+  marks: Map<number, ElsewhereMarks>;
   /** The issue `next` picks: the first ready one not in progress anywhere. */
   next: Issue | undefined;
 }
@@ -50,15 +53,10 @@ export async function listReadyIssues(
     config,
     elsewhere,
   );
-  const claims = new Map<number, ClaimedElsewhere>();
-  for (const issue of ready) {
-    const claim = claimedElsewhere(issue, config, elsewhere.get(issue.id));
-    if (claim) claims.set(issue.id, claim);
-  }
   return {
     issues: ready,
     unreadable,
-    claimedElsewhere: claims,
+    marks: marksFromStates(ready, config, elsewhere),
     next: nextIssue(ready, config, elsewhere),
   };
 }

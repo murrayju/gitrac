@@ -1,6 +1,8 @@
 import {
   type ClaimedElsewhere,
+  type ClosedElsewhere,
   claimedElsewhere,
+  closedElsewhere,
   effectiveState,
   type IssueStateElsewhere,
   newestElsewhere,
@@ -75,8 +77,11 @@ export type ClaimDecision =
       assignee: string;
       elsewhere?: ClaimedElsewhere;
     }
-  /** Refused: the issue is closed. */
-  | { action: 'closed' };
+  /**
+   * Refused: the issue is closed here, or (`elsewhere`) in a newer version
+   * on another branch or worktree.
+   */
+  | { action: 'closed'; elsewhere?: ClosedElsewhere };
 
 /** The local issue's claim-relevant fields (`updated`: to compare with `elsewhere`). */
 type LocalState = Pick<Issue, 'status' | 'assignee'> &
@@ -102,6 +107,9 @@ export interface ClaimOptions {
  *
  * - Closed issues (a closed status, or living in `closed/`) are refused
  *   unless `force`, in which case they are reopened and claimed.
+ * - An open issue whose effective state is closed elsewhere (e.g. closed in
+ *   an agent's worktree, not merged yet) is refused unless `force`, in which
+ *   case it is claimed here (this newer version then supersedes the close).
  * - An issue whose effective state (the newest version here or in
  *   `elsewhere`) is active and assigned to someone else is refused unless
  *   `force`.
@@ -122,6 +130,10 @@ export function decideClaim(
     return options.force
       ? { action: 'claim', reopen: true }
       : { action: 'closed' };
+  }
+  const closedThere = closedElsewhere(issue, config, options.elsewhere);
+  if (closedThere && !options.force) {
+    return { action: 'closed', elsewhere: closedThere };
   }
   const newer = newestElsewhere(issue, options.elsewhere);
   const effective = effectiveState(issue, options.elsewhere);

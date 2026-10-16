@@ -1,6 +1,10 @@
 import { claimAssignee, decideClaim, decideUnclaim } from '../core/claim.ts';
 import { findAssigneeByEmail } from '../core/config.ts';
-import { type ClaimedElsewhere, describeLocation } from '../core/elsewhere.ts';
+import {
+  type ClaimedElsewhere,
+  describeLocation,
+  toClosedElsewhere,
+} from '../core/elsewhere.ts';
 import { GitracError } from '../core/errors.ts';
 import type { Config, Issue } from '../core/types.ts';
 import { activeStatus } from '../core/workflow.ts';
@@ -63,11 +67,13 @@ function addClaimComment(
 /**
  * Assign the issue to the context's identity (email if known, else name) and
  * set it to the configured active status (`activeStatus`, default
- * `in_progress`). Throws `already_claimed` if someone else has it —
- * here, or in a newer version on another branch or in another worktree
- * (committed or not; `details.ref` / `details.worktree` say where) — and
- * `issue_closed` if it is closed (`force` overrides both; a closed issue is
- * reopened). Adds the user to `config.assignees` if their email is new.
+ * `in_progress`). Throws `already_claimed` if someone else has it (here,
+ * or in a newer version on another branch or in another worktree, committed
+ * or not; `details.claimedElsewhere` says where) and `issue_closed` if it is
+ * closed here or in a newer version elsewhere (`details.closedElsewhere`
+ * says where). `force` overrides both: a closed issue is reopened; a close
+ * elsewhere is superseded by the new claim. Adds the user to
+ * `config.assignees` if their email is new.
  */
 export async function claimIssue(
   ctx: ServiceContext,
@@ -107,10 +113,17 @@ export async function claimIssue(
       );
     }
     if (decision.action === 'closed') {
+      const where = decision.elsewhere;
       throw new GitracError(
         'issue_closed',
-        `Issue #${id} is closed (${issue.status}).`,
-        { details: { id, status: issue.status } },
+        where
+          ? `Issue #${id} is closed (${where.status}) ${describeLocation(where)}.`
+          : `Issue #${id} is closed (${issue.status}).`,
+        {
+          details: where
+            ? { id, status: where.status, closedElsewhere: where }
+            : { id, status: issue.status },
+        },
       );
     }
     if (decision.action === 'noop') {
@@ -214,13 +227,7 @@ export async function unclaimIssue(
             ? {
                 id,
                 status: decision.status,
-                closedElsewhere: {
-                  ref: where.ref,
-                  ...(where.worktree === undefined
-                    ? {}
-                    : { worktree: where.worktree }),
-                  updated: where.updated,
-                },
+                closedElsewhere: toClosedElsewhere(where),
               }
             : { id, status: decision.status },
         },

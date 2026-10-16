@@ -149,6 +149,65 @@ describe('formatIssueDetail', () => {
   });
 });
 
+describe('marks for versions elsewhere (#93)', () => {
+  const claim = {
+    ref: 'agent-1',
+    worktree: '/wt/agent-1',
+    assignee: 'bob@example.com',
+    updated: '2024-01-17T00:00:00Z',
+  };
+  const closed = {
+    ref: 'agent-2',
+    status: 'done',
+    updated: '2024-01-18T00:00:00Z',
+  };
+  const marks = new Map([
+    [1, { claimedElsewhere: claim }],
+    [2, { closedElsewhere: closed }],
+  ]);
+
+  test('human list appends where the issue is claimed or closed', () => {
+    const [, , row1, row2] = formatIssueList(
+      [SAMPLE_ISSUE, SAMPLE_ISSUE_2],
+      'human',
+      marks,
+    ).split('\n');
+    expect(row1).toEndWith(
+      '  [claimed in worktree /wt/agent-1 (branch agent-1) by bob@example.com]',
+    );
+    expect(row2).toEndWith('  [closed (done) on branch agent-2]');
+  });
+
+  test('json list adds claimedElsewhere / closedElsewhere', () => {
+    const [one, two] = JSON.parse(
+      formatIssueList([SAMPLE_ISSUE, SAMPLE_ISSUE_2], 'json', marks),
+    );
+    expect(one.claimedElsewhere).toEqual(claim);
+    expect(one).not.toHaveProperty('closedElsewhere');
+    expect(two.closedElsewhere).toEqual(closed);
+    expect(two).not.toHaveProperty('claimedElsewhere');
+  });
+
+  test('detail shows an Elsewhere line, and the field in json/yaml', () => {
+    const mark = { closedElsewhere: { ...closed, worktree: '/wt/agent-2' } };
+    expect(
+      formatIssueDetail(SAMPLE_ISSUE_2, 'human', undefined, mark),
+    ).toContain(
+      'Elsewhere:  closed (done) in worktree /wt/agent-2 (branch agent-2) (2024-01-18T00:00:00Z)',
+    );
+    expect(
+      JSON.parse(formatIssueDetail(SAMPLE_ISSUE_2, 'json', undefined, mark))
+        .closedElsewhere,
+    ).toEqual(mark.closedElsewhere);
+    expect(
+      formatIssueDetail(SAMPLE_ISSUE_2, 'yaml', undefined, mark),
+    ).toContain('closedElsewhere:');
+    expect(formatIssueDetail(SAMPLE_ISSUE_2, 'human')).not.toContain(
+      'Elsewhere:',
+    );
+  });
+});
+
 describe('issues parsed with unquoted YAML dates', () => {
   const parsed = parseIssue(`---
 id: 5

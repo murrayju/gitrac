@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import {
   fullClaimText,
+  fullCloseText,
   shortClaimText,
+  shortCloseText,
   worktreeName,
 } from './claimed-elsewhere.ts';
 
@@ -39,5 +41,24 @@ describe('claimed-elsewhere wording', () => {
   test('worktree names', () => {
     expect(worktreeName('C:\\work\\wt-3')).toBe('wt-3');
     expect(worktreeName('/')).toBe('/');
+  });
+});
+
+describe('closed-elsewhere wording (#93)', () => {
+  const closed = { ref: 'agent-1', status: 'done', updated: base.updated };
+
+  test('in another worktree', () => {
+    const where = { ...closed, worktree: '/work/wt-1' };
+    expect(shortCloseText(where, 'Done')).toBe('Done in wt-1');
+    expect(fullCloseText(where, 'Done')).toBe(
+      'Closed (Done) in worktree /work/wt-1 (branch agent-1)',
+    );
+  });
+
+  test('on a branch', () => {
+    expect(shortCloseText(closed, 'Done')).toBe('Done on agent-1');
+    expect(fullCloseText(closed, 'Done')).toBe(
+      'Closed (Done) on branch agent-1',
+    );
   });
 });

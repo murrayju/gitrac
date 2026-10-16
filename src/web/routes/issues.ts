@@ -1,6 +1,6 @@
 import { type Context, Hono } from 'hono';
 import { describeDependencies, indexIssues } from '../../core/dependencies.ts';
-import type { ClaimedElsewhere } from '../../core/elsewhere.ts';
+import type { ElsewhereMarks } from '../../core/elsewhere.ts';
 import { GitracError } from '../../core/errors.ts';
 import { parseIssueFile } from '../../core/issue.ts';
 import { type IssueQuery, parseIssueQuery } from '../../core/query.ts';
@@ -119,8 +119,8 @@ function ifMatchGuard(c: Context): {
 /**
  * Map an error from a service operation to its HTTP response, or rethrow it
  * (-> 500). `current` is the issue version the operation loaded, if any;
- * when embedded it's served like `GET /issues/:id` (`claimedElsewhere`
- * included), so a conflict doesn't drop the UI's claim badge.
+ * when embedded it's served like `GET /issues/:id` (`claimedElsewhere` /
+ * `closedElsewhere` included), so a conflict doesn't drop the UI's badges.
  *
  * - `If-Match` mismatch: 409 `{ error, current }` (+ its ETag)
  * - `invalid_state` (already closed / already open): 409
@@ -176,22 +176,26 @@ async function errorResponse(
   throw err;
 }
 
-/** An issue as served: plus `claimedElsewhere` when set (as in the CLI's JSON). */
-type ServedIssue = Issue & { claimedElsewhere?: ClaimedElsewhere };
+/**
+ * An issue as served: plus `claimedElsewhere` or `closedElsewhere` when set
+ * (as in the CLI's JSON).
+ */
+type ServedIssue = Issue & ElsewhereMarks;
 
 /**
- * `issues` with `claimedElsewhere` added where their effective state is a
- * claim on another branch / in another worktree (same rules as `gitrac ls`;
- * the scan is cached briefly, see `ElsewhereCache`).
+ * `issues` with `claimedElsewhere` / `closedElsewhere` added where their
+ * effective state is a claim / a close on another branch or in another
+ * worktree (same rules as `gitrac ls`; the scan is cached briefly, see
+ * `ElsewhereCache`).
  */
 async function withClaims(
   ctx: ServerContext,
   issues: Issue[],
 ): Promise<ServedIssue[]> {
-  const claims = await elsewhereCache(ctx).claims(issues, ctx.config);
+  const marks = await elsewhereCache(ctx).marks(issues, ctx.config);
   return issues.map((issue) => {
-    const claim = claims.get(issue.id);
-    return claim ? { ...issue, claimedElsewhere: claim } : issue;
+    const mark = marks.get(issue.id);
+    return mark ? { ...issue, ...mark } : issue;
   });
 }
 
@@ -204,8 +208,8 @@ async function withClaim(
 
 /**
  * Respond with the issue as now on disk (exactly what a later GET returns,
- * `claimedElsewhere` included) plus its ETag, so clients can chain
- * `If-Match` writes. Falls back to the in-memory issue if it can't be
+ * `claimedElsewhere` / `closedElsewhere` included) plus its ETag, so
+ * clients can chain `If-Match` writes. Falls back to the in-memory issue if it can't be
  * re-read.
  */
 async function respondWithIssue(

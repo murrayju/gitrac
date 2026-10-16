@@ -2,7 +2,7 @@ import type { Command } from 'commander';
 import { parseIssueQuery, SORT_FIELDS } from '../../core/query.ts';
 import { readConfig } from '../../fs/issue-store.ts';
 import { getBranchWarning } from '../../git/status.ts';
-import { findClaimsElsewhere, listIssues } from '../../service/list.ts';
+import { findMarksElsewhere, listIssues } from '../../service/list.ts';
 import { resolveProjectOptions } from '../global-options.ts';
 import { formatIssueList } from '../output.ts';
 import { resolveClaimUser } from '../service-context.ts';
@@ -68,8 +68,8 @@ export function registerListCommand(program: Command): void {
           console.warn(`Warning: skipping unreadable issue file ${path}`);
         }
 
-        const claims = await findClaimsElsewhere(dir, issues, config);
-        console.log(formatIssueList(issues, globalOpts.output, claims));
+        const marks = await findMarksElsewhere(dir, issues, config);
+        console.log(formatIssueList(issues, globalOpts.output, marks));
       },
     );
 }

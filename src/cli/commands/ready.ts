@@ -92,14 +92,14 @@ export function registerReadyCommands(program: Command): void {
       program,
       options,
     );
-    const { issues, unreadable, claimedElsewhere } = await listReadyIssues(
+    const { issues, unreadable, marks } = await listReadyIssues(
       dir,
       user,
       query,
       config,
     );
     warnUnreadable(unreadable);
-    console.log(formatIssueList(issues, globalOpts.output, claimedElsewhere));
+    console.log(formatIssueList(issues, globalOpts.output, marks));
   });
 
   addFilterOptions(

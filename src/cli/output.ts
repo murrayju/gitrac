@@ -1,6 +1,11 @@
 import yaml from 'js-yaml';
 import type { IssueDependencies, IssueRef } from '../core/dependencies.ts';
-import { type ClaimedElsewhere, describeLocation } from '../core/elsewhere.ts';
+import {
+  type ClaimedElsewhere,
+  type ClosedElsewhere,
+  describeLocation,
+  type ElsewhereMarks,
+} from '../core/elsewhere.ts';
 import type { Comment, Issue, OutputFormat } from '../core/types.ts';
 
 /**
@@ -26,24 +31,44 @@ function shortDate(iso: string): string {
   return iso.slice(0, 10);
 }
 
-/** Claims on other branches / worktrees, by issue ID (see `src/core/elsewhere.ts`). */
-export type ClaimsElsewhere = ReadonlyMap<number, ClaimedElsewhere>;
+/**
+ * Claims and closes on other branches / worktrees, by issue ID (see
+ * `elsewhereMarks` in `src/core/elsewhere.ts`).
+ */
+export type MarksElsewhere = ReadonlyMap<number, ElsewhereMarks>;
 
 /** `claimed on branch X by Y` / `claimed in worktree P (branch X) by Y`. */
 export function describeClaimElsewhere(claim: ClaimedElsewhere): string {
   return `claimed ${describeLocation(claim)} by ${claim.assignee}`;
 }
 
-/** The issue as output by json/yaml: plus `claimedElsewhere` when set. */
-function issueData(issue: Issue, claims?: ClaimsElsewhere): object {
-  const claim = claims?.get(issue.id);
-  return claim ? { ...issue, claimedElsewhere: claim } : issue;
+/** `closed (done) on branch X` / `closed (done) in worktree P (branch X)`. */
+export function describeCloseElsewhere(closed: ClosedElsewhere): string {
+  return `closed (${closed.status}) ${describeLocation(closed)}`;
+}
+
+/** The human description of `mark` (a claim or a close elsewhere), if any. */
+function describeMark(mark: ElsewhereMarks | undefined): string | undefined {
+  if (mark?.claimedElsewhere)
+    return describeClaimElsewhere(mark.claimedElsewhere);
+  if (mark?.closedElsewhere)
+    return describeCloseElsewhere(mark.closedElsewhere);
+  return undefined;
+}
+
+/**
+ * The issue as output by json/yaml: plus `claimedElsewhere` or
+ * `closedElsewhere` when set.
+ */
+function issueData(issue: Issue, marks?: MarksElsewhere): object {
+  const mark = marks?.get(issue.id);
+  return mark ? { ...issue, ...mark } : issue;
 }
 
 /**
  * Format a list of issues for human-readable table output.
  */
-function formatHumanList(issues: Issue[], claims?: ClaimsElsewhere): string {
+function formatHumanList(issues: Issue[], marks?: MarksElsewhere): string {
   if (issues.length === 0) {
     return 'No issues found.';
   }
@@ -67,7 +92,7 @@ function formatHumanList(issues: Issue[], claims?: ClaimsElsewhere): string {
   const separator = '-'.repeat(header.length);
 
   const rows = issues.map((issue) => {
-    const claim = claims?.get(issue.id);
+    const mark = describeMark(marks?.get(issue.id));
     return [
       pad(`#${issue.id}`, 6),
       pad(truncate(issue.title, 40), 42),
@@ -76,7 +101,7 @@ function formatHumanList(issues: Issue[], claims?: ClaimsElsewhere): string {
       pad(issue.assignee || '-', assigneeWidth),
       pad(shortDate(issue.updated), 12),
       issue.labels.join(', ') || '-',
-      claim ? `  [${describeClaimElsewhere(claim)}]` : '',
+      mark ? `  [${mark}]` : '',
     ].join('');
   });
 
@@ -128,17 +153,18 @@ function dependencyLines(issue: Issue, deps?: IssueDependencies): string[] {
 function formatHumanDetail(
   issue: Issue,
   deps?: IssueDependencies,
-  claim?: ClaimedElsewhere,
+  mark?: ElsewhereMarks,
 ): string {
+  const where = describeMark(mark);
+  const when =
+    mark?.claimedElsewhere?.updated ?? mark?.closedElsewhere?.updated;
   const lines: string[] = [
     `# #${issue.id}: ${issue.title}`,
     '',
     `Status:     ${issue.status}`,
     `Priority:   ${issue.priority}`,
     `Assignee:   ${issue.assignee || '-'}`,
-    ...(claim
-      ? [`Elsewhere:  ${describeClaimElsewhere(claim)} (${claim.updated})`]
-      : []),
+    ...(where ? [`Elsewhere:  ${where} (${when})`] : []),
     `Labels:     ${issue.labels.length > 0 ? issue.labels.join(', ') : '-'}`,
     ...dependencyLines(issue, deps),
     `Created:    ${issue.created} by ${issue.createdBy}`,
@@ -160,27 +186,27 @@ function formatHumanDetail(
 }
 
 /**
- * Format a list of issues in the specified output format. `claims` marks
- * issues claimed on another branch or worktree (json/yaml: a
- * `claimedElsewhere` field).
+ * Format a list of issues in the specified output format. `marks` flags
+ * issues claimed or closed on another branch or worktree (json/yaml: a
+ * `claimedElsewhere` or `closedElsewhere` field).
  */
 export function formatIssueList(
   issues: Issue[],
   format: OutputFormat,
-  claims?: ClaimsElsewhere,
+  marks?: MarksElsewhere,
 ): string {
   switch (format) {
     case 'human':
-      return formatHumanList(issues, claims);
+      return formatHumanList(issues, marks);
     case 'json':
       return JSON.stringify(
-        issues.map((i) => issueData(i, claims)),
+        issues.map((i) => issueData(i, marks)),
         null,
         2,
       );
     case 'yaml':
       return yaml.dump(
-        issues.map((i) => issueData(i, claims)),
+        issues.map((i) => issueData(i, marks)),
         { lineWidth: -1 },
       );
   }
@@ -190,21 +216,22 @@ export function formatIssueList(
  * Format a single issue detail in the specified output format. `deps`
  * (resolved links) enriches the human output only; json/yaml are the issue
  * itself (`parent` / `blockedBy` included when set), plus `claimedElsewhere`
- * when `claim` says it is claimed on another branch or worktree.
+ * or `closedElsewhere` when `mark` says it is claimed or closed on another
+ * branch or worktree.
  */
 export function formatIssueDetail(
   issue: Issue,
   format: OutputFormat,
   deps?: IssueDependencies,
-  claim?: ClaimedElsewhere,
+  mark?: ElsewhereMarks,
 ): string {
-  const claims = claim ? new Map([[issue.id, claim]]) : undefined;
+  const marks = mark ? new Map([[issue.id, mark]]) : undefined;
   switch (format) {
     case 'human':
-      return formatHumanDetail(issue, deps, claim);
+      return formatHumanDetail(issue, deps, mark);
     case 'json':
-      return JSON.stringify(issueData(issue, claims), null, 2);
+      return JSON.stringify(issueData(issue, marks), null, 2);
     case 'yaml':
-      return yaml.dump(issueData(issue, claims), { lineWidth: -1 });
+      return yaml.dump(issueData(issue, marks), { lineWidth: -1 });
   }
 }

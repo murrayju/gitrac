@@ -1,5 +1,9 @@
 import type { Issue, Status } from './types.ts';
-import { activeStatus, type WorkflowConfig } from './workflow.ts';
+import {
+  activeStatus,
+  isClosedStatus,
+  type WorkflowConfig,
+} from './workflow.ts';
 
 /**
  * Issue state on other branches and worktrees (pure; no I/O).
@@ -33,6 +37,28 @@ export interface ClaimedElsewhere {
   worktree?: string;
   assignee: string;
   updated: string;
+}
+
+/**
+ * Where (and in which closed status) an issue is closed, when that is not
+ * this working tree: the close is newer than the local version, so it is the
+ * effective state (e.g. work done in an agent's worktree, not merged yet).
+ */
+export interface ClosedElsewhere {
+  ref: string;
+  worktree?: string;
+  status: Status;
+  updated: string;
+}
+
+/**
+ * Marks for an issue whose effective state is on another branch or in
+ * another worktree. At most one is set: the newest version is either a claim
+ * or a close.
+ */
+export interface ElsewhereMarks {
+  claimedElsewhere?: ClaimedElsewhere;
+  closedElsewhere?: ClosedElsewhere;
 }
 
 /** Whether ISO timestamp `a` is later than `b` (string order if unparseable). */
@@ -91,6 +117,48 @@ export function claimedElsewhere(
     return undefined;
   }
   return toClaimedElsewhere(newest);
+}
+
+/**
+ * Whether the local `issue` is open but its effective version (the newest
+ * one, see {@link newestElsewhere}) is closed on another branch or in
+ * another worktree; returns where, in which status and when.
+ */
+export function closedElsewhere(
+  issue: { status: Status; updated?: string },
+  config: WorkflowConfig,
+  states: readonly IssueStateElsewhere[] = [],
+): ClosedElsewhere | undefined {
+  if (isClosedStatus(config, issue.status)) return undefined;
+  const newest = newestElsewhere(issue, states);
+  if (newest === undefined || !isClosedStatus(config, newest.status)) {
+    return undefined;
+  }
+  return toClosedElsewhere(newest);
+}
+
+/** Where `state` was found, its status and its `updated`. */
+export function toClosedElsewhere(state: IssueStateElsewhere): ClosedElsewhere {
+  const { ref, worktree, status, updated } = state;
+  return worktree === undefined
+    ? { ref, status, updated }
+    : { ref, worktree, status, updated };
+}
+
+/**
+ * The marks for `issue` from its versions elsewhere (`claimedElsewhere` or
+ * `closedElsewhere`), or undefined if neither applies.
+ */
+export function elsewhereMarks(
+  issue: { status: Status; updated?: string },
+  config: WorkflowConfig,
+  states: readonly IssueStateElsewhere[] = [],
+): ElsewhereMarks | undefined {
+  const claim = claimedElsewhere(issue, config, states);
+  if (claim) return { claimedElsewhere: claim };
+  const closed = closedElsewhere(issue, config, states);
+  if (closed) return { closedElsewhere: closed };
+  return undefined;
 }
 
 /** Where and by whom `state` is held (its location, assignee and `updated`). */

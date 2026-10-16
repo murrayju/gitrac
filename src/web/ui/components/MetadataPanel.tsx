@@ -4,6 +4,7 @@ import { type ApiIssue, updateIssue } from '../api.ts';
 import { useConfig, useWorkflow } from '../hooks.ts';
 import { AssigneePicker } from './AssigneePicker.tsx';
 import { ClaimedElsewhereBadge } from './ClaimedElsewhereBadge.tsx';
+import { ClosedElsewhereBadge } from './ClosedElsewhereBadge.tsx';
 import { Dropdown } from './Dropdown.tsx';
 import { LabelBadge } from './LabelBadge.tsx';
 import { LabelPicker } from './LabelPicker.tsx';
@@ -94,15 +95,23 @@ export function MetadataPanel({ issue }: { issue: ApiIssue }) {
         />
       </div>
 
-      {issue.claimedElsewhere && (
+      {(issue.claimedElsewhere || issue.closedElsewhere) && (
         <div>
           <div className="text-gray-500 text-xs uppercase tracking-wider mb-1">
             Elsewhere
           </div>
-          <ClaimedElsewhereBadge
-            claim={issue.claimedElsewhere}
-            variant="full"
-          />
+          {issue.claimedElsewhere && (
+            <ClaimedElsewhereBadge
+              claim={issue.claimedElsewhere}
+              variant="full"
+            />
+          )}
+          {issue.closedElsewhere && (
+            <ClosedElsewhereBadge
+              closed={issue.closedElsewhere}
+              variant="full"
+            />
+          )}
         </div>
       )}
 

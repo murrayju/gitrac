@@ -57,7 +57,11 @@ async function json<T>(dir: string, author: string, ...args: string[]) {
   return JSON.parse(await ok(dir, author, '-o', 'json', ...args)) as T;
 }
 
-type Listed = { id: number; claimedElsewhere?: Record<string, string> };
+type Listed = {
+  id: number;
+  claimedElsewhere?: Record<string, string>;
+  closedElsewhere?: Record<string, string>;
+};
 
 beforeEach(async () => {
   tmp = await realpath(await mkdtemp(join(tmpdir(), 'gitrac-wt-claims-')));
@@ -286,5 +290,89 @@ describe('unclaim across worktrees', () => {
     // No warning for a plain claim.
     const plain = await cli(wt2, 'Bob', 'claim', '2', '--no-commit');
     expect(plain.stderr).not.toContain('Warning');
+  });
+});
+
+describe('closes across worktrees and branches (#93)', () => {
+  test('claim refuses an issue closed in another worktree unless --force', async () => {
+    await ok(wt1, 'Bob', 'claim', '1', '--no-commit');
+    // git doesn't track the empty closed/ dir, and close doesn't create it.
+    await mkdir(join(wt1, '.issues', 'closed'), { recursive: true });
+    await ok(wt1, 'Bob', 'close', '1', '--no-commit');
+    const where = `in worktree ${wt1} (branch agent-1)`;
+
+    const res = await cli(main, 'Ada', 'claim', '1');
+    expect(res.code).toBe(EXIT_ISSUE_CLOSED);
+    expect(res.stderr).toContain(
+      `Error: Issue #1 is closed (done) ${where}. Merge that branch to get the close here, or use --force to claim it anyway.`,
+    );
+    expect(res.stderr).not.toContain('reopen');
+    expect(await readIssue(main, 1)).toMatchObject({
+      status: 'todo',
+      assignee: '',
+    });
+    const err = await cli(main, 'Ada', '-o', 'json', 'claim', '1');
+    expect(err.code).toBe(EXIT_ISSUE_CLOSED);
+    expect(JSON.parse(err.stderr).error).toMatchObject({
+      code: 'issue_closed',
+      status: 'done',
+      closedElsewhere: { ref: 'agent-1', worktree: wt1, status: 'done' },
+    });
+
+    // ls / show say where it's closed; ready / next skip it.
+    const listed = await json<Listed[]>(main, 'Ada', 'ls');
+    expect(listed[0]?.closedElsewhere).toMatchObject({
+      ref: 'agent-1',
+      worktree: wt1,
+      status: 'done',
+    });
+    expect(listed[0]?.claimedElsewhere).toBeUndefined();
+    expect(listed[1]?.closedElsewhere).toBeUndefined();
+    expect(await ok(main, 'Ada', 'ls')).toContain(`[closed (done) ${where}]`);
+    expect(await ok(main, 'Ada', 'show', '1')).toContain(
+      `Elsewhere:  closed (done) ${where} (`,
+    );
+    expect(
+      (await json<Listed>(main, 'Ada', 'show', '1')).closedElsewhere,
+    ).toMatchObject({ ref: 'agent-1', worktree: wt1, status: 'done' });
+    const ready = await json<Listed[]>(main, 'Ada', 'ready');
+    expect(ready.map((i) => i.id)).toEqual([2]);
+
+    // --force claims it here; the newer claim supersedes the close.
+    await ok(main, 'Ada', 'claim', '1', '--force', '--no-commit');
+    expect(await readIssue(main, 1)).toMatchObject({
+      status: 'in_progress',
+      assignee: 'Ada',
+    });
+    const after = await json<Listed>(main, 'Ada', 'show', '1');
+    expect(after.closedElsewhere).toBeUndefined();
+  });
+
+  test('a close committed on a branch is seen after its worktree is gone', async () => {
+    await mkdir(join(wt1, '.issues', 'closed'), { recursive: true });
+    await ok(wt1, 'Bob', 'close', '1');
+    await simpleGit(main).raw(['worktree', 'remove', '--force', wt1]);
+
+    const res = await cli(main, 'Ada', '-o', 'json', 'claim', '1');
+    expect(res.code).toBe(EXIT_ISSUE_CLOSED);
+    const { error } = JSON.parse(res.stderr);
+    expect(error.closedElsewhere).toMatchObject({
+      ref: 'agent-1',
+      status: 'done',
+    });
+    expect(error.closedElsewhere).not.toHaveProperty('worktree');
+    expect(await ok(main, 'Ada', 'ls')).toContain(
+      '[closed (done) on branch agent-1]',
+    );
+  });
+
+  test('a local close keeps the reopen hint', async () => {
+    await mkdir(join(main, '.issues', 'closed'), { recursive: true });
+    await ok(main, 'Ada', 'close', '2', '--no-commit');
+    const res = await cli(main, 'Ada', 'claim', '2');
+    expect(res.code).toBe(EXIT_ISSUE_CLOSED);
+    expect(res.stderr).toContain(
+      'Error: Issue #2 is closed (done). Use "gitrac reopen 2" first',
+    );
   });
 });

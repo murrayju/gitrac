@@ -2,8 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import { createDefaultConfig } from './config.ts';
 import {
   claimedElsewhere,
+  closedElsewhere,
   describeLocation,
   effectiveState,
+  elsewhereMarks,
   type IssueStateElsewhere,
   isLater,
   newestElsewhere,
@@ -116,6 +118,101 @@ describe('claimedElsewhere', () => {
         state('2026-01-03T00:00:00Z', { assignee: ' ' }),
       ]),
     ).toBeUndefined();
+  });
+});
+
+describe('closedElsewhere (#93)', () => {
+  test('where, in which status and when, when the newest version is closed', () => {
+    expect(
+      closedElsewhere(local, CONFIG, [
+        state('2026-01-03T00:00:00Z', { status: 'done', worktree: '/wt/a' }),
+      ]),
+    ).toEqual({
+      ref: 'feature',
+      worktree: '/wt/a',
+      status: 'done',
+      updated: '2026-01-03T00:00:00Z',
+    });
+    expect(
+      closedElsewhere(local, CONFIG, [
+        state('2026-01-03T00:00:00Z', { status: 'cancelled' }),
+      ]),
+    ).toEqual({
+      ref: 'feature',
+      status: 'cancelled',
+      updated: '2026-01-03T00:00:00Z',
+    });
+  });
+
+  test('an older close, a newer open version or a local close is not reported', () => {
+    const done = state('2026-01-03T00:00:00Z', { status: 'done' });
+    // Older than the local version.
+    expect(
+      closedElsewhere({ ...local, updated: '2026-01-04T00:00:00Z' }, CONFIG, [
+        done,
+      ]),
+    ).toBeUndefined();
+    // Superseded by a newer reopen elsewhere.
+    expect(
+      closedElsewhere(local, CONFIG, [
+        done,
+        state('2026-01-04T00:00:00Z', { status: 'todo', assignee: '' }),
+      ]),
+    ).toBeUndefined();
+    // Closed here too: nothing to flag.
+    expect(
+      closedElsewhere({ ...local, status: 'done' }, CONFIG, [done]),
+    ).toBeUndefined();
+    // A claim is not a close.
+    expect(
+      closedElsewhere(local, CONFIG, [state('2026-01-03T00:00:00Z')]),
+    ).toBeUndefined();
+  });
+
+  test('custom closed statuses come from the config', () => {
+    const config = {
+      ...CONFIG,
+      statuses: [
+        { name: 'open', closed: false },
+        { name: 'done', closed: false },
+        { name: 'shipped', closed: true },
+      ],
+      defaultStatus: 'open',
+    };
+    const shipped = state('2026-01-03T00:00:00Z', { status: 'shipped' });
+    expect(
+      closedElsewhere({ ...local, status: 'open' }, config, [shipped])?.status,
+    ).toBe('shipped');
+    // `done` is an open status in this config.
+    expect(
+      closedElsewhere({ ...local, status: 'open' }, config, [
+        state('2026-01-03T00:00:00Z', { status: 'done' }),
+      ]),
+    ).toBeUndefined();
+  });
+
+  test('elsewhereMarks sets one of claimedElsewhere / closedElsewhere', () => {
+    expect(
+      elsewhereMarks(local, CONFIG, [state('2026-01-03T00:00:00Z')]),
+    ).toEqual({
+      claimedElsewhere: {
+        ref: 'feature',
+        assignee: 'bob@example.com',
+        updated: '2026-01-03T00:00:00Z',
+      },
+    });
+    expect(
+      elsewhereMarks(local, CONFIG, [
+        state('2026-01-03T00:00:00Z', { status: 'done' }),
+      ]),
+    ).toEqual({
+      closedElsewhere: {
+        ref: 'feature',
+        status: 'done',
+        updated: '2026-01-03T00:00:00Z',
+      },
+    });
+    expect(elsewhereMarks(local, CONFIG, [])).toBeUndefined();
   });
 });
 

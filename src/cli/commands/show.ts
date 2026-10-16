@@ -3,7 +3,7 @@ import { describeDependencies, indexIssues } from '../../core/dependencies.ts';
 import { parseIssueIdArg } from '../../core/errors.ts';
 import { readConfig, readIssue } from '../../fs/issue-store.ts';
 import { getBranchWarning } from '../../git/status.ts';
-import { findClaimsElsewhere, loadAllIssues } from '../../service/list.ts';
+import { findMarksElsewhere, loadAllIssues } from '../../service/list.ts';
 import { resolveProjectOptions } from '../global-options.ts';
 import { formatIssueDetail } from '../output.ts';
 
@@ -34,9 +34,9 @@ export function registerShowCommand(program: Command): void {
         byId.set(issue.id, issue);
         deps = describeDependencies(issue, byId, config);
       }
-      const claim = (await findClaimsElsewhere(dir, [issue], config)).get(
+      const mark = (await findMarksElsewhere(dir, [issue], config)).get(
         issue.id,
       );
-      console.log(formatIssueDetail(issue, globalOpts.output, deps, claim));
+      console.log(formatIssueDetail(issue, globalOpts.output, deps, mark));
     });
 }

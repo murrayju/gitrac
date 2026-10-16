@@ -1,5 +1,5 @@
 import type { IssueDependencies } from '../../core/dependencies.ts';
-import type { ClaimedElsewhere } from '../../core/elsewhere.ts';
+import type { ElsewhereMarks } from '../../core/elsewhere.ts';
 import type {
   Assignee,
   Config,
@@ -10,10 +10,11 @@ import type {
 
 /**
  * An issue as served by `GET /api/issues` / `GET /api/issues/:id` (and
- * mutation responses): plus `claimedElsewhere` when its newest version is a
- * claim in another worktree or on another branch.
+ * mutation responses): plus `claimedElsewhere` / `closedElsewhere` when its
+ * newest version is a claim / a close in another worktree or on another
+ * branch.
  */
-export type ApiIssue = Issue & { claimedElsewhere?: ClaimedElsewhere };
+export type ApiIssue = Issue & ElsewhereMarks;
 
 export interface Draft {
   filename: string;

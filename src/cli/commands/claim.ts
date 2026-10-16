@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
 import { EXIT_ALREADY_CLAIMED, EXIT_ISSUE_CLOSED } from '../../core/claim.ts';
 import { describeLocation } from '../../core/elsewhere.ts';
-import { parseIssueIdArg } from '../../core/errors.ts';
+import { GitracError, parseIssueIdArg } from '../../core/errors.ts';
 import { claimIssue } from '../../service/claim.ts';
 import { withHint } from '../errors.ts';
 import { resolveProjectOptions } from '../global-options.ts';
@@ -31,9 +31,15 @@ export function registerClaimCommand(program: Command): void {
           id,
           { comment: options.comment, force: options.force },
         ).catch((err: unknown) => {
+          const closedThere =
+            err instanceof GitracError &&
+            err.details?.closedElsewhere !== undefined;
           throw withHint(err, {
             already_claimed: 'Use --force to take it over.',
-            issue_closed: `Use "gitrac reopen ${id}" first, or claim --force to reopen and claim it.`,
+            // Closed elsewhere: it is open here, so "reopen" can't help.
+            issue_closed: closedThere
+              ? 'Merge that branch to get the close here, or use --force to claim it anyway.'
+              : `Use "gitrac reopen ${id}" first, or claim --force to reopen and claim it.`,
           });
         });
         if (result.changed && result.elsewhere) {

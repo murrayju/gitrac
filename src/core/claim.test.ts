@@ -209,6 +209,50 @@ describe('decideClaim with versions elsewhere (#56)', () => {
     ).toEqual({ action: 'noop' });
   });
 
+  test('a newer close elsewhere is refused as closed, saying where (#93)', () => {
+    const done = { ...bobsClaim, status: 'done' as const, updated: at(4) };
+    const where = {
+      ref: 'agent-1',
+      worktree: '/wt/agent-1',
+      status: 'done',
+      updated: at(4),
+    };
+    expect(decideClaim(todo, alice, CONFIG, { elsewhere: [done] })).toEqual({
+      action: 'closed',
+      elsewhere: where,
+    });
+    // Also when the local copy is my own claim (the agent closed it later).
+    expect(
+      decideClaim(
+        { status: 'in_progress', assignee: alice.email, updated: at(3) },
+        alice,
+        CONFIG,
+        { elsewhere: [{ ...done, assignee: alice.email }] },
+      ),
+    ).toMatchObject({ action: 'closed', elsewhere: { status: 'done' } });
+    // Committed on a branch (no worktree): no `worktree` key.
+    const { worktree: _, ...onBranch } = done;
+    const { worktree: __, ...whereOnBranch } = where;
+    expect(decideClaim(todo, alice, CONFIG, { elsewhere: [onBranch] })).toEqual(
+      { action: 'closed', elsewhere: whereOnBranch },
+    );
+  });
+
+  test('force claims an issue closed elsewhere (no reopen needed here)', () => {
+    const done = { ...bobsClaim, status: 'done' as const, updated: at(4) };
+    expect(
+      decideClaim(todo, alice, CONFIG, { elsewhere: [done], force: true }),
+    ).toEqual({ action: 'claim', reopen: false });
+  });
+
+  test('an older close elsewhere is superseded by the local version', () => {
+    const done = { ...bobsClaim, status: 'done' as const, updated: at(1) };
+    expect(decideClaim(todo, alice, CONFIG, { elsewhere: [done] })).toEqual({
+      action: 'claim',
+      reopen: false,
+    });
+  });
+
   test('a closed local issue is still refused as closed', () => {
     expect(
       decideClaim({ ...todo, status: 'done' }, alice, CONFIG, {
@@ -316,6 +360,29 @@ describe('configured active status (#57)', () => {
         custom,
       ),
     ).toEqual({ action: 'closed', status: 'shipped' });
+  });
+
+  test('a custom closed status elsewhere refuses the claim (#93)', () => {
+    const shipped = {
+      ref: 'agent-1',
+      status: 'shipped',
+      assignee: '',
+      updated: '2026-01-05T00:00:00Z',
+    };
+    const local = {
+      status: 'open',
+      assignee: '',
+      updated: '2026-01-02T00:00:00Z',
+    };
+    expect(
+      decideClaim(local, alice, custom, { elsewhere: [shipped] }),
+    ).toMatchObject({ action: 'closed', elsewhere: { status: 'shipped' } });
+    // An open status elsewhere doesn't block the claim.
+    expect(
+      decideClaim(local, alice, custom, {
+        elsewhere: [{ ...shipped, status: 'open' }],
+      }),
+    ).toEqual({ action: 'claim', reopen: false });
   });
 });
 

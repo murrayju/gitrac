@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtemp, realpath, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import simpleGit from 'simple-git';
-import type { ClaimedElsewhere } from '../../core/elsewhere.ts';
+import type {
+  ClaimedElsewhere,
+  ClosedElsewhere,
+} from '../../core/elsewhere.ts';
 import type { Issue } from '../../core/types.ts';
 import {
   initIssuesDir,
@@ -25,7 +28,10 @@ import { IssueWatcher } from '../watcher.ts';
  * (`claimedElsewhere`, as in `gitrac ls -o json`), from a briefly cached scan.
  */
 
-type Served = Issue & { claimedElsewhere?: ClaimedElsewhere };
+type Served = Issue & {
+  claimedElsewhere?: ClaimedElsewhere;
+  closedElsewhere?: ClosedElsewhere;
+};
 
 let tmp: string;
 let main: string;
@@ -59,6 +65,20 @@ async function claimIn(dir: string, id: number, updated: string) {
     assignee: 'bob@example.com',
     updated,
   });
+}
+
+/** Close issue `id` in `dir`'s working tree (uncommitted), as `close --no-commit` would. */
+async function closeIn(dir: string, id: number, updated: string) {
+  const issue = await readIssue(dir, id);
+  const open = join(dir, '.issues');
+  for (const file of await readdir(open)) {
+    if (file.startsWith(`${id}-`)) await rm(join(open, file));
+  }
+  await writeIssue(
+    dir,
+    { ...issue, status: 'done', updated },
+    { closed: true },
+  );
 }
 
 beforeEach(async () => {
@@ -266,5 +286,64 @@ describe('claimedElsewhere in the web API', () => {
     const list = await get<Served[]>('/issues');
     expect(list[0]?.claimedElsewhere?.worktree).toBe(wt1);
     expect(ctx.elsewhere).toBeInstanceOf(ElsewhereCache);
+  });
+});
+
+describe('closedElsewhere in the web API (#93)', () => {
+  const CLOSED = { ref: 'agent-1', status: 'done', updated: WHERE.updated };
+
+  test('list and detail include a close made in another worktree', async () => {
+    await closeIn(wt1, 1, WHERE.updated);
+
+    const list = await get<Served[]>('/issues');
+    expect(list.map((i) => i.id)).toEqual([1, 2]);
+    expect(list[0]?.closedElsewhere).toEqual({ ...CLOSED, worktree: wt1 });
+    expect(list[0]).not.toHaveProperty('claimedElsewhere');
+    expect(list[0]?.status).toBe('todo'); // the local file is untouched
+    expect(list[1]).not.toHaveProperty('closedElsewhere');
+
+    const one = await get<Served>('/issues/1');
+    expect(one.closedElsewhere).toEqual({ ...CLOSED, worktree: wt1 });
+
+    // Responses that embed the issue carry it too.
+    const app = createApp(ctx, { ui: null });
+    const plan = await app.request('http://localhost/api/issues/1?dryRun=1', {
+      method: 'DELETE',
+    });
+    expect(plan.status).toBe(200);
+    expect(((await plan.json()) as { issue: Served }).issue).toEqual(one);
+
+    // A local write has a newer `updated`, which supersedes the close.
+    const res = await app.request('http://localhost/api/issues/1', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Renamed' }),
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as Served).not.toHaveProperty('closedElsewhere');
+  });
+
+  test('a close committed on a branch is reported without a worktree', async () => {
+    await simpleGit(main).raw(['worktree', 'remove', '--force', wt1]);
+    const git = simpleGit(main);
+    await git.checkout(['-b', 'other']);
+    await closeIn(main, 2, WHERE.updated);
+    await git.add('.');
+    await git.commit('close #2');
+    await git.checkout('main');
+
+    const list = await get<Served[]>('/issues');
+    expect(list[1]?.closedElsewhere).toEqual({ ...CLOSED, ref: 'other' });
+  });
+
+  test('409 responses embed `current` with closedElsewhere', async () => {
+    await closeIn(wt1, 1, WHERE.updated);
+    const res = await createApp(ctx, { ui: null }).request(
+      'http://localhost/api/issues/1/reopen',
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json' } },
+    );
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { current: Served };
+    expect(body.current.closedElsewhere).toEqual({ ...CLOSED, worktree: wt1 });
   });
 });
