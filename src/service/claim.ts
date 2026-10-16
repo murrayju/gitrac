@@ -29,7 +29,7 @@ import {
   type ServiceContext,
 } from './context.ts';
 import type { IssueChange } from './issues.ts';
-import { loadStoredIssue } from './load.ts';
+import { loadStoredIssue, type Precondition } from './load.ts';
 
 /**
  * Claim / unclaim: the rules live in `src/core/claim.ts`; this applies them
@@ -65,6 +65,11 @@ export interface ClaimOptions {
    * claim (it stays theirs).
    */
   force?: boolean;
+  /**
+   * Checked on the loaded issue before the decision (e.g. the web API's
+   * `If-Match`). The user is validated first.
+   */
+  precondition?: Precondition;
 }
 
 /**
@@ -120,7 +125,7 @@ export async function claimIssue(
   assertValidUser(user, options.comment, { claim: true });
   return withRepoLock(ctx.dir, async () => {
     const config = await loadConfig(ctx);
-    const stored = await loadStoredIssue(ctx.dir, id);
+    const stored = await loadStoredIssue(ctx.dir, id, options.precondition);
     const { issue } = stored;
     // Every worktree shares the repo lock, so a claim in another worktree
     // can't slip in between this scan and our write.
@@ -232,7 +237,7 @@ export async function unclaimIssue(
   assertValidUser(user, options.comment, { claim: false });
   return withRepoLock(ctx.dir, async () => {
     const config = await loadConfig(ctx);
-    const stored = await loadStoredIssue(ctx.dir, id);
+    const stored = await loadStoredIssue(ctx.dir, id, options.precondition);
     const { issue } = stored;
     // Under the (shared) repo lock, like claim.
     const elsewhere = (await issueStatesElsewhere(ctx.dir, { ids: [id] })).get(

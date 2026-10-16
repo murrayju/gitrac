@@ -15,6 +15,7 @@ import {
 } from '../lib/label-updates.ts';
 import { requestErrorReason } from '../lib/upload-error.ts';
 import { AssigneePicker } from './AssigneePicker.tsx';
+import { ClaimControls } from './ClaimControls.tsx';
 import { ClaimedElsewhereBadge } from './ClaimedElsewhereBadge.tsx';
 import { ClosedElsewhereBadge } from './ClosedElsewhereBadge.tsx';
 import { Dropdown } from './Dropdown.tsx';
@@ -25,10 +26,13 @@ import { StatusBadge } from './StatusBadge.tsx';
 
 export function MetadataPanel({
   issue,
+  version,
   onSaved,
 }: {
   issue: ApiIssue;
-  /** A label save returned this issue (and its version). */
+  /** The version shown (ETag), for claim / release. */
+  version: string | null;
+  /** A label save, claim or release returned this issue (and its version). */
   onSaved: (issue: Issue, version: string | null) => void;
 }) {
   const { config } = useConfig();
@@ -128,6 +132,12 @@ export function MetadataPanel({
               {assigneeName || 'Unassigned'}
             </span>
           }
+        />
+        <ClaimControls
+          key={issue.id}
+          issue={issue}
+          version={version}
+          onSaved={onSaved}
         />
       </div>
 

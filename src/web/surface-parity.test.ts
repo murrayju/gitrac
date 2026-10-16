@@ -131,6 +131,61 @@ describe('commit messages match the CLI', () => {
   });
 });
 
+describe('claim / unclaim match the CLI (#103)', () => {
+  test('commit message, files and error codes', async () => {
+    // Committed outside the server, so the claim is a fresh commit.
+    await writeIssue(dir, {
+      id: 1,
+      title: 'Existing',
+      status: 'todo',
+      priority: 'medium',
+      assignee: '',
+      labels: [],
+      created: '2025-01-01T00:00:00Z',
+      createdBy: 'tester',
+      updated: '2025-01-01T00:00:00Z',
+      description: '',
+      comments: [],
+    });
+    const git = simpleGit(dir);
+    await git.add('.');
+    await git.commit('add issue');
+
+    const config = await readConfig(dir);
+    config.assignees = [{ name: 'Grace', email: 'grace@example.com' }];
+    await writeConfig(dir, config);
+    await git.add('.');
+    await git.commit('add assignee');
+
+    const res = await send('POST', '/issues/1/claim', { author: 'Grace' });
+    expect(res.status).toBe(200);
+    expect((await git.log()).latest?.message).toBe(
+      `${prefix} claim #1 Existing`,
+    );
+    const files = await git.raw(['show', '--name-only', '--format=', 'HEAD']);
+    expect(files.trim()).toBe('.issues/1-existing.md');
+
+    // Same codes as the CLI's JSON errors (exit 3 / exit 4).
+    const taken = await send('POST', '/issues/1/claim', {});
+    expect(taken.status).toBe(409);
+    expect(((await taken.json()) as { code: string }).code).toBe(
+      'already_claimed',
+    );
+    const released = await send('POST', '/issues/1/unclaim', {
+      author: 'Grace',
+    });
+    expect(released.status).toBe(200);
+    expect(((await released.json()) as Issue).status).toBe('todo');
+    await send('PATCH', '/issues/1/close', {});
+    const closed = await send('POST', '/issues/1/unclaim', {});
+    expect(closed.status).toBe(409);
+    expect(((await closed.json()) as { code: string }).code).toBe(
+      'issue_closed',
+    );
+    expect((await git.status()).isClean()).toBe(true);
+  });
+});
+
 describe('POST /api/issues with a closed status (#67)', () => {
   test('writes and commits the issue in .issues/closed/', async () => {
     const res = await send('POST', '/issues', {

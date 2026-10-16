@@ -1,18 +1,18 @@
-import { useEffect, useState } from 'react';
-import { fetchIdentity, type Identity } from '../api.ts';
-import { useConfig } from '../hooks.ts';
+import { useEffect } from 'react';
+import { useConfig, useServerIdentity } from '../hooks.ts';
 import { effectiveAuthor, identityOptions } from '../lib/identity.ts';
 import { useIdentityStore } from '../stores/identityStore.ts';
 
 /**
- * "Acting as" selector: who new issues and comments are attributed to. The
+ * "Acting as" selector: who new issues and comments are attributed to, and
+ * who claims an issue. The
  * default is the server's git identity; any configured assignee can be
  * picked instead (remembered in localStorage).
  */
 export function IdentityPicker() {
   const author = useIdentityStore((s) => s.author);
   const setAuthor = useIdentityStore((s) => s.setAuthor);
-  const [identity, setIdentity] = useState<Identity | null>(null);
+  const { identity, refetch: refetchIdentity } = useServerIdentity();
   // Shared config (one fetch + one SSE connection for the whole tab).
   const { config, refetch: refetchConfig } = useConfig();
   const assignees = config?.assignees ?? null;
@@ -20,23 +20,13 @@ export function IdentityPicker() {
   // Load on mount and whenever the tab regains focus (git config / assignees
   // may have changed outside the browser).
   useEffect(() => {
-    let cancelled = false;
-    function load() {
-      fetchIdentity()
-        .then((id) => !cancelled && setIdentity(id))
-        .catch(() => {});
-    }
     function onFocus() {
-      load();
+      refetchIdentity();
       refetchConfig();
     }
-    load();
     window.addEventListener('focus', onFocus);
-    return () => {
-      cancelled = true;
-      window.removeEventListener('focus', onFocus);
-    };
-  }, [refetchConfig]);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [refetchIdentity, refetchConfig]);
 
   // Drop a stored choice that is no longer a configured assignee.
   useEffect(() => {

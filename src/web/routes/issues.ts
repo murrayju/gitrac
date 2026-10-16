@@ -1,11 +1,12 @@
 import { type Context, Hono } from 'hono';
 import { describeDependencies, indexIssues } from '../../core/dependencies.ts';
 import type { ElsewhereMarks } from '../../core/elsewhere.ts';
-import { GitracError } from '../../core/errors.ts';
+import { GitracError, invalidInput } from '../../core/errors.ts';
 import { parseIssueFile } from '../../core/issue.ts';
 import { type IssueQuery, parseIssueQuery } from '../../core/query.ts';
 import type { Issue } from '../../core/types.ts';
 import { readIssueContent } from '../../fs/issue-store.ts';
+import { claimIssue, unclaimIssue } from '../../service/claim.ts';
 import { issuePath } from '../../service/context.ts';
 import { deleteIssue } from '../../service/delete.ts';
 import { IssueUnreadableError, ValidationError } from '../../service/errors.ts';
@@ -125,6 +126,10 @@ function ifMatchGuard(c: Context): {
  * - `If-Match` mismatch: 409 `{ error, current }` (+ its ETag)
  * - `invalid_state` (already closed / already open): 409
  *   `{ error, code, current }` (+ its ETag), nothing written
+ * - `already_claimed` (claim / unclaim): 409
+ *   `{ error, code, assignee, claimedElsewhere? }`
+ * - `issue_closed` (claim / unclaim): 409
+ *   `{ error, code, status, closedElsewhere? }`
  * - field validation: 400 `{ error, errors }`; other bad input: 400 `{ error }`
  * - missing or unreadable issue, comment index out of range: 404 `{ error }`
  * - several files for the issue ID: 409 `{ error, code, files }`
@@ -163,6 +168,20 @@ async function errorResponse(
           code: err.code,
           current: await withClaim(ctx, current.issue),
         },
+        409,
+      );
+    }
+    if (err.code === 'already_claimed') {
+      const { assignee, claimedElsewhere } = err.details ?? {};
+      return c.json(
+        { error: err.message, code: err.code, assignee, claimedElsewhere },
+        409,
+      );
+    }
+    if (err.code === 'issue_closed') {
+      const { status, closedElsewhere } = err.details ?? {};
+      return c.json(
+        { error: err.message, code: err.code, status, closedElsewhere },
         409,
       );
     }
@@ -301,7 +320,9 @@ export function issueRoutes(ctx: ServerContext): Hono {
    */
   async function mutateIssue(
     c: Context,
-    run: (precondition: Precondition) => Promise<IssueChange>,
+    run: (
+      precondition: Precondition,
+    ) => Promise<Pick<IssueChange, 'issue' | 'config'>>,
     status: 200 | 201 = 200,
   ): Promise<Response> {
     const guard = ifMatchGuard(c);
@@ -458,6 +479,38 @@ export function issueRoutes(ctx: ServerContext): Hono {
     );
   });
 
+  // POST /issues/:id/claim and /issues/:id/unclaim: `{ author?, comment?,
+  // force? }`: claim (assign to the acting user + the active status) or give
+  // back the issue, with the CLI's rules (`claimIssue` / `unclaimIssue`).
+  // `author` (the identity picked in the UI) must be a configured assignee;
+  // default: the server's identity. A no-op is 200 with the current issue.
+  // 409 `already_claimed` / `issue_closed` (see `errorResponse`). Honors
+  // `If-Match`.
+  for (const [action, run] of [
+    ['claim', claimIssue],
+    ['unclaim', unclaimIssue],
+  ] as const) {
+    app.post(`/issues/:id/${action}`, locked, async (c) => {
+      const id = Number.parseInt(c.req.param('id'), 10);
+      if (Number.isNaN(id)) {
+        return c.json({ error: 'Invalid issue ID' }, 400);
+      }
+      let input: ReturnType<typeof claimInput>;
+      try {
+        input = claimInput(await readJsonBody(c));
+      } catch (err) {
+        return errorResponse(c, ctx, err);
+      }
+      return mutateIssue(c, (precondition) =>
+        run(webServiceContext(ctx, { author: input.author }), id, {
+          comment: input.comment,
+          force: input.force,
+          precondition,
+        }),
+      );
+    });
+  }
+
   // GET /issues/:id/dependencies — the issue's parent, sub-issues, blockers
   // and the issues it blocks (derived), each `{ id, title, status, resolved }`
   // (`status: null` for a missing issue), plus `blocked`.
@@ -510,6 +563,30 @@ export function issueRoutes(ctx: ServerContext): Hono {
   });
 
   return app;
+}
+
+/**
+ * The fields of a claim / unclaim body (`null` = absent). Throws
+ * `invalid_input` for a wrong type; `author` is checked by the service
+ * context.
+ */
+function claimInput(body: unknown): {
+  author?: unknown;
+  comment?: string;
+  force?: boolean;
+} {
+  const { author, comment, force } = asRecord(body);
+  if (comment != null && typeof comment !== 'string') {
+    throw invalidInput('comment must be a string');
+  }
+  if (force != null && typeof force !== 'boolean') {
+    throw invalidInput('force must be a boolean');
+  }
+  return {
+    author: author ?? undefined,
+    comment: comment ?? undefined,
+    force: force ?? undefined,
+  };
 }
 
 /** A boolean query flag: present and not `0` / `false` / `no`. */

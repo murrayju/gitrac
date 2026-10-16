@@ -191,7 +191,11 @@ export function IssueDetail() {
 
         {/* Metadata sidebar */}
         <div className="w-56 shrink-0">
-          <MetadataPanel issue={issue} onSaved={handleIssueSaved} />
+          <MetadataPanel
+            issue={issue}
+            version={version}
+            onSaved={handleIssueSaved}
+          />
           <DependenciesPanel issueId={issue.id} />
           <div className="mt-8 pt-4 border-t border-gray-200 dark:border-gray-800">
             <button

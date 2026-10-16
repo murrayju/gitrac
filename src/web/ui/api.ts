@@ -282,6 +282,47 @@ export async function deleteComment(
   });
 }
 
+/** Body of `POST /api/issues/:id/claim` and `/unclaim`. */
+export interface ClaimInput {
+  /** The "Acting as" choice (a configured assignee); omitted = the server's identity. */
+  author?: string;
+  comment?: string;
+  /** claim: take over someone else's claim. unclaim: release someone else's claim. */
+  force?: boolean;
+}
+
+/**
+ * Claim issue `id` (assign it to the acting user and set the active status),
+ * only if it is still at `baseVersion` (throws `ConflictError` if it
+ * changed). Rejects with an `ApiError` 409 (`code: "already_claimed"` or
+ * `"issue_closed"`) if someone else holds it or it is closed; see
+ * `claimConflict`. Returns the issue (unchanged for a no-op) and its version.
+ */
+export async function claimIssue(
+  id: number,
+  input: ClaimInput,
+  baseVersion?: string | null,
+): Promise<Versioned<ApiIssue>> {
+  return requestVersioned<ApiIssue>(`/api/issues/${id}/claim`, {
+    method: 'POST',
+    headers: ifMatch(baseVersion),
+    body: JSON.stringify(input),
+  });
+}
+
+/** Give issue `id` back (clear the assignee); errors as for {@link claimIssue}. */
+export async function unclaimIssue(
+  id: number,
+  input: ClaimInput,
+  baseVersion?: string | null,
+): Promise<Versioned<ApiIssue>> {
+  return requestVersioned<ApiIssue>(`/api/issues/${id}/unclaim`, {
+    method: 'POST',
+    headers: ifMatch(baseVersion),
+    body: JSON.stringify(input),
+  });
+}
+
 export async function closeIssue(id: number): Promise<Issue> {
   return request<Issue>(`/api/issues/${id}/close`, { method: 'PATCH' });
 }

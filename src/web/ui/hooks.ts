@@ -8,11 +8,18 @@ import {
 } from 'react';
 import type { IssueDependencies } from '../../core/dependencies.ts';
 import type { Config } from '../../core/types.ts';
-import type { ApiIssue, Draft, GitStatus, IssueFilters } from './api.ts';
+import type {
+  ApiIssue,
+  Draft,
+  GitStatus,
+  Identity,
+  IssueFilters,
+} from './api.ts';
 import {
   fetchConfig,
   fetchDrafts,
   fetchGitStatus,
+  fetchIdentity,
   fetchIssueDependencies,
   fetchIssues,
   fetchIssueVersioned,
@@ -218,6 +225,26 @@ export function useWorkflow(): WorkflowView {
 
 function refetchConfig(): void {
   void configQuery.refetch();
+}
+
+// The server's default identity, shared like the config ("Acting as" picker,
+// claim buttons). Refetched on demand (e.g. when the tab regains focus).
+const identityQuery = createSharedQuery(fetchIdentity);
+
+/** The server's default identity (git config), or null until loaded. */
+export function useServerIdentity(): {
+  identity: Identity | null;
+  refetch: () => void;
+} {
+  const { data } = useSyncExternalStore(
+    identityQuery.subscribe,
+    identityQuery.getSnapshot,
+  );
+  return { identity: data, refetch: refetchIdentity };
+}
+
+function refetchIdentity(): void {
+  void identityQuery.refetch();
 }
 
 export function useGitStatus(): {
