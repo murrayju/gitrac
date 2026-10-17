@@ -1,10 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Issue } from '../../../core/types.ts';
 import { statusSortOrder } from '../../../core/workflow.ts';
-import { useConfig, useIssues, useWorkflow } from '../hooks.ts';
+import {
+  useConfig,
+  useIssues,
+  useServerIdentity,
+  useWorkflow,
+} from '../hooks.ts';
+import { effectiveAuthor } from '../lib/identity.ts';
 import { labelFilterOptions, listFilters } from '../lib/list-filters.ts';
 import type { SortField } from '../stores/filterStore.ts';
 import { useFilterStore } from '../stores/filterStore.ts';
+import { useIdentityStore } from '../stores/identityStore.ts';
 import { IssueRow } from './IssueRow.tsx';
 
 export function IssueList() {
@@ -26,6 +33,8 @@ export function IssueList() {
   const setSortField = useFilterStore((s) => s.setSortField);
   const sortDir = useFilterStore((s) => s.sortDir);
   const setSortDir = useFilterStore((s) => s.setSortDir);
+  const storedAuthor = useIdentityStore((s) => s.author);
+  const { identity } = useServerIdentity();
 
   const search = useDebounced(searchText, SEARCH_DEBOUNCE_MS);
   const filters = listFilters({
@@ -35,6 +44,11 @@ export function IssueList() {
     labelFilter,
     search,
     mineFilter,
+    actingAuthor: effectiveAuthor(
+      storedAuthor,
+      identity?.name ?? null,
+      config?.assignees ?? [],
+    ),
   });
 
   const { issues, loading, error } = useIssues(filters);
@@ -156,7 +170,7 @@ export function IssueList() {
           />
           <label
             className="flex items-center gap-1 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none"
-            title="Only issues assigned to the server's git identity (not the identity picked in the UI)"
+            title='Only issues assigned to you (the "Acting as" identity)'
           >
             <input
               type="checkbox"

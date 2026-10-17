@@ -1,4 +1,5 @@
 import { type Context, Hono } from 'hono';
+import type { ClaimUser } from '../../core/claim.ts';
 import { describeDependencies, indexIssues } from '../../core/dependencies.ts';
 import type { ElsewhereMarks } from '../../core/elsewhere.ts';
 import { GitracError, invalidInput } from '../../core/errors.ts';
@@ -29,7 +30,7 @@ import { ifMatchSatisfied, issueETag } from '../etag.ts';
 import { mutationLock } from '../lock.ts';
 import { asRecord, readJsonBody } from '../request-body.ts';
 import type { ServerContext } from '../server.ts';
-import { webServiceContext } from '../service-context.ts';
+import { actingIdentity, webServiceContext } from '../service-context.ts';
 import { serverIdentity } from './identity.ts';
 
 /** An issue as currently on disk, with its version (ETag) and location. */
@@ -270,7 +271,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
         config,
         {
           mine: isTruthy(c.req.query('mine'))
-            ? await serverIdentity(ctx)
+            ? await mineIdentity(ctx, c.req.query('author'))
             : undefined,
         },
       );
@@ -602,6 +603,21 @@ function claimInput(body: unknown): {
     comment: comment ?? undefined,
     force: force ?? undefined,
   };
+}
+
+/**
+ * The user for `mine=1`: the `author` picked in the UI ("Acting as"), resolved
+ * as for writes (`actingIdentity`), else the server's identity. Throws
+ * `invalid_input` for an author that is not a configured assignee (or the
+ * server's name). Without `mine`, the route ignores `author`.
+ */
+function mineIdentity(
+  ctx: ServerContext,
+  author: string | undefined,
+): Promise<ClaimUser> {
+  return author === undefined
+    ? serverIdentity(ctx)
+    : actingIdentity(ctx, author);
 }
 
 /** A boolean query flag: present and not `0` / `false` / `no`. */

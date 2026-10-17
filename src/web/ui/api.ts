@@ -42,8 +42,16 @@ export interface IssueFilters {
   priority?: string;
   /** Words that must all appear in the title or description. */
   search?: string;
-  /** Only issues assigned to the server's identity. */
+  /**
+   * Only issues assigned to the acting user: `author` if set, else the
+   * server's identity.
+   */
   mine?: boolean;
+  /**
+   * With `mine`: the "Acting as" name (a configured assignee). Unset = the
+   * server's identity. Not sent without `mine`.
+   */
+  author?: string;
   sort?: string;
 }
 
@@ -148,7 +156,10 @@ export function issueListQuery(filters?: IssueFilters): string {
   if (filters?.label) params.set('label', filters.label);
   if (filters?.priority) params.set('priority', filters.priority);
   if (filters?.search) params.set('search', filters.search);
-  if (filters?.mine) params.set('mine', '1');
+  if (filters?.mine) {
+    params.set('mine', '1');
+    if (filters.author) params.set('author', filters.author);
+  }
   if (filters?.sort) params.set('sort', filters.sort);
   const qs = params.toString();
   return qs ? `?${qs}` : '';

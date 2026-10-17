@@ -9,12 +9,18 @@ export interface ListFilterState {
   /** The search text (after the debounce). */
   search: string;
   mineFilter: boolean;
+  /**
+   * The "Acting as" name to send with `mine` (`effectiveAuthor`). Unset = the
+   * server's identity.
+   */
+  actingAuthor?: string;
 }
 
 /**
  * The `GET /api/issues` filters for the list view's selections. Empty
  * selections are left out. Search text is trimmed; blank text means no
- * search. `mine` selects issues assigned to the server's identity.
+ * search. `mine` selects issues assigned to the acting user: `author` is the
+ * "Acting as" name, left out for the server's identity.
  */
 export function listFilters(state: ListFilterState): IssueFilters {
   const filters: IssueFilters = {};
@@ -24,7 +30,10 @@ export function listFilters(state: ListFilterState): IssueFilters {
   if (state.labelFilter) filters.label = state.labelFilter;
   const search = state.search.trim();
   if (search) filters.search = search;
-  if (state.mineFilter) filters.mine = true;
+  if (state.mineFilter) {
+    filters.mine = true;
+    if (state.actingAuthor) filters.author = state.actingAuthor;
+  }
   return filters;
 }
 

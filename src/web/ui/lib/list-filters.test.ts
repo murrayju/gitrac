@@ -45,6 +45,28 @@ describe('listFilters', () => {
     expect(params.get('status')).toBe('all');
   });
 
+  // #113: "Mine" follows the "Acting as" identity.
+  test('mine sends the acting author; omitted for the server identity', () => {
+    const acting = listFilters({
+      ...none,
+      mineFilter: true,
+      actingAuthor: 'Bob Builder',
+    });
+    expect(acting).toEqual({ mine: true, author: 'Bob Builder' });
+    const params = new URLSearchParams(issueListQuery(acting));
+    expect(params.get('mine')).toBe('1');
+    expect(params.get('author')).toBe('Bob Builder');
+
+    const server = listFilters({ ...none, mineFilter: true });
+    expect(server).toEqual({ mine: true });
+    expect(issueListQuery(server)).toBe('?mine=1');
+  });
+
+  test('without mine, the acting author is not sent', () => {
+    expect(listFilters({ ...none, actingAuthor: 'Bob Builder' })).toEqual({});
+    expect(issueListQuery({ author: 'Bob Builder' })).toBe('');
+  });
+
   test('blank search text is no search', () => {
     expect(listFilters({ ...none, search: '   ' })).toEqual({});
   });

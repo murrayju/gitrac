@@ -194,6 +194,68 @@ describe('GET /api/issues', () => {
     expect(await ids('mine=1')).toEqual([1]);
   });
 
+  // #113: `author` picks the "Acting as" identity for `mine`.
+  describe('mine with author', () => {
+    beforeEach(async () => {
+      const config = createDefaultConfig();
+      config.git.autoCommit = false;
+      config.assignees = [{ name: 'Bob Builder', email: 'bob@example.com' }];
+      await writeConfig(dir, config);
+      const ctx: ServerContext = {
+        dir,
+        config,
+        amendTracker: new AmendTracker(),
+        watcher: new IssueWatcher(dir),
+        identity: new IdentityResolver(dir, {
+          read: async () => ({
+            name: 'Ada Lovelace',
+            email: 'ada@example.com',
+          }),
+        }),
+      };
+      app = new Hono();
+      app.route('/api', issueRoutes(ctx));
+      await writeIssue(
+        dir,
+        makeIssue({ id: 1, title: 'Ada', assignee: 'ada@example.com' }),
+      );
+      await writeIssue(
+        dir,
+        makeIssue({ id: 2, title: 'Bob', assignee: 'bob@example.com' }),
+      );
+      await writeIssue(
+        dir,
+        makeIssue({ id: 3, title: 'Bob too', assignee: 'Bob Builder' }),
+      );
+    });
+
+    test('a configured assignee: their issues (name or email)', async () => {
+      expect(await ids('mine=1&author=Bob%20Builder')).toEqual([2, 3]);
+      expect(await ids('mine=1&author=%20Bob%20Builder%20')).toEqual([2, 3]);
+    });
+
+    test("the server's name: the server's identity", async () => {
+      expect(await ids('mine=1&author=Ada%20Lovelace')).toEqual([1]);
+      expect(await ids('mine=1')).toEqual([1]);
+    });
+
+    test('an unknown or blank author is 400', async () => {
+      for (const qs of [
+        'author=Mallory',
+        'author=',
+        'author=bob@example.com',
+      ]) {
+        const res = await req(`/issues?mine=1&${qs}`);
+        expect(res.status).toBe(400);
+      }
+    });
+
+    test('without mine, author is ignored', async () => {
+      expect(await ids('author=Mallory')).toEqual([1, 2, 3]);
+      expect(await ids('mine=0&author=Bob%20Builder')).toEqual([1, 2, 3]);
+    });
+  });
+
   test('search over title and description', async () => {
     await writeIssue(
       dir,
