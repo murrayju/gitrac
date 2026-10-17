@@ -3,11 +3,14 @@ import { resolveAssigneeName } from '../../../core/config.ts';
 import type { Issue, Priority, Status } from '../../../core/types.ts';
 import {
   type ApiIssue,
+  type UpdateIssueInput,
   updateIssue,
   updateIssueVersioned,
   type Versioned,
 } from '../api.ts';
-import { useConfig, useWorkflow } from '../hooks.ts';
+import { useConfig, useServerIdentity, useWorkflow } from '../hooks.ts';
+import { type ForceSave, saveField } from '../lib/claim-edit.ts';
+import { effectiveAuthor } from '../lib/identity.ts';
 import {
   addLabel,
   createLabelUpdater,
@@ -15,6 +18,7 @@ import {
 } from '../lib/label-updates.ts';
 import { createSaveQueue } from '../lib/save-queue.ts';
 import { requestErrorReason } from '../lib/upload-error.ts';
+import { useIdentityStore } from '../stores/identityStore.ts';
 import { AssigneePicker } from './AssigneePicker.tsx';
 import { ClaimControls } from './ClaimControls.tsx';
 import { ClaimedElsewhereBadge } from './ClaimedElsewhereBadge.tsx';
@@ -65,24 +69,47 @@ export function MetadataPanel({
   const [fieldSaves] = useState(() =>
     createSaveQueue({ setBusy: setFieldSaving, setError: setFieldError }),
   );
+  // A status or assignee save the server refused because someone else
+  // holds the issue: "Change anyway" sends it again with force.
+  const [forceSave, setForceSave] = useState<ForceSave | null>(null);
   // An error is about the issue it was made on: drop it on another issue
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset on issue change
-  useEffect(() => setFieldError(null), [issue.id]);
+  useEffect(() => {
+    setFieldError(null);
+    setForceSave(null);
+  }, [issue.id]);
+  // Status and assignee changes are made as the "Acting as" user, so the
+  // server can tell if they would overwrite someone else's claim.
+  const { identity } = useServerIdentity();
+  const storedAuthor = useIdentityStore((s) => s.author);
+  const author = effectiveAuthor(
+    storedAuthor,
+    identity?.name ?? null,
+    config?.assignees ?? [],
+  );
+
+  function save(field: string, input: UpdateIssueInput) {
+    const id = issue.id;
+    void saveField(
+      fieldSaves,
+      field,
+      (force) =>
+        updateIssue(id, { ...input, author, force: force || undefined }),
+      (retry) => setForceSave(() => retry),
+    );
+  }
 
   function handleStatusChange(status: Status) {
-    const id = issue.id;
-    void fieldSaves.run('status', () => updateIssue(id, { status }));
+    save('status', { status });
   }
 
   function handlePriorityChange(priority: Priority) {
-    const id = issue.id;
-    void fieldSaves.run('priority', () => updateIssue(id, { priority }));
+    save('priority', { priority });
   }
 
   function handleAssigneeChange(email: string) {
     if (email === issue.assignee) return;
-    const id = issue.id;
-    void fieldSaves.run('assignee', () => updateIssue(id, { assignee: email }));
+    save('assignee', { assignee: email });
   }
 
   function handleToggleLabel(label: string) {
@@ -103,8 +130,20 @@ export function MetadataPanel({
   return (
     <div className="space-y-4 text-sm" aria-busy={fieldSaving}>
       {fieldError && (
-        <div role="alert" className="text-xs text-red-500">
+        <div role="alert" className="text-xs text-red-500 break-words">
           {fieldError}
+          {forceSave && (
+            <div className="mt-1 flex gap-2">
+              <button
+                type="button"
+                className="px-2 py-0.5 rounded border text-xs cursor-pointer disabled:opacity-50 border-gray-300 text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                disabled={fieldSaving}
+                onClick={() => void forceSave()}
+              >
+                Change anyway
+              </button>
+            </div>
+          )}
         </div>
       )}
       <div>

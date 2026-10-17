@@ -82,6 +82,14 @@ export interface UpdateIssueInput {
   assignee?: string;
   status?: Status;
   description?: string;
+  /**
+   * The "Acting as" name (`effectiveAuthor`): who makes the edit. A status
+   * or assignee change of an issue someone else holds is refused (409
+   * `already_claimed`) unless `force`.
+   */
+  author?: string;
+  /** Change the status or assignee even if someone else holds the issue. */
+  force?: boolean;
 }
 
 /** Non-2xx API response. */

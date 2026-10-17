@@ -146,7 +146,8 @@ function ifMatchGuard(c: Context): {
  * - `If-Match` mismatch: 409 `{ error, current }` (+ its ETag)
  * - `invalid_state` (already closed / already open): 409
  *   `{ error, code, current }` (+ its ETag), nothing written
- * - `already_claimed` (claim / unclaim): 409
+ * - `already_claimed` (claim / unclaim, or a PATCH of the status or
+ *   assignee): 409
  *   `{ error, code, assignee, claimedElsewhere? }`
  * - `issue_closed` (claim / unclaim): 409
  *   `{ error, code, status, closedElsewhere? }`
@@ -446,15 +447,29 @@ export function issueRoutes(ctx: ServerContext): Hono {
     );
   });
 
-  // PATCH /issues/:id — update issue metadata
+  // PATCH /issues/:id: update issue metadata. `author` (optional, the
+  // "Acting as" choice) is who makes the edit; `force: true` changes the
+  // status or assignee of an issue someone else holds (else 409
+  // `already_claimed`, see `errorResponse`).
   app.patch('/issues/:id', locked, async (c) => {
     const id = Number.parseInt(c.req.param('id'), 10);
     if (Number.isNaN(id)) {
       return c.json({ error: 'Invalid issue ID' }, 400);
     }
     const body = await readJsonBody(c);
+    let input: ReturnType<typeof editInput>;
+    try {
+      input = editInput(body);
+    } catch (err) {
+      return errorResponse(c, ctx, err);
+    }
     return mutateIssue(c, (precondition) =>
-      updateIssue(webServiceContext(ctx), id, body, { precondition }),
+      updateIssue(
+        webServiceContext(ctx, { author: input.author }),
+        id,
+        input.fields,
+        { force: input.force, precondition },
+      ),
     );
   });
 
@@ -700,6 +715,25 @@ function claimInput(
         ? staleOptions((stale as string | null) ?? undefined)
         : undefined,
   };
+}
+
+/**
+ * A PATCH body split into the issue fields and the edit options (`null` =
+ * absent). Throws `invalid_input` for a `force` that is not a boolean;
+ * `author` is checked by the service context. A body that is not an object
+ * is passed on as is, so the field validation rejects it.
+ */
+function editInput(body: unknown): {
+  fields: unknown;
+  author?: unknown;
+  force?: boolean;
+} {
+  if (asRecord(body) !== body) return { fields: body };
+  const { author, force, ...fields } = body as Record<string, unknown>;
+  if (force != null && typeof force !== 'boolean') {
+    throw invalidInput('force must be a boolean');
+  }
+  return { fields, author: author ?? undefined, force: force ?? undefined };
 }
 
 /**

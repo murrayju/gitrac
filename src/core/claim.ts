@@ -168,6 +168,56 @@ export function decideClaim(
   return { action: 'claim', reopen: false };
 }
 
+export type EditDecision =
+  /** Proceed: write the edit. */
+  | { action: 'edit' }
+  /**
+   * Refused: the edit changes the status or the assignee, and the issue is
+   * held (active or in review) by someone else: here, or (`elsewhere`) on
+   * another branch or worktree whose version is newer.
+   */
+  | {
+      action: 'already-claimed';
+      assignee: string;
+      elsewhere?: ClaimedElsewhere;
+    };
+
+/**
+ * Decide if an edit (`gitrac edit`, `PATCH /api/issues/:id`) can write
+ * (pure; no I/O). `changesClaim` tells if the edit changes the status or
+ * the assignee of the local issue (a no-op field does not count).
+ *
+ * - An edit that changes neither field is always allowed (title, priority,
+ *   labels, description).
+ * - An edit that changes one of them is refused if the effective state of
+ *   the issue (the newest version here or in `elsewhere`) is held (see
+ *   `heldStatuses` in `src/core/workflow.ts`) and assigned to someone other
+ *   than `user`, unless `force`. Thus the edit can not silently overwrite a
+ *   claim. The claim holder can always edit.
+ */
+export function decideEdit(
+  issue: LocalState,
+  changesClaim: boolean,
+  user: ClaimUser,
+  config: WorkflowConfig,
+  options: ClaimOptions = {},
+): EditDecision {
+  if (!changesClaim || options.force) return { action: 'edit' };
+  const effective = effectiveState(issue, options.elsewhere);
+  const assignee = effective.assignee.trim();
+  if (
+    !isHeldStatus(config, effective.status) ||
+    !assignee ||
+    isAssignedTo(assignee, user)
+  ) {
+    return { action: 'edit' };
+  }
+  const elsewhere = claimedElsewhere(issue, config, options.elsewhere);
+  return elsewhere
+    ? { action: 'already-claimed', assignee: elsewhere.assignee, elsewhere }
+    : { action: 'already-claimed', assignee: effective.assignee };
+}
+
 export type UnclaimDecision =
   /**
    * Proceed: clear the assignee and write `status` (a held status moved

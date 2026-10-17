@@ -714,3 +714,54 @@ describe('stale claims across worktrees (#106)', () => {
     }
   });
 });
+
+/** Regression tests for #108: `edit` must not overwrite a claim elsewhere. */
+describe('edit and claims across worktrees (#108)', () => {
+  test('a status or assignee change is exit 3 unless --force; other fields are fine', async () => {
+    await ok(wt1, 'Bob', 'claim', '1', '--no-commit');
+    const where = `in worktree ${wt1} (branch agent-1)`;
+
+    for (const args of [
+      ['-s', 'backlog'],
+      ['-a', 'someone'],
+    ]) {
+      const res = await cli(main, 'Ada', 'edit', '1', ...args);
+      expect(res.code).toBe(EXIT_ALREADY_CLAIMED);
+      expect(res.stderr).toContain(
+        `Error: Issue #1 is already claimed by Bob (in_progress) ${where}. Use --force to change it anyway, or "gitrac claim 1 --force" to take it over.`,
+      );
+    }
+    const err = await cli(main, 'Ada', '-o', 'json', 'edit', '1', '-a', 'x');
+    expect(JSON.parse(err.stderr).error).toMatchObject({
+      code: 'already_claimed',
+      assignee: 'Bob',
+      claimedElsewhere: { ref: 'agent-1', worktree: wt1, assignee: 'Bob' },
+    });
+    expect(await readIssue(main, 1)).toMatchObject({
+      status: 'todo',
+      assignee: '',
+    });
+
+    // The holder may change it (from any worktree); others may not.
+    expect((await cli(wt2, 'Ada', 'edit', '1', '-s', 'backlog')).code).toBe(
+      EXIT_ALREADY_CLAIMED,
+    );
+    await ok(wt2, 'Bob', 'edit', '1', '-s', 'backlog', '--no-commit');
+    expect((await readIssue(wt2, 1)).status).toBe('backlog');
+
+    // Other fields can be edited by anyone.
+    await ok(wt1, 'Bob', 'claim', '1', '--no-commit');
+    await ok(main, 'Ada', 'edit', '1', '-p', 'low', '-t', 'Renamed');
+    expect((await readIssue(main, 1)).priority).toBe('low');
+
+    // --force changes it, and the new version supersedes the claim. (The
+    // newer edit above also superseded it, so claim again first.)
+    await ok(wt1, 'Bob', 'claim', '1', '--no-commit');
+    expect((await cli(main, 'Ada', 'edit', '1', '-a', 'Ada')).code).toBe(
+      EXIT_ALREADY_CLAIMED,
+    );
+    await ok(main, 'Ada', 'edit', '1', '-a', 'Ada', '--force');
+    expect((await readIssue(main, 1)).assignee).toBe('Ada');
+    expect(await ok(main, 'Ada', 'ls')).not.toContain('[claimed');
+  });
+});

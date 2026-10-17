@@ -252,7 +252,7 @@ The server binds to `127.0.0.1` by default and rejects cross-origin and DNS-rebi
 | `create` / `new` | Create an issue: `-t` title, `-d`/`--description-file`, `-p`, `-l`, `-a`, `-s` |
 | `list` / `ls` | List issues: `--status` (`all`), `--priority`, `--label`, `--assignee`, `--mine`, `--search`, `--sort`, `--elsewhere` (also issues only in other worktrees/branches), `--stale <duration>` (only claims with no activity for that long). Multi-value filters are comma-separated |
 | `show` / `view <id>` | Show an issue with comments, dependencies and claims elsewhere |
-| `edit <id>` | Change title, status, priority, assignee, labels, description |
+| `edit <id>` | Change title, status, priority, assignee, labels, description. **Changing the status or assignee fails if someone else holds it** (`--force` overrides) |
 | `comment` / `c <id> [body]` | Add a comment (argument, `--body-file`, or stdin) |
 | `claim <id>` | Assign to yourself and set the active status. **Fails if someone else holds it**. `--renew` renews your own claim (a heartbeat) |
 | `unclaim` / `release <id>` | Give an issue back, even a claim held in another worktree. `--stale <duration>` releases someone else's claim if it is stale |

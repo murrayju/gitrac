@@ -1,7 +1,9 @@
 import type { Command } from 'commander';
+import { EXIT_ALREADY_CLAIMED } from '../../core/claim.ts';
 import { invalidInput, parseIssueIdArg } from '../../core/errors.ts';
 import { parseLabelList } from '../../core/validate.ts';
 import { updateIssue } from '../../service/issues.ts';
+import { withHint } from '../errors.ts';
 import { resolveProjectOptions } from '../global-options.ts';
 import { formatIssueDetail } from '../output.ts';
 import { cliServiceContext, printWrittenIssue } from '../service-context.ts';
@@ -11,7 +13,8 @@ export function registerEditCommand(program: Command): void {
   program
     .command('edit <id>')
     .description(
-      'Edit an issue. Values equal to the current ones (a description differing only in surrounding whitespace) are a no-op: nothing is written or committed.',
+      'Edit an issue. Values equal to the current ones (a description differing only in surrounding whitespace) are a no-op: nothing is written or committed. ' +
+        `Changing the status or assignee of an issue someone else has claimed (here, in another worktree or on another branch) exits ${EXIT_ALREADY_CLAIMED} (override with --force).`,
     )
     .option('-t, --title <title>', 'New title')
     .option('-s, --status <status>', 'New status')
@@ -24,6 +27,10 @@ export function registerEditCommand(program: Command): void {
       'Read the new description from a file (`-` for stdin)',
     )
     .option('-c, --comment <text>', 'Add a comment with this edit')
+    .option(
+      '-f, --force',
+      'Change the status or assignee even if someone else has claimed the issue',
+    )
     .action(
       async (
         idStr: string,
@@ -36,6 +43,7 @@ export function registerEditCommand(program: Command): void {
           comment?: string;
           description?: string;
           descriptionFile?: string;
+          force?: boolean;
         },
       ) => {
         const globalOpts = await resolveProjectOptions(program);
@@ -79,8 +87,12 @@ export function registerEditCommand(program: Command): void {
                 ? parseLabelList(options.labels)
                 : undefined,
           },
-          { comment: options.comment },
-        );
+          { comment: options.comment, force: options.force },
+        ).catch((err: unknown) => {
+          throw withHint(err, {
+            already_claimed: `Use --force to change it anyway, or "gitrac claim ${id} --force" to take it over.`,
+          });
+        });
         if (!result.changed) {
           console.error(
             `Issue #${id} already has these values; nothing changed.`,

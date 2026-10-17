@@ -1,4 +1,10 @@
+import { type ClaimUser, decideEdit } from '../core/claim.ts';
 import { sameDescription } from '../core/description.ts';
+import {
+  describeLocation,
+  effectiveState,
+  type IssueStateElsewhere,
+} from '../core/elsewhere.ts';
 import { GitracError, invalidInput } from '../core/errors.ts';
 import {
   assertCanClose,
@@ -15,6 +21,7 @@ import {
   relocateIssue,
   writeIssue,
 } from '../fs/issue-store.ts';
+import { issueStatesElsewhere } from '../git/elsewhere.ts';
 import { allocateIssueId } from '../git/ids.ts';
 import { withRepoLock } from '../git/lock.ts';
 import {
@@ -211,12 +218,19 @@ const sameList = (a: string[], b: string[]): boolean =>
  * {@link sameDescription}: only leading/trailing whitespace differs), and no
  * (non-blank) comment — writes nothing, doesn't bump `updated`, doesn't
  * commit, and returns `changed: false`. The precondition still applies.
+ *
+ * A change of the status or the assignee must not overwrite a claim (see
+ * `decideEdit`): if the issue's effective state (here, in other worktrees
+ * or on other branches) is held by someone other than the context's
+ * identity, it throws `already_claimed` (`details.claimedElsewhere` says
+ * where, if not here) unless `force`. Only such a change scans the other
+ * worktrees and branches; other edits stay cheap.
  */
 export async function updateIssue(
   ctx: ServiceContext,
   id: number,
   fields: unknown,
-  options: ExistingIssueOptions & { comment?: string } = {},
+  options: ExistingIssueOptions & { comment?: string; force?: boolean } = {},
 ): Promise<UpdateResult> {
   return withRepoLock(ctx.dir, async () => {
     const config = await loadConfig(ctx);
@@ -224,8 +238,13 @@ export async function updateIssue(
     const { title, status, priority, assignee, labels, description } =
       validFields(fields, config);
     const author = await commentAuthor(ctx, options.comment);
+    // The acting user, for the claim rule. Resolve it before the issue is
+    // loaded, so a bad identity (e.g. an unknown web author) is
+    // invalid_input first.
+    const user = await ctx.identity();
     const stored = await loadStoredIssue(ctx.dir, id, options.precondition);
     const { issue } = stored;
+    const before = { status: issue.status, assignee: issue.assignee };
 
     let changed = false;
     if (title !== undefined && title !== issue.title) {
@@ -260,7 +279,28 @@ export async function updateIssue(
     if (!changed && !options.comment?.trim()) {
       return { changed: false, issue, paths: [], config, commit: null };
     }
-    const now = nextTimestamp([issue.updated]);
+    // A status or assignee change must not overwrite someone else's claim.
+    // Scan under the (shared) repo lock, like claim, and only for such a
+    // change.
+    const changesClaim =
+      issue.status !== before.status || issue.assignee !== before.assignee;
+    const elsewhere = changesClaim
+      ? (await issueStatesElsewhere(ctx.dir, { ids: [id] })).get(id)
+      : undefined;
+    assertCanEdit(
+      id,
+      { ...before, updated: issue.updated },
+      changesClaim,
+      user,
+      config,
+      { force: options.force, elsewhere },
+    );
+    // Strictly later than every version, so a (forced) change supersedes
+    // a claim elsewhere.
+    const now = nextTimestamp([
+      issue.updated,
+      ...(elsewhere ?? []).map((s) => s.updated),
+    ]);
     issue.updated = now;
     appendComment(issue, author, options.comment, now);
 
@@ -287,6 +327,38 @@ export async function updateIssue(
     });
     return { ...result, changed: true };
   });
+}
+
+/**
+ * Throw `already_claimed` if an edit that changes the status or the
+ * assignee (`changesClaim`) of `issue` (its stored state) would overwrite
+ * someone else's claim (see `decideEdit`).
+ * The message is the same as `claim` uses.
+ */
+function assertCanEdit(
+  id: number,
+  issue: Pick<Issue, 'status' | 'assignee' | 'updated'>,
+  changesClaim: boolean,
+  user: ClaimUser,
+  config: Config,
+  options: { force?: boolean; elsewhere?: IssueStateElsewhere[] },
+): void {
+  const decision = decideEdit(issue, changesClaim, user, config, options);
+  if (decision.action === 'edit') return;
+  const where = decision.elsewhere;
+  // The held status: active, or in review.
+  const held = effectiveState(issue, options.elsewhere).status;
+  throw new GitracError(
+    'already_claimed',
+    where
+      ? `Issue #${id} is already claimed by ${where.assignee} (${held}) ${describeLocation(where)}.`
+      : `Issue #${id} is already claimed by ${decision.assignee} (${held}).`,
+    {
+      details: where
+        ? { id, assignee: where.assignee, claimedElsewhere: where }
+        : { id, assignee: decision.assignee },
+    },
+  );
 }
 
 /** Throw unless `body` is a non-empty string; returns it trimmed. */

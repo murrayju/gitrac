@@ -2,10 +2,13 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { resolveAssigneeName } from '../../../core/config.ts';
 import type { Priority, Status } from '../../../core/types.ts';
-import { type ApiIssue, updateIssue } from '../api.ts';
-import { useConfig, useWorkflow } from '../hooks.ts';
+import { type ApiIssue, type UpdateIssueInput, updateIssue } from '../api.ts';
+import { useConfig, useServerIdentity, useWorkflow } from '../hooks.ts';
+import { type ForceSave, saveField } from '../lib/claim-edit.ts';
+import { effectiveAuthor } from '../lib/identity.ts';
 import { createSaveQueue } from '../lib/save-queue.ts';
 import { relativeTime } from '../lib/time.ts';
+import { useIdentityStore } from '../stores/identityStore.ts';
 import { ClaimedElsewhereBadge } from './ClaimedElsewhereBadge.tsx';
 import { ClosedElsewhereBadge } from './ClosedElsewhereBadge.tsx';
 import { Dropdown } from './Dropdown.tsx';
@@ -25,12 +28,34 @@ export function IssueRow({ issue }: { issue: ApiIssue }) {
     createSaveQueue({ setBusy: setSaving, setError: setSaveError }),
   );
 
+  // A status save the server refused because someone else holds the
+  // issue: "Change anyway" sends it again with force.
+  const [forceSave, setForceSave] = useState<ForceSave | null>(null);
+  // Saves are made as the "Acting as" user.
+  const { identity } = useServerIdentity();
+  const storedAuthor = useIdentityStore((s) => s.author);
+  const author = effectiveAuthor(
+    storedAuthor,
+    identity?.name ?? null,
+    config?.assignees ?? [],
+  );
+
+  function save(field: string, input: UpdateIssueInput) {
+    void saveField(
+      saves,
+      field,
+      (force) =>
+        updateIssue(issue.id, { ...input, author, force: force || undefined }),
+      (retry) => setForceSave(() => retry),
+    );
+  }
+
   function handleStatusChange(status: Status) {
-    void saves.run('status', () => updateIssue(issue.id, { status }));
+    save('status', { status });
   }
 
   function handlePriorityChange(priority: Priority) {
-    void saves.run('priority', () => updateIssue(issue.id, { priority }));
+    save('priority', { priority });
   }
 
   return (
@@ -60,12 +85,24 @@ export function IssueRow({ issue }: { issue: ApiIssue }) {
           )}
         </div>
         {saveError && (
+          // biome-ignore lint/a11y/useKeyWithClickEvents: stopPropagation so "Change anyway" does not open the issue
           <div
             role="alert"
-            className="mt-0.5 truncate text-xs font-normal text-red-500"
+            className="mt-0.5 flex items-center gap-2 text-xs font-normal text-red-500"
             title={saveError}
+            onClick={(e) => e.stopPropagation()}
           >
-            {saveError}
+            <span className="truncate">{saveError}</span>
+            {forceSave && (
+              <button
+                type="button"
+                className="shrink-0 px-1.5 rounded border cursor-pointer disabled:opacity-50 border-gray-300 text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                disabled={saving}
+                onClick={() => void forceSave()}
+              >
+                Change anyway
+              </button>
+            )}
           </div>
         )}
       </td>

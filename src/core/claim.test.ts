@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   claimAssignee,
   decideClaim,
+  decideEdit,
   decideReview,
   decideUnclaim,
   isAssignedTo,
@@ -649,5 +650,86 @@ describe('review status (#105)', () => {
         elsewhere: where(alice.email, 'in_progress'),
       });
     });
+  });
+});
+
+/** Regression tests for #108: an edit must not overwrite a claim. */
+describe('decideEdit', () => {
+  const at = (t: number) => `2026-01-0${t}T00:00:00Z`;
+  const bobs = {
+    status: 'in_progress',
+    assignee: bob.email,
+    updated: at(2),
+  };
+  const todo = { status: 'todo', assignee: '', updated: at(2) };
+  const bobsClaim = {
+    ref: 'agent-1',
+    worktree: '/wt/agent-1',
+    status: 'in_progress',
+    assignee: bob.email,
+    updated: at(3),
+  };
+
+  test("a status or assignee change of someone else's claim is refused", () => {
+    expect(decideEdit(bobs, true, alice, CONFIG)).toEqual({
+      action: 'already-claimed',
+      assignee: bob.email,
+    });
+  });
+
+  test('force, the holder, or an edit of other fields is allowed', () => {
+    expect(decideEdit(bobs, true, alice, CONFIG, { force: true })).toEqual({
+      action: 'edit',
+    });
+    expect(decideEdit(bobs, true, bob, CONFIG)).toEqual({ action: 'edit' });
+    expect(decideEdit(bobs, false, alice, CONFIG)).toEqual({ action: 'edit' });
+  });
+
+  test('an issue that is not held, or held by no one, can be changed', () => {
+    expect(decideEdit(todo, true, alice, CONFIG)).toEqual({ action: 'edit' });
+    expect(
+      decideEdit({ ...bobs, status: 'todo' }, true, alice, CONFIG),
+    ).toEqual({ action: 'edit' });
+    expect(decideEdit({ ...bobs, assignee: ' ' }, true, alice, CONFIG)).toEqual(
+      { action: 'edit' },
+    );
+  });
+
+  test('a newer claim elsewhere is refused, saying where', () => {
+    expect(
+      decideEdit(todo, true, alice, CONFIG, { elsewhere: [bobsClaim] }),
+    ).toEqual({
+      action: 'already-claimed',
+      assignee: bob.email,
+      elsewhere: {
+        ref: 'agent-1',
+        worktree: '/wt/agent-1',
+        assignee: bob.email,
+        status: 'in_progress',
+        updated: at(3),
+      },
+    });
+    expect(
+      decideEdit(todo, true, bob, CONFIG, { elsewhere: [bobsClaim] }),
+    ).toEqual({ action: 'edit' });
+  });
+
+  test('an older claim elsewhere is superseded by the local version', () => {
+    expect(
+      decideEdit({ ...todo, updated: at(4) }, true, alice, CONFIG, {
+        elsewhere: [bobsClaim],
+      }),
+    ).toEqual({ action: 'edit' });
+  });
+
+  test('the review status is held too', () => {
+    const REVIEW = {
+      ...CONFIG,
+      statuses: [...CONFIG.statuses, { name: 'review', closed: false }],
+      reviewStatus: 'review',
+    };
+    expect(
+      decideEdit({ ...bobs, status: 'review' }, true, alice, REVIEW).action,
+    ).toBe('already-claimed');
   });
 });

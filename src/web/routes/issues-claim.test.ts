@@ -119,10 +119,11 @@ function send(
   path: string,
   body?: unknown,
   headers: Record<string, string> = {},
+  method = 'POST',
 ): Promise<Response> {
   return Promise.resolve(
     createApp(ctx, { ui: null }).request(`http://localhost/api${path}`, {
-      method: 'POST',
+      method,
       headers: { 'Content-Type': 'application/json', ...headers },
       body: body === undefined ? undefined : JSON.stringify(body),
     }),
@@ -548,5 +549,93 @@ describe('stale claims and renew (#111)', () => {
     });
     // A claim in review waits on the reviewer: never stale.
     expect(one).not.toHaveProperty('staleClaim');
+  });
+});
+
+/** Regression tests for #108: a PATCH must not overwrite a claim. */
+describe('PATCH /api/issues/:id and claims', () => {
+  const patch = (id: number, body: unknown, headers = {}) =>
+    send(`/issues/${id}`, body, headers, 'PATCH');
+
+  test("a status or assignee change of someone else's claim is 409 already_claimed", async () => {
+    const commit = await head();
+    for (const body of [{ status: 'todo' }, { assignee: GRACE.email }]) {
+      const res = await patch(2, body);
+      expect(res.status).toBe(409);
+      const error = (await res.json()) as ErrorBody;
+      expect(error).toMatchObject({
+        code: 'already_claimed',
+        assignee: 'bob@example.com',
+      });
+      expect(error.error).toBe(
+        'Issue #2 is already claimed by bob@example.com (in_progress).',
+      );
+    }
+    expect(await readIssue(main, 2)).toMatchObject({
+      status: 'in_progress',
+      assignee: 'bob@example.com',
+    });
+    expect(await head()).toBe(commit);
+
+    // Other fields are fine.
+    const res = await patch(2, { priority: 'high' });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as Served).priority).toBe('high');
+  });
+
+  test('a claim in another worktree is 409 with claimedElsewhere; force changes it', async () => {
+    await writeIn(wt1, 1, {
+      status: 'in_progress',
+      assignee: 'bob@example.com',
+      updated: LATER,
+    });
+    const res = await patch(1, { status: 'backlog' });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as ErrorBody;
+    expect(body.code).toBe('already_claimed');
+    expect(body.claimedElsewhere).toEqual({
+      ref: 'agent-1',
+      worktree: wt1,
+      assignee: 'bob@example.com',
+      status: 'in_progress',
+      updated: LATER,
+    });
+    expect((await readIssue(main, 1)).status).toBe('todo');
+
+    const forced = await patch(1, { status: 'backlog', force: true });
+    expect(forced.status).toBe(200);
+    const issue = (await forced.json()) as Served;
+    expect(issue.status).toBe('backlog');
+    // `force` is not written to the issue; the new version supersedes the
+    // claim elsewhere.
+    expect(issue).not.toHaveProperty('extra');
+    expect(issue).not.toHaveProperty('claimedElsewhere');
+  });
+
+  test('author: the acting user decides whose claim it is', async () => {
+    expect((await send('/issues/1/claim', { author: 'Grace' })).status).toBe(
+      200,
+    );
+    // The server identity is someone else...
+    expect((await patch(1, { status: 'todo' })).status).toBe(409);
+    // ...but Grace holds it.
+    const res = await patch(1, { status: 'todo', author: 'Grace' });
+    expect(res.status).toBe(200);
+    const issue = (await res.json()) as Served;
+    expect(issue.status).toBe('todo');
+    expect(issue).not.toHaveProperty('extra');
+  });
+
+  test('a bad author or force is 400 and writes nothing', async () => {
+    const commit = await head();
+    for (const body of [
+      { status: 'backlog', author: 'Mallory' },
+      { status: 'backlog', author: 42 },
+      { status: 'backlog', force: 'yes' },
+    ]) {
+      expect((await patch(1, body)).status).toBe(400);
+    }
+    expect((await readIssue(main, 1)).status).toBe('todo');
+    expect(await head()).toBe(commit);
   });
 });

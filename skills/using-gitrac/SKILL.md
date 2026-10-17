@@ -69,7 +69,7 @@ gitrac --version
 | `gitrac reopen <id>` | Reopen a closed issue (status = config `defaultStatus`; `-s todo` to pick) |
 | `gitrac create -t "title" --description-file desc.md` | Create with a markdown description (`-` = stdin; or `-d "text"`) |
 | `gitrac comment <id> "text"` | Add a comment (or `--body-file <path\|->`) |
-| `gitrac edit <id> -s todo` | Update status |
+| `gitrac edit <id> -s todo` | Update status. Changing the status or assignee of an issue someone else holds (here, in another worktree or on another branch) is exit 3 (`already_claimed`); `--force` overrides. Other fields (`-t`, `-p`, `-l`, `-d`) are always fine |
 | `gitrac edit <id> -d "text"` | Replace the description (or `--description-file <path\|->`). Values equal to the current ones are a no-op (exit 0, no write/commit, note on stderr); no flags at all is exit 2 |
 | `gitrac install-merge-driver` | Once per clone: issue-aware `git merge`/`rebase` for `.issues/` (`init` does it too); also commits `.issues/.gitignore` (ignores web UI `drafts/`) if missing |
 | `gitrac ls -o json` | Machine-readable output |
@@ -107,6 +107,8 @@ This sets `assignee` to your git user and `status` to `in_progress`, and commits
 If you stop working on an issue without finishing it, give it back with `gitrac unclaim <id>` (alias `release`): it clears the assignee and moves `in_progress` (or the review status) back to `todo`. Releasing someone else's claim requires `--force` (exit 3 otherwise). This works across worktrees and branches too: `unclaim` from `main` releases a claim made in an agent's worktree (or committed on its branch) by writing a newer local version that supersedes it, so the issue is ready again for everyone. The release is always newer, also when the claim was made in the same millisecond or on a machine whose clock is ahead (gitrac sets `updated` 1 ms after the newest version it found if necessary). `claim --force` works the same way. The error (and its `-o json` `claimedElsewhere`) says where someone else's claim is.
 
 Humans can claim and release issues from the web UI too: the "Claim" / "Release" buttons in the issue sidebar act as the "Acting as" user and use the same rules (`POST /api/issues/:id/claim` / `unclaim`), so their claims block your `claim` (exit 3) like any other, and they can't silently take over yours without choosing "Take over".
+
+`edit` can't silently overwrite a claim either: `gitrac edit <id> -s ...` or `-a ...` on an issue held by someone else (judged across worktrees and branches, like `claim`) fails with exit 3 (`already_claimed`, with `claimedElsewhere` in `-o json`) and changes nothing. Use `claim --force` to take it over, or `edit --force` to change the field anyway. The web UI's status and assignee dropdowns follow the same rule (they offer "Change anyway"). The holder can always edit, and other fields (title, priority, labels, description) need no claim.
 
 `ls`, `show` and `ready` flag issues claimed elsewhere: `[claimed on branch X by Y]` in the list, an `Elsewhere:` line in `show`, and a `claimedElsewhere` field in `-o json` (the web UI shows a `claimed by Y in …` badge, and `GET /api/issues[/:id]` has the same `claimedElsewhere` field, refreshed within a few seconds). They also flag issues that are open here but closed elsewhere (finished work waiting for a merge): `[closed (done) on branch X]` / `[closed (done) in worktree P (branch X)]`, an `Elsewhere:` line, and a `closedElsewhere` field (a `Done in …` badge in the web UI). `ready`/`next` skip issues claimed (or closed) in another worktree or on an unmerged branch. A later unclaim or close anywhere supersedes the claim. A claim stuck on an abandoned branch stays visible until you delete that branch (`git branch -D <branch>`, or `git fetch --prune` for remote ones) or take it over with `claim --force`.
 
@@ -221,7 +223,7 @@ stdout only ever holds the result. Errors and warnings (e.g. "not on the default
 | 0 | | Success |
 | 1 | `error`, `invalid_config`, `invalid_issue` | Unexpected error, unparseable `.issues/config.yaml`, or a malformed issue file (no frontmatter, bad YAML, `id` not matching the file name; `file` names it, nothing is written — fix the file by hand) |
 | 2 | `invalid_input`, `usage`, `confirmation_required` | Bad ID / field value / flag / missing argument, or `delete` without `--yes` (stdin not a terminal) — nothing was written |
-| 3 | `already_claimed`, `already_initialized`, `invalid_state`, `duplicate_issue` | Conflict: claimed by someone else, already initialized, closing a closed / reopening an open issue, or several files on disk for one issue ID (`files` lists them — merge them by hand and delete all but one, or `gitrac renumber <id> --file <path>` if they are different issues); `renumber` of a non-duplicated ID without `--force` |
+| 3 | `already_claimed`, `already_initialized`, `invalid_state`, `duplicate_issue` | Conflict: claimed by someone else (`claim`, `unclaim`, `review`, or `edit` of the status / assignee), already initialized, closing a closed / reopening an open issue, or several files on disk for one issue ID (`files` lists them: merge them by hand and delete all but one, or `gitrac renumber <id> --file <path>` if they are different issues); `renumber` of a non-duplicated ID without `--force` |
 | 4 | `issue_closed` | `claim`/`unclaim`/`review` on a closed issue |
 | 5 | `not_found`, `no_ready_issues` | No such issue; `next` found no ready issue |
 | 6 | `lock_timeout` | Another gitrac process held the repo lock too long — retry |
@@ -236,6 +238,7 @@ Stack traces are hidden unless you pass `--debug`.
 |---------|---------------|-----|
 | Closing in a separate commit | Breaks the atomic link between fix and issue | Use `--no-commit` on close, commit together |
 | Not claiming before working | Another agent may start the same work | Always `claim` first |
+| `edit -s`/`-a` instead of `claim` / `unclaim` | Skips the claim checks; on someone else's claim it fails (exit 3) | Use `claim` / `unclaim`; `edit --force` only if you mean to overwrite their claim |
 | Editing issue files directly | Bypasses git auto-commit, may produce invalid format | Use the CLI |
 | Forgetting `--no-commit` on close | Creates two commits instead of one | Close with `--no-commit`, then `git add -A && git commit` |
 | Working on closed issues | They live in `closed/` and are done | Check `gitrac show <id>` first |
