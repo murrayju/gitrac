@@ -1,7 +1,11 @@
 import { describe, expect, mock, test } from 'bun:test';
 import type { Comment } from '../../../core/types.ts';
 import { ApiError, type ApiIssue, ConflictError } from '../api.ts';
-import { commentKeys, guardedCommentWrite } from './comment-write.ts';
+import {
+  COMMENT_CONFLICT_MESSAGE,
+  commentKeys,
+  guardedCommentWrite,
+} from './comment-write.ts';
 
 const comment = (author: string, timestamp: string): Comment => ({
   author,
@@ -42,7 +46,7 @@ describe('guardedCommentWrite', () => {
     expect(notify).not.toHaveBeenCalled();
   });
 
-  test('a 409 shows the latest issue and its version, then notifies', async () => {
+  test('a 409 shows the latest issue and its version, then gives the notice', async () => {
     const calls: string[] = [];
     const ok = await guardedCommentWrite(
       async () => {
@@ -51,10 +55,13 @@ describe('guardedCommentWrite', () => {
       (current, version) => {
         calls.push(`apply ${current.title} ${version}`);
       },
-      () => calls.push('notify'),
+      (message) => calls.push(`notify ${message}`),
     );
     expect(ok).toBe(false);
-    expect(calls).toEqual(['apply Latest "v2"', 'notify']);
+    expect(calls).toEqual([
+      'apply Latest "v2"',
+      `notify ${COMMENT_CONFLICT_MESSAGE}`,
+    ]);
   });
 
   test('other errors go to the caller', async () => {

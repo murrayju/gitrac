@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { resolveAssigneeName } from '../../../core/config.ts';
 import type { Issue, Priority, Status } from '../../../core/types.ts';
 import {
@@ -13,6 +13,7 @@ import {
   createLabelUpdater,
   toggleLabel,
 } from '../lib/label-updates.ts';
+import { createSaveQueue } from '../lib/save-queue.ts';
 import { requestErrorReason } from '../lib/upload-error.ts';
 import { AssigneePicker } from './AssigneePicker.tsx';
 import { ClaimControls } from './ClaimControls.tsx';
@@ -57,19 +58,31 @@ export function MetadataPanel({
     }),
   );
   const labels = pendingLabels ?? issue.labels;
+  // Status, priority and assignee saves go one at a time and share one
+  // error line. The SSE update shows a saved value.
+  const [fieldSaving, setFieldSaving] = useState(false);
+  const [fieldError, setFieldError] = useState<string | null>(null);
+  const [fieldSaves] = useState(() =>
+    createSaveQueue({ setBusy: setFieldSaving, setError: setFieldError }),
+  );
+  // An error is about the issue it was made on: drop it on another issue
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on issue change
+  useEffect(() => setFieldError(null), [issue.id]);
 
-  async function handleStatusChange(status: Status) {
-    await updateIssue(issue.id, { status });
+  function handleStatusChange(status: Status) {
+    const id = issue.id;
+    void fieldSaves.run('status', () => updateIssue(id, { status }));
   }
 
-  async function handlePriorityChange(priority: Priority) {
-    await updateIssue(issue.id, { priority });
+  function handlePriorityChange(priority: Priority) {
+    const id = issue.id;
+    void fieldSaves.run('priority', () => updateIssue(id, { priority }));
   }
 
-  async function handleAssigneeChange(email: string) {
-    if (email !== issue.assignee) {
-      await updateIssue(issue.id, { assignee: email });
-    }
+  function handleAssigneeChange(email: string) {
+    if (email === issue.assignee) return;
+    const id = issue.id;
+    void fieldSaves.run('assignee', () => updateIssue(id, { assignee: email }));
   }
 
   function handleToggleLabel(label: string) {
@@ -88,7 +101,12 @@ export function MetadataPanel({
   );
 
   return (
-    <div className="space-y-4 text-sm">
+    <div className="space-y-4 text-sm" aria-busy={fieldSaving}>
+      {fieldError && (
+        <div role="alert" className="text-xs text-red-500">
+          {fieldError}
+        </div>
+      )}
       <div>
         <div className="text-gray-500 text-xs uppercase tracking-wider mb-1">
           Status

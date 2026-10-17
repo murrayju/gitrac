@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { resolveAssigneeName } from '../../../core/config.ts';
 import type { Priority, Status } from '../../../core/types.ts';
 import { type ApiIssue, updateIssue } from '../api.ts';
 import { useConfig, useWorkflow } from '../hooks.ts';
+import { createSaveQueue } from '../lib/save-queue.ts';
 import { relativeTime } from '../lib/time.ts';
 import { ClaimedElsewhereBadge } from './ClaimedElsewhereBadge.tsx';
 import { ClosedElsewhereBadge } from './ClosedElsewhereBadge.tsx';
@@ -15,19 +17,26 @@ export function IssueRow({ issue }: { issue: ApiIssue }) {
   const navigate = useNavigate();
   const { config } = useConfig();
   const workflow = useWorkflow();
+  // Saves go one at a time. The SSE update shows a saved value.
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saves] = useState(() =>
+    createSaveQueue({ setBusy: setSaving, setError: setSaveError }),
+  );
 
-  async function handleStatusChange(status: Status) {
-    await updateIssue(issue.id, { status });
+  function handleStatusChange(status: Status) {
+    void saves.run('status', () => updateIssue(issue.id, { status }));
   }
 
-  async function handlePriorityChange(priority: Priority) {
-    await updateIssue(issue.id, { priority });
+  function handlePriorityChange(priority: Priority) {
+    void saves.run('priority', () => updateIssue(issue.id, { priority }));
   }
 
   return (
     <tr
       className="border-b border-gray-200/50 dark:border-gray-800/50 hover:bg-gray-100/50 dark:hover:bg-gray-900/50 cursor-pointer transition-colors"
       onClick={() => navigate(`/issues/${issue.id}`)}
+      aria-busy={saving}
     >
       <td className="px-3 py-2 text-sm text-gray-500 w-16">#{issue.id}</td>
       <td className="px-3 py-2 text-sm font-medium max-w-md">
@@ -44,6 +53,15 @@ export function IssueRow({ issue }: { issue: ApiIssue }) {
             </span>
           )}
         </div>
+        {saveError && (
+          <div
+            role="alert"
+            className="mt-0.5 truncate text-xs font-normal text-red-500"
+            title={saveError}
+          >
+            {saveError}
+          </div>
+        )}
       </td>
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: stopPropagation for dropdown interaction within clickable row */}
       <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>

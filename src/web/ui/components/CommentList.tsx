@@ -13,7 +13,6 @@ import { getEditorMarkdown } from '../lib/markdown.ts';
 import { trackRequest } from '../lib/request-state.ts';
 import { tableExtensions } from '../lib/table-extensions.ts';
 import { relativeTime } from '../lib/time.ts';
-import { requestErrorReason } from '../lib/upload-error.ts';
 import { useIssueLinks } from '../lib/use-issue-links.ts';
 import { MarkdownContent } from './MarkdownContent.tsx';
 import { UploadError, useUploadError } from './UploadError.tsx';
@@ -202,9 +201,6 @@ function InlineCommentEditor({
   );
 }
 
-const CONFLICT_MESSAGE =
-  'This issue was changed elsewhere since it was loaded. The latest version is now shown; please try again.';
-
 function CommentItem({
   comment,
   index,
@@ -219,32 +215,38 @@ function CommentItem({
   onConflict: (current: ApiIssue, version: string | null) => void;
 }) {
   const [editing, setEditing] = useState(false);
-  const notifyConflict = () => window.alert(CONFLICT_MESSAGE);
+  // The notice of a 409 on an edit or delete, shown in this comment
+  const [conflictNotice, setConflictNotice] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Comments are addressed by index, so guard edits/deletes with the issue
   // version we rendered: if comments shifted underneath us, get a 409
-  // instead of touching the wrong comment. On a 409, show the latest issue.
-  // The editor stays open with the draft. Other errors go to the editor.
+  // instead of touching the wrong comment. On a 409, show the latest issue
+  // and a notice. The editor stays open with the draft. Other errors go to
+  // the editor.
   async function handleSave(body: string) {
+    setConflictNotice(null);
     const saved = await guardedCommentWrite(
       () => updateComment(issueId, index, body, version),
       onConflict,
-      notifyConflict,
+      setConflictNotice,
     );
     if (saved) setEditing(false);
   }
 
   async function handleDelete() {
-    if (!window.confirm('Delete this comment?')) return;
-    try {
-      await guardedCommentWrite(
-        () => deleteComment(issueId, index, version),
-        onConflict,
-        notifyConflict,
-      );
-    } catch (e) {
-      window.alert(`Failed to delete comment: ${requestErrorReason(e)}`);
-    }
+    if (deleting || !window.confirm('Delete this comment?')) return;
+    setConflictNotice(null);
+    await trackRequest(
+      () =>
+        guardedCommentWrite(
+          () => deleteComment(issueId, index, version),
+          onConflict,
+          setConflictNotice,
+        ),
+      { setBusy: setDeleting, setError: setDeleteError },
+    );
   }
 
   return (
@@ -267,16 +269,44 @@ function CommentItem({
           </span>
           <div className="ml-auto">
             <CommentMenu
-              onEdit={() => setEditing(true)}
+              onEdit={() => {
+                setEditing(true);
+                setDeleteError(null);
+              }}
               onDelete={handleDelete}
             />
           </div>
         </div>
+        {conflictNotice && (
+          <div
+            role="alert"
+            className="mb-2 flex items-start gap-2 rounded border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200"
+          >
+            <p className="flex-1">{conflictNotice}</p>
+            <button
+              type="button"
+              onClick={() => setConflictNotice(null)}
+              className="px-1 rounded hover:bg-amber-100 dark:hover:bg-amber-900/40"
+              aria-label="Dismiss"
+              title="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+        )}
+        {deleteError && (
+          <div role="alert" className="mb-2 text-sm text-red-500">
+            Failed to delete comment: {deleteError}
+          </div>
+        )}
         {editing ? (
           <InlineCommentEditor
             initialBody={comment.body}
             onSave={handleSave}
-            onCancel={() => setEditing(false)}
+            onCancel={() => {
+              setEditing(false);
+              setConflictNotice(null);
+            }}
           />
         ) : (
           <MarkdownContent content={comment.body} />

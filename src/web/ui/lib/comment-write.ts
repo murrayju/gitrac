@@ -18,15 +18,20 @@ export function commentKeys(comments: readonly Comment[]): string[] {
   });
 }
 
+/** The notice a comment shows after its edit or delete got a 409. */
+export const COMMENT_CONFLICT_MESSAGE =
+  'This issue was changed elsewhere since it was loaded. The latest version is now shown; please try again.';
+
 /**
  * Run a comment edit or delete that is guarded by an issue version. On a
- * 409, give the latest issue to `onConflict` (so the view shows it), call
- * `notify`, and return `false`. Other errors go to the caller.
+ * 409, give the latest issue to `onConflict` (so the view shows it), give
+ * `COMMENT_CONFLICT_MESSAGE` to `notify` (the comment shows it inline), and
+ * return `false`. Other errors go to the caller.
  */
 export async function guardedCommentWrite(
   write: () => Promise<unknown>,
   onConflict: (current: ApiIssue, version: string | null) => void,
-  notify: () => void,
+  notify: (message: string) => void,
 ): Promise<boolean> {
   try {
     await write();
@@ -34,7 +39,7 @@ export async function guardedCommentWrite(
   } catch (e) {
     if (!(e instanceof ConflictError)) throw e;
     onConflict(e.current, e.version);
-    notify();
+    notify(COMMENT_CONFLICT_MESSAGE);
     return false;
   }
 }

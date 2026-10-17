@@ -6,10 +6,11 @@ import {
   deleteIssue,
   fetchDeletePlan,
   type IssueDeletion,
-  updateIssue,
+  updateIssueVersioned,
   type Versioned,
 } from '../api.ts';
 import { useIssue } from '../hooks.ts';
+import { trackRequest } from '../lib/request-state.ts';
 import { relativeTime } from '../lib/time.ts';
 import { CommentEditor } from './CommentEditor.tsx';
 import { CommentList } from './CommentList.tsx';
@@ -31,6 +32,12 @@ export function IssueDetail() {
     null,
   );
   const [titleDraft, setTitleDraft] = useState('');
+  const [titleSaving, setTitleSaving] = useState(false);
+  const [titleError, setTitleError] = useState<string | null>(null);
+  // Set at once, so an Enter and the blur after it save only once, and a
+  // blur after the input closes saves nothing
+  const titleSavingRef = useRef(false);
+  const editingTitleRef = useRef(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
   // Focus input when entering edit mode
@@ -55,16 +62,37 @@ export function IssueDetail() {
   function startEditTitle() {
     if (!issue) return;
     setTitleDraft(issue.title);
+    setTitleError(null);
+    editingTitleRef.current = true;
     setEditingTitle(true);
   }
 
-  async function saveTitle() {
-    if (!issue) return;
+  function cancelEditTitle() {
+    editingTitleRef.current = false;
     setEditingTitle(false);
+    setTitleError(null);
+  }
+
+  // The input stays open until the save succeeds. On a failure it keeps the
+  // typed text and shows the error, so the user can try again or cancel.
+  async function saveTitle() {
+    if (!issue || !editingTitleRef.current || titleSavingRef.current) return;
     const trimmed = titleDraft.trim();
-    if (trimmed && trimmed !== issue.title) {
-      await updateIssue(issue.id, { title: trimmed });
+    if (!trimmed || trimmed === issue.title) {
+      cancelEditTitle();
+      return;
     }
+    const id = issue.id;
+    titleSavingRef.current = true;
+    const saved = await trackRequest(
+      async () => {
+        const result = await updateIssueVersioned(id, { title: trimmed }, null);
+        handleIssueSaved(result.data, result.version);
+      },
+      { setBusy: setTitleSaving, setError: setTitleError },
+    );
+    titleSavingRef.current = false;
+    if (saved) cancelEditTitle();
   }
 
   /** A 409: show the latest version, to review before deleting again. */
@@ -129,18 +157,28 @@ export function IssueDetail() {
             <span className="text-gray-500 text-sm">#{issue.id}</span>
           </div>
           {editingTitle ? (
-            <input
-              ref={titleInputRef}
-              type="text"
-              value={titleDraft}
-              onChange={(e) => setTitleDraft(e.target.value)}
-              onBlur={saveTitle}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') saveTitle();
-                if (e.key === 'Escape') setEditingTitle(false);
-              }}
-              className="w-full text-xl font-semibold bg-transparent border-b border-gray-300 dark:border-gray-700 focus:border-blue-500 outline-none pb-1 mb-4"
-            />
+            <div className="mb-4">
+              <input
+                ref={titleInputRef}
+                type="text"
+                value={titleDraft}
+                readOnly={titleSaving}
+                aria-busy={titleSaving}
+                aria-invalid={titleError !== null}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onBlur={saveTitle}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') saveTitle();
+                  if (e.key === 'Escape' && !titleSaving) cancelEditTitle();
+                }}
+                className="w-full text-xl font-semibold bg-transparent border-b border-gray-300 dark:border-gray-700 focus:border-blue-500 outline-none pb-1"
+              />
+              {titleError && (
+                <div role="alert" className="mt-1 text-sm text-red-500">
+                  Failed to save title: {titleError}
+                </div>
+              )}
+            </div>
           ) : (
             <div className="mb-4">
               <button
