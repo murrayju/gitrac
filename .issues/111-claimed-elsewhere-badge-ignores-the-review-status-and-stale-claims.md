@@ -1,14 +1,14 @@
 ---
 id: 111
 title: Claimed-elsewhere badge ignores the review status and stale claims
-status: backlog
+status: in_progress
 priority: low
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - enhancement
 created: '2026-10-16T21:58:38.249Z'
 createdBy: Justin Murray
-updated: '2026-10-16T21:58:38.249Z'
+updated: '2026-10-17T13:22:49.775Z'
 ---
 
 Follow-ups from #105 and #106:
