@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Issue } from '../../../core/types.ts';
 import { statusSortOrder } from '../../../core/workflow.ts';
+import type { ApiIssue } from '../api.ts';
 import {
   useConfig,
   useIssues,
   useServerIdentity,
   useWorkflow,
 } from '../hooks.ts';
+import { localFirst } from '../lib/claimed-elsewhere.ts';
 import { effectiveAuthor } from '../lib/identity.ts';
 import { labelFilterOptions, listFilters } from '../lib/list-filters.ts';
 import type { SortField } from '../stores/filterStore.ts';
 import { useFilterStore } from '../stores/filterStore.ts';
 import { useIdentityStore } from '../stores/identityStore.ts';
+import { ElsewhereIssueRow } from './ElsewhereIssueRow.tsx';
 import { IssueRow } from './IssueRow.tsx';
 
 export function IssueList() {
@@ -29,6 +31,8 @@ export function IssueList() {
   const setSearchText = useFilterStore((s) => s.setSearchText);
   const mineFilter = useFilterStore((s) => s.mineFilter);
   const setMineFilter = useFilterStore((s) => s.setMineFilter);
+  const elsewhereFilter = useFilterStore((s) => s.elsewhereFilter);
+  const setElsewhereFilter = useFilterStore((s) => s.setElsewhereFilter);
   const sortField = useFilterStore((s) => s.sortField);
   const setSortField = useFilterStore((s) => s.setSortField);
   const sortDir = useFilterStore((s) => s.sortDir);
@@ -44,6 +48,7 @@ export function IssueList() {
     labelFilter,
     search,
     mineFilter,
+    elsewhereFilter,
     actingAuthor: effectiveAuthor(
       storedAuthor,
       identity?.name ?? null,
@@ -87,7 +92,8 @@ export function IssueList() {
       }
       return sortDir === 'asc' ? cmp : -cmp;
     });
-    return list;
+    // Issues only elsewhere stay after the local ones, as in `ls --elsewhere`.
+    return localFirst(list);
   }, [issues, sortField, sortDir, workflow]);
 
   function handleSort(field: SortField) {
@@ -179,6 +185,17 @@ export function IssueList() {
             />
             Mine
           </label>
+          <label
+            className="flex items-center gap-1 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none"
+            title="Also show issues that exist only in another worktree or on another branch (read-only here)"
+          >
+            <input
+              type="checkbox"
+              checked={elsewhereFilter}
+              onChange={(e) => setElsewhereFilter(e.target.checked)}
+            />
+            Other worktrees/branches
+          </label>
         </div>
       </div>
 
@@ -237,9 +254,17 @@ export function IssueList() {
               </tr>
             </thead>
             <tbody>
-              {sorted.map((issue: Issue) => (
-                <IssueRow key={issue.id} issue={issue} />
-              ))}
+              {sorted.map((issue: ApiIssue) =>
+                issue.foundElsewhere ? (
+                  <ElsewhereIssueRow
+                    key={issue.id}
+                    issue={issue}
+                    found={issue.foundElsewhere}
+                  />
+                ) : (
+                  <IssueRow key={issue.id} issue={issue} />
+                ),
+              )}
             </tbody>
           </table>
         </div>

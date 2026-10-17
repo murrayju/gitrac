@@ -14,13 +14,16 @@ export interface ListFilterState {
    * server's identity.
    */
   actingAuthor?: string;
+  /** Also the issues that exist only in another worktree or on a branch. */
+  elsewhereFilter?: boolean;
 }
 
 /**
  * The `GET /api/issues` filters for the list view's selections. Empty
  * selections are left out. Search text is trimmed; blank text means no
  * search. `mine` selects issues assigned to the acting user: `author` is the
- * "Acting as" name, left out for the server's identity.
+ * "Acting as" name, left out for the server's identity. `elsewhere` adds
+ * the issues that exist only in another worktree or on another branch.
  */
 export function listFilters(state: ListFilterState): IssueFilters {
   const filters: IssueFilters = {};
@@ -34,6 +37,7 @@ export function listFilters(state: ListFilterState): IssueFilters {
     filters.mine = true;
     if (state.actingAuthor) filters.author = state.actingAuthor;
   }
+  if (state.elsewhereFilter) filters.elsewhere = true;
   return filters;
 }
 

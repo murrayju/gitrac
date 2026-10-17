@@ -12,7 +12,8 @@ import type {
  * An issue as served by `GET /api/issues` / `GET /api/issues/:id` (and
  * mutation responses): plus `claimedElsewhere` / `closedElsewhere` when its
  * newest version is a claim / a close in another worktree or on another
- * branch.
+ * branch, or `foundElsewhere` when it has no file in this working tree but
+ * exists in another worktree or on another branch (read-only; no version).
  */
 export type ApiIssue = Issue & ElsewhereMarks;
 
@@ -52,6 +53,11 @@ export interface IssueFilters {
    * server's identity. Not sent without `mine`.
    */
   author?: string;
+  /**
+   * Also the issues that exist only in another worktree or on another
+   * branch (`elsewhere=1`), each with `foundElsewhere`.
+   */
+  elsewhere?: boolean;
   sort?: string;
 }
 
@@ -160,6 +166,7 @@ export function issueListQuery(filters?: IssueFilters): string {
     params.set('mine', '1');
     if (filters.author) params.set('author', filters.author);
   }
+  if (filters?.elsewhere) params.set('elsewhere', '1');
   if (filters?.sort) params.set('sort', filters.sort);
   const qs = params.toString();
   return qs ? `?${qs}` : '';

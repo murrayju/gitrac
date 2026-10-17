@@ -17,6 +17,7 @@ import { CommentList } from './CommentList.tsx';
 import { DeleteIssueDialog } from './DeleteIssueDialog.tsx';
 import { DependenciesPanel } from './DependenciesPanel.tsx';
 import { DescriptionEditor } from './DescriptionEditor.tsx';
+import { ElsewhereIssueView } from './ElsewhereIssueView.tsx';
 import { MetadataPanel } from './MetadataPanel.tsx';
 
 export function IssueDetail() {
@@ -57,6 +58,11 @@ export function IssueDetail() {
 
   if (!issue) {
     return <div className="p-6 text-gray-500">Issue not found.</div>;
+  }
+
+  // No file here: only in another worktree or on a branch (read-only).
+  if (issue.foundElsewhere) {
+    return <ElsewhereIssueView issue={issue} found={issue.foundElsewhere} />;
   }
 
   function startEditTitle() {

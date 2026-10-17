@@ -67,6 +67,18 @@ describe('listFilters', () => {
     expect(issueListQuery({ author: 'Bob Builder' })).toBe('');
   });
 
+  // #110: the "Other worktrees/branches" toggle.
+  test('elsewhere sends elsewhere=1; off by default', () => {
+    expect(listFilters({ ...none, elsewhereFilter: false })).toEqual({});
+    const filters = listFilters({
+      ...none,
+      elsewhereFilter: true,
+      labelFilter: 'bug',
+    });
+    expect(filters).toEqual({ elsewhere: true, label: 'bug' });
+    expect(issueListQuery(filters)).toBe('?label=bug&elsewhere=1');
+  });
+
   test('blank search text is no search', () => {
     expect(listFilters({ ...none, search: '   ' })).toEqual({});
   });

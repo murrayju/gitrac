@@ -68,7 +68,7 @@ function RefItem({
   );
 }
 
-function RefList({ title, refs }: { title: string; refs: IssueRef[] }) {
+export function RefList({ title, refs }: { title: string; refs: IssueRef[] }) {
   if (refs.length === 0) return null;
   return (
     <div>

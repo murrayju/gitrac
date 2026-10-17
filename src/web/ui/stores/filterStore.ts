@@ -18,6 +18,8 @@ interface FilterState {
   searchText: string;
   /** Only issues assigned to the server's identity. */
   mineFilter: boolean;
+  /** Also issues that exist only in another worktree or on a branch. */
+  elsewhereFilter: boolean;
   sortField: SortField;
   sortDir: SortDir;
   setStatusFilter: (value: string) => void;
@@ -26,6 +28,7 @@ interface FilterState {
   setLabelFilter: (value: string) => void;
   setSearchText: (value: string) => void;
   setMineFilter: (value: boolean) => void;
+  setElsewhereFilter: (value: boolean) => void;
   setSortField: (value: SortField) => void;
   setSortDir: (value: SortDir) => void;
 }
@@ -37,6 +40,7 @@ export const useFilterStore = create<FilterState>((set) => ({
   labelFilter: '',
   searchText: '',
   mineFilter: false,
+  elsewhereFilter: false,
   sortField: 'updated',
   sortDir: 'desc',
   setStatusFilter: (value) => set({ statusFilter: value }),
@@ -45,6 +49,7 @@ export const useFilterStore = create<FilterState>((set) => ({
   setLabelFilter: (value) => set({ labelFilter: value }),
   setSearchText: (value) => set({ searchText: value }),
   setMineFilter: (value) => set({ mineFilter: value }),
+  setElsewhereFilter: (value) => set({ elsewhereFilter: value }),
   setSortField: (value) => set({ sortField: value }),
   setSortDir: (value) => set({ sortDir: value }),
 }));

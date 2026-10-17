@@ -1,7 +1,11 @@
 import { type Context, Hono } from 'hono';
 import type { ClaimUser } from '../../core/claim.ts';
 import { describeDependencies, indexIssues } from '../../core/dependencies.ts';
-import type { ElsewhereMarks } from '../../core/elsewhere.ts';
+import {
+  type ElsewhereMarks,
+  type IssueOnlyElsewhere,
+  issuesOnlyElsewhere,
+} from '../../core/elsewhere.ts';
 import { GitracError, invalidInput } from '../../core/errors.ts';
 import { parseIssueFile } from '../../core/issue.ts';
 import { type IssueQuery, parseIssueQuery } from '../../core/query.ts';
@@ -68,14 +72,17 @@ function invalidIssueResponse(c: Context, err: GitracError): Response {
 }
 
 /**
- * Read + parse an issue and compute its ETag; null if missing/unreadable.
- * Throws `duplicate_issue` if several files have the ID and `invalid_issue`
- * if its file is malformed.
+ * Read + parse an issue and compute its ETag; `missing` if no file has the
+ * ID, `unreadable` if its file can't be read. Throws `duplicate_issue` if
+ * several files have the ID and `invalid_issue` if its file is malformed.
  */
-async function loadIssue(dir: string, id: number): Promise<LoadedIssue | null> {
+async function readLocalIssue(
+  dir: string,
+  id: number,
+): Promise<LoadedIssue | 'missing' | 'unreadable'> {
   try {
     const raw = await readIssueContent(dir, id);
-    if (!raw) return null;
+    if (!raw) return 'missing';
     const path = issuePath(raw.filename, raw.closed);
     return {
       issue: parseIssueFile(raw.content, { id, path }),
@@ -85,8 +92,14 @@ async function loadIssue(dir: string, id: number): Promise<LoadedIssue | null> {
     };
   } catch (err) {
     if (isDuplicateIssue(err) || isInvalidIssue(err)) throw err;
-    return null;
+    return 'unreadable';
   }
+}
+
+/** {@link readLocalIssue}, but null if missing/unreadable. */
+async function loadIssue(dir: string, id: number): Promise<LoadedIssue | null> {
+  const local = await readLocalIssue(dir, id);
+  return typeof local === 'string' ? null : local;
 }
 
 /** Thrown by the `If-Match` precondition when the issue has changed. */
@@ -306,29 +319,53 @@ export function issueRoutes(ctx: ServerContext): Hono {
     ]);
   });
 
-  // GET /issues/:id — get a single issue
+  // GET /issues/:id: get a single issue. If no local file has the ID, the
+  // newest version in another worktree or on another branch (from the
+  // cached scan, as `gitrac show`), with `foundElsewhere` and no ETag: it
+  // can't be edited here (mutations are 404).
   app.get('/issues/:id', async (c) => {
-    const { dir } = ctx;
     const id = Number.parseInt(c.req.param('id'), 10);
-
     if (Number.isNaN(id)) {
       return c.json({ error: 'Invalid issue ID' }, 400);
     }
+    const found = await readIssueForView(c, id);
+    if (found instanceof Response) return found;
+    if ('foundElsewhere' in found) {
+      return c.json({ ...found.issue, foundElsewhere: found.foundElsewhere });
+    }
+    c.header('ETag', found.etag);
+    return c.json(await withClaim(ctx, found.issue));
+  });
 
-    let loaded: LoadedIssue | null;
+  /**
+   * The issue for a read-only view: the local file, else the version only
+   * elsewhere (from the cached scan). A local file that can't be read counts
+   * as local (404, no fallback), as in `listIssues`. Else the error
+   * response: 404, or 409 `duplicate_issue` / `invalid_issue`.
+   */
+  async function readIssueForView(
+    c: Context,
+    id: number,
+  ): Promise<LoadedIssue | IssueOnlyElsewhere | Response> {
+    let local: Awaited<ReturnType<typeof readLocalIssue>>;
     try {
-      loaded = await loadIssue(dir, id);
+      local = await readLocalIssue(ctx.dir, id);
     } catch (err) {
       if (isDuplicateIssue(err)) return duplicateResponse(c, err);
       if (isInvalidIssue(err)) return invalidIssueResponse(c, err);
       throw err;
     }
-    if (!loaded) {
-      return c.json({ error: `Issue #${id} not found` }, 404);
+    if (typeof local !== 'string') return local;
+    if (local === 'missing') {
+      const states = await elsewhereCache(ctx).states();
+      const list = states.get(id);
+      const [found] = list
+        ? issuesOnlyElsewhere(new Set(), new Map([[id, list]]))
+        : [];
+      if (found) return found;
     }
-    c.header('ETag', loaded.etag);
-    return c.json(await withClaim(ctx, loaded.issue));
-  });
+    return c.json({ error: `Issue #${id} not found` }, 404);
+  }
 
   /**
    * Run a service mutation on an existing issue (with `If-Match`) and reply
@@ -529,26 +566,19 @@ export function issueRoutes(ctx: ServerContext): Hono {
 
   // GET /issues/:id/dependencies — the issue's parent, sub-issues, blockers
   // and the issues it blocks (derived), each `{ id, title, status, resolved }`
-  // (`status: null` for a missing issue), plus `blocked`.
+  // (`status: null` for a missing issue), plus `blocked`. Works for an issue
+  // only elsewhere too (as `GET /issues/:id`), resolved against the local
+  // issues, as `gitrac show` does.
   app.get('/issues/:id/dependencies', async (c) => {
     const id = Number.parseInt(c.req.param('id'), 10);
     if (Number.isNaN(id)) {
       return c.json({ error: 'Invalid issue ID' }, 400);
     }
-    let loaded: LoadedIssue | null;
-    try {
-      loaded = await loadIssue(ctx.dir, id);
-    } catch (err) {
-      if (isDuplicateIssue(err)) return duplicateResponse(c, err);
-      if (isInvalidIssue(err)) return invalidIssueResponse(c, err);
-      throw err;
-    }
-    if (!loaded) {
-      return c.json({ error: `Issue #${id} not found` }, 404);
-    }
+    const found = await readIssueForView(c, id);
+    if (found instanceof Response) return found;
     const byId = indexIssues((await loadAllIssues(ctx.dir)).issues);
-    byId.set(id, loaded.issue);
-    return c.json(describeDependencies(loaded.issue, byId, ctx.config));
+    byId.set(id, found.issue);
+    return c.json(describeDependencies(found.issue, byId, ctx.config));
   });
 
   // POST /issues/:id/link — `{ blockedBy?: id | id[], parent?: id }`: add

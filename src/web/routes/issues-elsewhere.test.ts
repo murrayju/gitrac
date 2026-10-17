@@ -3,6 +3,7 @@ import { mkdtemp, readdir, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import simpleGit from 'simple-git';
+import type { IssueDependencies } from '../../core/dependencies.ts';
 import type {
   ClaimedElsewhere,
   ClosedElsewhere,
@@ -415,5 +416,118 @@ describe('stale claims in the web API', () => {
       'http://localhost/api/issues?stale=soon',
     );
     expect(res.status).toBe(400);
+  });
+});
+
+/**
+ * Regression tests for #110: `GET /api/issues/:id` (and its dependencies)
+ * fall back to the cached scan for an issue only elsewhere; mutations of it
+ * are still 404.
+ */
+describe('GET /api/issues/:id for an issue only elsewhere', () => {
+  type Found = Served & { foundElsewhere?: { ref: string; worktree?: string } };
+
+  async function request(path: string, init?: RequestInit) {
+    return createApp(ctx, { ui: null }).request(
+      `http://localhost/api${path}`,
+      init,
+    );
+  }
+
+  test('serves the version in another worktree, with foundElsewhere and no ETag', async () => {
+    await writeIssue(
+      wt1,
+      makeIssue({
+        id: 3,
+        title: 'Found a bug',
+        description: 'Details.',
+        blockedBy: [1],
+        parent: 2,
+        updated: WHERE.updated,
+      }),
+    );
+    const res = await request('/issues/3');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('ETag')).toBeNull();
+    const body = (await res.json()) as Found;
+    expect(body.title).toBe('Found a bug');
+    expect(body.description).toBe('Details.');
+    expect(body.foundElsewhere).toEqual({ ref: 'agent-1', worktree: wt1 });
+    expect(body).not.toHaveProperty('claimedElsewhere');
+
+    // Its links resolve against the local issues, as `gitrac show` does.
+    const deps = await get<IssueDependencies>('/issues/3/dependencies');
+    expect(deps.parent).toMatchObject({ id: 2, title: 'Second' });
+    expect(deps.blockedBy).toEqual([
+      { id: 1, title: 'First', status: 'todo', resolved: false },
+    ]);
+    expect(deps.blocked).toBe(true);
+    // One cached scan for all of it.
+    expect(clock.scans).toBe(1);
+  });
+
+  test('serves the version committed on a branch, without a worktree', async () => {
+    await simpleGit(main).raw(['worktree', 'remove', '--force', wt1]);
+    const git = simpleGit(main);
+    await git.checkout(['-b', 'other']);
+    await writeIssue(main, makeIssue({ id: 4, title: 'Sub task' }));
+    await git.add('.');
+    await git.commit('create #4');
+    await git.checkout('main');
+
+    const body = await get<Found>('/issues/4');
+    expect(body.title).toBe('Sub task');
+    expect(body.foundElsewhere).toEqual({ ref: 'other' });
+  });
+
+  test('a local file wins; an ID found nowhere is still 404', async () => {
+    await writeIssue(
+      wt1,
+      makeIssue({ title: 'Renamed', updated: '2026-02-01T00:00:00Z' }),
+    );
+    const local = await request('/issues/1');
+    expect(local.headers.get('ETag')).not.toBeNull();
+    const body = (await local.json()) as Found;
+    expect(body.title).toBe('First');
+    expect(body).not.toHaveProperty('foundElsewhere');
+
+    for (const path of ['/issues/99', '/issues/99/dependencies']) {
+      const res = await request(path);
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: 'Issue #99 not found' });
+    }
+  });
+
+  test('every mutation of it is 404 and writes nothing', async () => {
+    await writeIssue(wt1, makeIssue({ id: 3, title: 'Found a bug' }));
+    expect((await get<Found>('/issues/3')).foundElsewhere).toBeDefined();
+    const json = (method: string, body: unknown = {}) => ({
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const mutations: [string, RequestInit][] = [
+      ['/issues/3', json('PATCH', { title: 'Changed' })],
+      ['/issues/3', { method: 'DELETE' }],
+      ['/issues/3?dryRun=1', { method: 'DELETE' }],
+      ['/issues/3/comments', json('POST', { body: 'Hi' })],
+      ['/issues/3/comments/0', json('PUT', { body: 'Hi' })],
+      ['/issues/3/comments/0', { method: 'DELETE' }],
+      ['/issues/3/close', json('PATCH')],
+      ['/issues/3/reopen', json('PATCH')],
+      ['/issues/3/claim', json('POST')],
+      ['/issues/3/unclaim', json('POST')],
+      ['/issues/3/link', json('POST', { blockedBy: 1 })],
+      ['/issues/3/unlink', json('POST', { parent: true })],
+    ];
+    for (const [path, init] of mutations) {
+      const res = await request(path, init);
+      expect([init.method, path, res.status]).toEqual([init.method, path, 404]);
+    }
+    const files = await readdir(join(main, '.issues'));
+    expect(files.some((f) => f.startsWith('3-'))).toBe(false);
+    expect(await simpleGit(main).raw(['rev-list', '--count', 'HEAD'])).toBe(
+      '1\n',
+    );
   });
 });
