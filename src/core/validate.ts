@@ -209,17 +209,50 @@ export const INVALID_AUTHOR = 'Invalid author: must be a non-empty string';
  * `### {author} \u2014 {timestamp}` (`COMMENT_HEADER_RE`), so an author must
  * not contain a line break or the em dash (U+2014). Otherwise the header does
  * not parse back to the same author and timestamp. Pass the name as it is
- * written (trim it first if the caller trims).
+ * written (trim it first if the caller trims). `what` names the value in the
+ * message (default: `author`).
  */
-export function authorError(name: unknown): string | null {
-  if (typeof name !== 'string' || !name.trim()) return INVALID_AUTHOR;
+export function authorError(name: unknown, what = 'author'): string | null {
+  if (typeof name !== 'string' || !name.trim()) {
+    return what === 'author'
+      ? INVALID_AUTHOR
+      : `Invalid ${what}: must be a non-empty string`;
+  }
   if (hasLineBreak(name)) {
-    return `Invalid author ${JSON.stringify(name)}: must not contain line breaks`;
+    return `Invalid ${what} ${JSON.stringify(name)}: must not contain line breaks`;
   }
   if (name.includes('\u2014')) {
-    return `Invalid author ${JSON.stringify(name)}: must not contain the em dash (U+2014)`;
+    return `Invalid ${what} ${JSON.stringify(name)}: must not contain the em dash (U+2014)`;
   }
   return null;
+}
+
+/**
+ * Check one `config.assignees` entry. Return its error messages (none if it
+ * is valid). An entry must be an object with non-empty `name` and `email`
+ * strings. The name can become an author (the web "Acting as" picker), and
+ * the email can become the assignee. So both must pass `authorError`: no
+ * line break and no em dash.
+ */
+export function assigneeErrors(entry: unknown): string[] {
+  const { name, email } =
+    typeof entry === 'object' && entry !== null
+      ? (entry as Record<string, unknown>)
+      : ({} as Record<string, unknown>);
+  if (
+    typeof name !== 'string' ||
+    typeof email !== 'string' ||
+    !name.trim() ||
+    !email.trim()
+  ) {
+    return [
+      `Invalid assignee ${JSON.stringify(entry) ?? String(entry)}: must have non-empty "name" and "email" strings`,
+    ];
+  }
+  return [
+    authorError(name, 'assignee name'),
+    authorError(email, 'assignee email'),
+  ].filter((e): e is string => e !== null);
 }
 
 /**

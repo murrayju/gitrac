@@ -1,5 +1,6 @@
 import type { Command } from 'commander';
 import { GitracError, invalidInput } from '../../core/errors.ts';
+import { authorError } from '../../core/validate.ts';
 import { readConfig } from '../../fs/issue-store.ts';
 import { getGlobalOptions, resolveProjectRoot } from '../global-options.ts';
 
@@ -60,12 +61,22 @@ export function parsePort(value: string): number {
   return port;
 }
 
-/** Start the web server, throwing a `GitracError` on failure. */
+/**
+ * Start the web server, throwing a `GitracError` on failure. A bad port or
+ * `--author` (see `authorError`) is `invalid_input`, before the project root
+ * is resolved.
+ */
 export async function runServe(options: ServeOptions): Promise<void> {
   const { port, host } = options;
   if (!Number.isInteger(port) || port < 0 || port > MAX_PORT) {
     throw invalidPort(port);
   }
+  // The server writes `--author` as `createdBy` and comment authors. Check it
+  // now, so a bad name fails at startup and not on every write. A blank
+  // value means git config (see `IdentityResolver`).
+  const author = options.author?.trim();
+  const error = author ? authorError(author) : null;
+  if (error) throw invalidInput(error);
   const dir = await resolveProjectRoot(options.dir);
   const config = await readConfig(dir);
   // Load the web server only here. Other CLI commands then do not load Hono

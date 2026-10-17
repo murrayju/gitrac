@@ -27,7 +27,14 @@ export function configRoutes(ctx: ServerContext): Hono {
       return c.json(result.config);
     } catch (err) {
       if (err instanceof GitracError && err.code === 'invalid_input') {
-        return c.json({ error: err.message }, 400);
+        // Several messages (e.g. one per bad assignee) also go in `errors`.
+        const errors = err.details?.errors;
+        return c.json(
+          Array.isArray(errors)
+            ? { error: err.message, errors }
+            : { error: err.message },
+          400,
+        );
       }
       throw err;
     }

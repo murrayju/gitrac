@@ -1,6 +1,7 @@
 import { ensureLabelColors } from '../core/config.ts';
 import { invalidInput } from '../core/errors.ts';
 import type { Assignee, Config } from '../core/types.ts';
+import { assigneeErrors } from '../core/validate.ts';
 import {
   ISSUES_GITIGNORE_PATH,
   writeIssuesGitignore,
@@ -100,7 +101,10 @@ export async function updateLabelColors(
 
 /**
  * Replace the configured assignees. `assignees` must be an array of objects
- * with non-empty `name` and `email` strings.
+ * with non-empty `name` and `email` strings. A name or email must not
+ * contain a line break or the em dash (`assigneeErrors`): the name can become
+ * a comment author and the email an assignee. Throws `invalid_input` with
+ * every bad entry before anything is written.
  */
 export async function updateAssignees(
   ctx: ServiceContext,
@@ -111,19 +115,8 @@ export async function updateAssignees(
     if (!Array.isArray(assignees)) {
       throw invalidInput('assignees must be an array');
     }
-    for (const a of assignees) {
-      const entry = a as Record<string, unknown>;
-      if (
-        typeof entry.name !== 'string' ||
-        typeof entry.email !== 'string' ||
-        !entry.name.trim() ||
-        !entry.email.trim()
-      ) {
-        throw invalidInput(
-          'Each assignee must have non-empty "name" and "email" strings',
-        );
-      }
-    }
+    const errors = assignees.flatMap((a) => assigneeErrors(a));
+    if (errors.length > 0) throw invalidInput(errors);
 
     const fresh = await readConfig(ctx.dir);
     fresh.assignees = assignees as Assignee[];

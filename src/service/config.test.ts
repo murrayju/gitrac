@@ -114,4 +114,30 @@ describe('updateAssignees', () => {
     expect(err.code).toBe('invalid_input');
     expect(err.message).toContain('non-empty "name" and "email"');
   });
+
+  test('rejects names and emails with a line break or em dash, listing each (#109)', async () => {
+    const before = await Bun.file(
+      join(fx.dir, '.issues', 'config.yaml'),
+    ).text();
+    const err = await rejection(
+      updateAssignees(fx.context(), [
+        { name: 'Ada', email: 'ada@example.com' },
+        { name: 'Bad \u2014 Name', email: 'bad@example.com' },
+        { name: 'Two\nLines', email: 'two@example.com' },
+        { name: 'Eve', email: 'eve@x\n.com' },
+        { name: 'Mal', email: 'mal\u2014@example.com' },
+      ]),
+    );
+    expect(err.code).toBe('invalid_input');
+    expect(err.details?.errors).toEqual([
+      'Invalid assignee name "Bad \u2014 Name": must not contain the em dash (U+2014)',
+      'Invalid assignee name "Two\\nLines": must not contain line breaks',
+      'Invalid assignee email "eve@x\\n.com": must not contain line breaks',
+      'Invalid assignee email "mal\u2014@example.com": must not contain the em dash (U+2014)',
+    ]);
+    expect(await Bun.file(join(fx.dir, '.issues', 'config.yaml')).text()).toBe(
+      before,
+    );
+    expect(fx.commits).toEqual([]);
+  });
 });

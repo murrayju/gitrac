@@ -22,7 +22,7 @@ import {
 } from '../core/stale.ts';
 import { nextTimestamp } from '../core/timestamp.ts';
 import type { Config, Issue } from '../core/types.ts';
-import { authorError, hasLineBreak } from '../core/validate.ts';
+import { assigneeErrors, authorError, hasLineBreak } from '../core/validate.ts';
 import {
   activeStatus,
   isClosedStatus,
@@ -179,7 +179,8 @@ function addClaimComment(
  * closed here or in a newer version elsewhere (`details.closedElsewhere`
  * says where). `force` overrides both: a closed issue is reopened; a close
  * elsewhere is superseded by the new claim. Adds the user to
- * `config.assignees` if their email is new.
+ * `config.assignees` if their email is new and they are a valid entry
+ * (`assigneeErrors`).
  */
 export async function claimIssue(
   ctx: ServiceContext,
@@ -250,9 +251,15 @@ export async function claimIssue(
     issue.assignee = claimAssignee(user);
     issue.status = active;
 
-    // Add the user to config.assignees if not already present (by email)
+    // Add the user to config.assignees if not already present (by email).
+    // Skip a user that is not a valid entry (e.g. an em dash in the name):
+    // the web "Acting as" picker could then pick a name that fails on write.
     let configChanged = false;
-    if (user.email && !findAssigneeByEmail(config.assignees, user.email)) {
+    if (
+      user.email &&
+      !findAssigneeByEmail(config.assignees, user.email) &&
+      assigneeErrors(user).length === 0
+    ) {
       config.assignees.push({ name: user.name, email: user.email });
       await writeConfig(ctx.dir, config);
       configChanged = true;

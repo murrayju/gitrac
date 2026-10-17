@@ -26,7 +26,7 @@ describe('parsePort', () => {
 // #85: end-to-end, an invalid port is a standard invalid_input error (exit 2)
 // that names the original value, and is reported before anything else (here:
 // the cwd isn't even a git repo).
-describe('gitrac serve with an invalid port (end-to-end)', () => {
+describe('gitrac serve with an invalid port or author (end-to-end)', () => {
   let dir: string;
 
   beforeAll(async () => {
@@ -64,6 +64,27 @@ describe('gitrac serve with an invalid port (end-to-end)', () => {
       expect(stdout).toBe('');
       expect(stderr.trim()).toBe(
         `Error: Invalid port "${value}": must be an integer from 0 to 65535.`,
+      );
+    });
+  }
+
+  // #109: a bad --author fails at startup, not on every write. The check
+  // runs before the project root is resolved (the cwd is not a git repo).
+  const authorCases: [string, string[]][] = [
+    [
+      'must not contain the em dash (U+2014)',
+      ['--author', 'A \u2014 B', 'serve'],
+    ],
+    ['must not contain the em dash (U+2014)', ['--author', 'A \u2014 B']],
+    ['must not contain line breaks', ['--author', 'A\nB', 'serve']],
+  ];
+  for (const [problem, args] of authorCases) {
+    test(`gitrac ${JSON.stringify(args.join(' '))} fails at startup`, async () => {
+      const { code, stdout, stderr } = await cli(...args);
+      expect(code).toBe(EXIT_INVALID_INPUT);
+      expect(stdout).toBe('');
+      expect(stderr.trim()).toBe(
+        `Error: Invalid author ${JSON.stringify(args[1])}: ${problem}`,
       );
     });
   }

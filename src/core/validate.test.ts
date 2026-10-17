@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { createDefaultConfig } from './config.ts';
 import type { Issue } from './types.ts';
 import {
+  assigneeErrors,
   authorError,
   hasLineBreak,
   INVALID_AUTHOR,
@@ -280,6 +281,33 @@ describe('authorError', () => {
     const error = authorError(name);
     expect(error).toStartWith('Invalid author');
     expect(error).toContain(problem);
+  });
+});
+
+describe('assigneeErrors (#109)', () => {
+  test('accepts a valid entry', () => {
+    expect(assigneeErrors({ name: 'Ada', email: 'ada@example.com' })).toEqual(
+      [],
+    );
+  });
+
+  test.each([
+    [null],
+    ['Ada'],
+    [{ name: 'Ada' }],
+    [{ name: ' ', email: 'ada@example.com' }],
+    [{ name: 'Ada', email: 42 }],
+  ])('rejects %j as not a name/email pair', (entry) => {
+    const errors = assigneeErrors(entry);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('non-empty "name" and "email"');
+  });
+
+  test('reports a bad name and a bad email', () => {
+    expect(assigneeErrors({ name: 'A\nB', email: 'a\u2014b@x.com' })).toEqual([
+      'Invalid assignee name "A\\nB": must not contain line breaks',
+      'Invalid assignee email "a\u2014b@x.com": must not contain the em dash (U+2014)',
+    ]);
   });
 });
 

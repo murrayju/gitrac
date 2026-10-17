@@ -288,6 +288,17 @@ describe('identity validation (#98)', () => {
     );
     expect(result.issue.assignee).toBe('Ada \u2014 L');
   });
+
+  test('a claim does not add an invalid user to config.assignees (#109)', async () => {
+    await writeIssue(fx.dir, makeIssue({ id: 1, title: 'Task' }));
+    const user = { name: 'Ada \u2014 L', email: 'ada@example.com' };
+    const result = await claimIssue(
+      fx.context({ identity: async () => user }),
+      1,
+    );
+    expect(result.issue.assignee).toBe('ada@example.com');
+    expect((await readConfig(fx.dir)).assignees).toEqual([]);
+  });
 });
 
 describe('superseding a claim elsewhere on a tied or later clock (#94)', () => {
