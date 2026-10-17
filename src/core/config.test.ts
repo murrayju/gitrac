@@ -439,6 +439,25 @@ describe('validateConfig', () => {
     expect(validateConfig({ ...config, priorities: ['p0', 'p1'] })).toBe(false);
   });
 
+  test('staleAfter is optional; if set it must be a duration (#111)', () => {
+    const config = createDefaultConfig();
+    expect('staleAfter' in config).toBe(false);
+    for (const staleAfter of ['30s', '45m', '2h', '1d']) {
+      expect(validateConfig({ ...config, staleAfter })).toBe(true);
+    }
+    for (const staleAfter of ['2', '2 hours', '0h', '-1h', '', 2, true]) {
+      expect(validateConfig({ ...config, staleAfter })).toBe(false);
+    }
+    expect(parseConfig(`${VALID_YAML}staleAfter: 2h\n`).staleAfter).toBe('2h');
+    expect(() => parseConfig(`${VALID_YAML}staleAfter: soon\n`)).toThrow(
+      'staleAfter must be a duration',
+    );
+    // Round-trips; unset stays unset.
+    const parsed = parseConfig(`${VALID_YAML}staleAfter: 2h\n`);
+    expect(parseConfig(serializeConfig(parsed)).staleAfter).toBe('2h');
+    expect(serializeConfig(config)).not.toContain('staleAfter');
+  });
+
   test('returns false for invalid labels (non-object)', () => {
     const config = {
       ...createDefaultConfig(),

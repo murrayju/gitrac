@@ -1,4 +1,5 @@
 import yaml from 'js-yaml';
+import { parseDuration } from './stale.ts';
 import type {
   Assignee,
   Config,
@@ -371,7 +372,8 @@ function checkWorkflow(
  * if set, are configured open statuses (and differ); `reviewStatus`, if set,
  * is a configured open status other than the (resolved) active and unclaim
  * statuses; `closeStatus` /
- * `cancelStatus`, if set, are configured closed statuses.
+ * `cancelStatus`, if set, are configured closed statuses; `staleAfter`, if
+ * set, is a duration (`parseDuration`).
  */
 export function configErrors(value: unknown): string[] {
   if (!isPlainObject(value)) return ['config must be a YAML object'];
@@ -419,6 +421,23 @@ export function configErrors(value: unknown): string[] {
       )
     ) {
       errors.push('assignees must be a list of { name, email }');
+    }
+  }
+
+  // staleAfter: optional duration (the web UI's stale-claim threshold)
+  if (obj.staleAfter !== undefined) {
+    let ok = typeof obj.staleAfter === 'string';
+    if (ok) {
+      try {
+        parseDuration(obj.staleAfter as string);
+      } catch {
+        ok = false;
+      }
+    }
+    if (!ok) {
+      errors.push(
+        `staleAfter must be a duration such as 30m, 2h or 1d (got ${JSON.stringify(obj.staleAfter)})`,
+      );
     }
   }
 

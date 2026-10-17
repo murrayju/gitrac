@@ -9,7 +9,12 @@ import {
 import { GitracError, invalidInput } from '../../core/errors.ts';
 import { parseIssueFile } from '../../core/issue.ts';
 import { type IssueQuery, parseIssueQuery } from '../../core/query.ts';
-import { type StaleOptions, staleOptions } from '../../core/stale.ts';
+import {
+  type StaleClaim,
+  type StaleOptions,
+  staleClaim,
+  staleOptions,
+} from '../../core/stale.ts';
 import type { Issue } from '../../core/types.ts';
 import { readIssueContent } from '../../fs/issue-store.ts';
 import { claimIssue, unclaimIssue } from '../../service/claim.ts';
@@ -212,24 +217,52 @@ async function errorResponse(
 
 /**
  * An issue as served: plus `claimedElsewhere` or `closedElsewhere` when set,
- * or `foundElsewhere` for an issue only elsewhere (as in the CLI's JSON).
+ * or `foundElsewhere` for an issue only elsewhere (as in the CLI's JSON),
+ * and `staleClaim` for a stale claim.
  */
-type ServedIssue = Issue & ElsewhereMarks;
+type ServedIssue = Issue & ElsewhereMarks & { staleClaim?: StaleClaim };
+
+/**
+ * The {@link StaleOptions} for the configured `staleAfter` (the web UI's
+ * stale-claim threshold), or undefined if it is not set (or not a
+ * duration; `readConfig` rejects that, so only an in-memory config can have
+ * it).
+ */
+function configuredStale(ctx: ServerContext): StaleOptions | undefined {
+  try {
+    return staleOptions(ctx.config.staleAfter);
+  } catch {
+    // Not from a validated file: no stale marks.
+    return undefined;
+  }
+}
 
 /**
  * `issues` with `claimedElsewhere` / `closedElsewhere` added where their
  * effective state is a claim / a close on another branch or in another
  * worktree (same rules as `gitrac ls`; the scan is cached briefly, see
- * `ElsewhereCache`).
+ * `ElsewhereCache`). When `staleAfter` is configured, also `staleClaim`
+ * where the effective state is a claim with no activity for that long
+ * (same rules and shape as `gitrac ls --stale`).
  */
 async function withClaims(
   ctx: ServerContext,
   issues: Issue[],
 ): Promise<ServedIssue[]> {
-  const marks = await elsewhereCache(ctx).marks(issues, ctx.config);
+  const cache = elsewhereCache(ctx);
+  const stale = configuredStale(ctx);
+  const [marks, states] = await Promise.all([
+    cache.marks(issues, ctx.config),
+    stale && issues.length > 0 ? cache.states() : undefined,
+  ]);
   return issues.map((issue) => {
     const mark = marks.get(issue.id);
-    return mark ? { ...issue, ...mark } : issue;
+    const claim =
+      stale && states
+        ? staleClaim(issue, ctx.config, states.get(issue.id), stale)
+        : undefined;
+    if (!mark && !claim) return issue;
+    return { ...issue, ...mark, ...(claim ? { staleClaim: claim } : {}) };
   });
 }
 
@@ -307,15 +340,26 @@ export function issueRoutes(ctx: ServerContext): Hono {
         stale,
       },
     );
+    // Without `stale`, the configured `staleAfter` (if any) marks them.
+    const configured = stale ? undefined : configuredStale(ctx);
     const withStale = <T extends Issue>(issue: T) => {
-      const staleClaim = staleClaims.get(issue.id);
-      return staleClaim ? { ...issue, staleClaim } : issue;
+      const claim = staleClaims.get(issue.id);
+      return claim ? { ...issue, staleClaim: claim } : issue;
     };
     return c.json([
       ...(await withClaims(ctx, issues)).map(withStale),
-      ...elsewhere.map(({ issue, foundElsewhere }) =>
-        withStale({ ...issue, foundElsewhere }),
-      ),
+      ...elsewhere.map(({ issue, foundElsewhere }) => {
+        // Their issue is the newest version: judge it alone, at its location.
+        const claim =
+          configured && staleClaim(issue, config, undefined, configured);
+        return claim
+          ? {
+              ...issue,
+              foundElsewhere,
+              staleClaim: { ...claim, ...foundElsewhere },
+            }
+          : withStale({ ...issue, foundElsewhere });
+      }),
     ]);
   });
 
@@ -536,9 +580,12 @@ export function issueRoutes(ctx: ServerContext): Hono {
   // force? }`: claim (assign to the acting user + the active status) or give
   // back the issue, with the CLI's rules (`claimIssue` / `unclaimIssue`).
   // `author` (the identity picked in the UI) must be a configured assignee;
-  // default: the server's identity. A no-op is 200 with the current issue.
-  // 409 `already_claimed` / `issue_closed` (see `errorResponse`). Honors
-  // `If-Match`.
+  // default: the server's identity. claim also takes `renew: true` (renew
+  // your own claim, as `claim --renew`); unclaim takes `stale: "<duration>"`
+  // (release someone else's claim only if it is stale, as `unclaim
+  // --stale`; 400 for a bad duration). A no-op is 200 with the current
+  // issue. 409 `already_claimed` / `issue_closed` (see `errorResponse`).
+  // Honors `If-Match`.
   for (const [action, run] of [
     ['claim', claimIssue],
     ['unclaim', unclaimIssue],
@@ -550,7 +597,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
       }
       let input: ReturnType<typeof claimInput>;
       try {
-        input = claimInput(await readJsonBody(c));
+        input = claimInput(await readJsonBody(c), action);
       } catch (err) {
         return errorResponse(c, ctx, err);
       }
@@ -558,6 +605,8 @@ export function issueRoutes(ctx: ServerContext): Hono {
         run(webServiceContext(ctx, { author: input.author }), id, {
           comment: input.comment,
           force: input.force,
+          renew: input.renew,
+          stale: input.stale,
           precondition,
         }),
       );
@@ -612,26 +661,44 @@ export function issueRoutes(ctx: ServerContext): Hono {
 }
 
 /**
- * The fields of a claim / unclaim body (`null` = absent). Throws
- * `invalid_input` for a wrong type; `author` is checked by the service
- * context.
+ * The fields of a claim / unclaim body (`null` = absent). `renew` is read
+ * for claim only and `stale` for unclaim only (as the CLI's options). Throws
+ * `invalid_input` for a wrong type or a bad `stale` duration; `author` is
+ * checked by the service context.
  */
-function claimInput(body: unknown): {
+function claimInput(
+  body: unknown,
+  action: 'claim' | 'unclaim',
+): {
   author?: unknown;
   comment?: string;
   force?: boolean;
+  renew?: boolean;
+  stale?: StaleOptions;
 } {
-  const { author, comment, force } = asRecord(body);
+  const { author, comment, force, renew, stale } = asRecord(body);
   if (comment != null && typeof comment !== 'string') {
     throw invalidInput('comment must be a string');
   }
   if (force != null && typeof force !== 'boolean') {
     throw invalidInput('force must be a boolean');
   }
+  if (action === 'claim' && renew != null && typeof renew !== 'boolean') {
+    throw invalidInput('renew must be a boolean');
+  }
+  if (action === 'unclaim' && stale != null && typeof stale !== 'string') {
+    throw invalidInput('stale must be a duration such as 30m or 2h');
+  }
   return {
     author: author ?? undefined,
     comment: comment ?? undefined,
     force: force ?? undefined,
+    renew:
+      action === 'claim' ? ((renew as boolean | null) ?? undefined) : undefined,
+    stale:
+      action === 'unclaim'
+        ? staleOptions((stale as string | null) ?? undefined)
+        : undefined,
   };
 }
 

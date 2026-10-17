@@ -141,6 +141,7 @@ describe('decideClaim with versions elsewhere (#56)', () => {
         ref: 'agent-1',
         worktree: '/wt/agent-1',
         assignee: bob.email,
+        status: 'in_progress',
         updated: at(3),
       },
     });
@@ -186,6 +187,7 @@ describe('decideClaim with versions elsewhere (#56)', () => {
       ref: 'agent-1',
       worktree: '/wt/agent-1',
       assignee: alice.email,
+      status: 'in_progress',
       updated: at(3),
     };
     expect(decideClaim(todo, alice, CONFIG, { elsewhere: [mine] })).toEqual({
@@ -403,6 +405,7 @@ describe('decideUnclaim with versions elsewhere (#65)', () => {
     ref: 'agent-1',
     worktree: '/wt/agent-1',
     assignee,
+    status: 'in_progress',
     updated: at(3),
   });
 
@@ -476,7 +479,7 @@ describe('decideUnclaim with versions elsewhere (#65)', () => {
     ).toEqual({
       action: 'unclaim',
       status: 'backlog',
-      elsewhere: where(alice.email),
+      elsewhere: { ...where(alice.email), status: 'backlog' },
     });
   });
 
@@ -506,10 +509,11 @@ describe('review status (#105)', () => {
     assignee,
     updated,
   });
-  const where = (assignee: string) => ({
+  const where = (assignee: string, status = 'review') => ({
     ref: 'agent-1',
     worktree: '/wt/agent-1',
     assignee,
+    status,
     updated: at(3),
   });
   const todo = { status: 'todo', assignee: '', updated: at(2) };
@@ -642,7 +646,7 @@ describe('review status (#105)', () => {
         action: 'review',
         status: 'review',
         assignee: alice.email,
-        elsewhere: where(alice.email),
+        elsewhere: where(alice.email, 'in_progress'),
       });
     });
   });

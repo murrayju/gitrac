@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { createDefaultConfig } from '../../../core/config.ts';
 import {
+  claimStatus,
   foundElsewhereNotice,
   fullClaimText,
   fullCloseText,
@@ -8,12 +10,18 @@ import {
   shortClaimText,
   shortCloseText,
   shortFoundText,
+  staleClaimText,
+  staleClaimTitle,
   worktreeName,
 } from './claimed-elsewhere.ts';
 
 /** Regression tests for #66: wording of the claimed-elsewhere indicator. */
 
-const base = { assignee: 'bob@example.com', updated: '2026-01-02T00:00:00Z' };
+const base = {
+  assignee: 'bob@example.com',
+  status: 'in_progress',
+  updated: '2026-01-02T00:00:00Z',
+};
 
 describe('claimed-elsewhere wording', () => {
   test('in another worktree', () => {
@@ -105,5 +113,52 @@ describe('found-elsewhere wording', () => {
       { id: 1 },
     ];
     expect(localFirst(list).map((i) => i.id)).toEqual([2, 1, 5, 4]);
+  });
+});
+
+describe('claim status and wording (#111)', () => {
+  const config = createDefaultConfig();
+  const review = {
+    ...config,
+    statuses: [...config.statuses, { name: 'review', closed: false }],
+    reviewStatus: 'review',
+  };
+
+  test('claimStatus: the held status of the claim, else the active one', () => {
+    expect(claimStatus({ status: 'review' }, review)).toBe('review');
+    expect(claimStatus({ status: 'in_progress' }, review)).toBe('in_progress');
+    // Not held in this config (no review status), or missing (older server).
+    expect(claimStatus({ status: 'review' }, config)).toBe('in_progress');
+    expect(claimStatus({} as { status: string }, config)).toBe('in_progress');
+    const custom = { ...config, activeStatus: 'todo' };
+    expect(claimStatus({ status: 'in_progress' }, custom)).toBe('todo');
+  });
+
+  test('a status label replaces "claimed" in the short text', () => {
+    const claim = { ...base, ref: 'agent-1', worktree: '/work/wt-1' };
+    expect(shortClaimText(claim, 'Bob', 'Review')).toBe(
+      'Review by Bob in wt-1',
+    );
+    expect(fullClaimText(claim, 'Bob', 'Review')).toBe(
+      'Claimed by Bob (Review) in worktree /work/wt-1 (branch agent-1)',
+    );
+    expect(shortClaimText({ ...base, ref: 'x' }, 'Bob', 'Review')).toBe(
+      'Review by Bob on x',
+    );
+  });
+
+  test('stale claim text', () => {
+    const claim = { assignee: 'bob@example.com', updated: base.updated };
+    const now = Date.parse(base.updated) + 3 * 60 * 60 * 1000 + 59_000;
+    expect(staleClaimText(claim, now)).toBe('stale: no activity for 3h');
+    expect(staleClaimText({ ...claim, updated: 'bad' }, now)).toBe(
+      'stale claim',
+    );
+    expect(staleClaimTitle(claim, 'Bob', '2h')).toBe(
+      `Stale claim by Bob: last activity ${base.updated}, no activity for at least 2h`,
+    );
+    expect(staleClaimTitle(claim, 'Bob', undefined)).toBe(
+      `Stale claim by Bob: last activity ${base.updated}`,
+    );
   });
 });

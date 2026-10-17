@@ -166,6 +166,7 @@ describe('detail with resolved dependencies (#102)', () => {
     claimedElsewhere: {
       ref: 'agent-1',
       assignee: 'bob@example.com',
+      status: 'in_progress',
       updated: '2024-01-17T00:00:00Z',
     },
   };
@@ -201,6 +202,7 @@ describe('marks for versions elsewhere (#93)', () => {
     ref: 'agent-1',
     worktree: '/wt/agent-1',
     assignee: 'bob@example.com',
+    status: 'in_progress',
     updated: '2024-01-17T00:00:00Z',
   };
   const closed = {

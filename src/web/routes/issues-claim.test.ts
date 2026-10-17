@@ -223,6 +223,7 @@ describe('POST /api/issues/:id/claim', () => {
       ref: 'agent-1',
       worktree: wt1,
       assignee: 'bob@example.com',
+      status: 'in_progress',
       updated: LATER,
     });
     expect(body.error).toContain(`in worktree ${wt1}`);
@@ -391,5 +392,161 @@ describe('POST /api/issues/:id/unclaim', () => {
     });
     expect(res.status).toBe(409);
     expect((await readIssue(main, 1)).assignee).toBe('test@test.com');
+  });
+});
+
+/**
+ * Regression tests for #111: `renew` on claim, `stale` on unclaim, and
+ * `staleClaim` in issue responses when `staleAfter` is configured.
+ */
+describe('stale claims and renew (#111)', () => {
+  type WithStale = Served & {
+    staleClaim?: {
+      assignee: string;
+      updated: string;
+      ref?: string;
+      worktree?: string;
+    };
+  };
+
+  async function setStaleAfter(value: string | undefined) {
+    const config = await readConfig(main);
+    if (value === undefined) delete config.staleAfter;
+    else config.staleAfter = value;
+    await writeConfig(main, config);
+  }
+
+  async function get<T>(path: string): Promise<T> {
+    const res = await createApp(ctx, { ui: null }).request(
+      `http://localhost/api${path}`,
+    );
+    expect(res.status).toBe(200);
+    return (await res.json()) as T;
+  }
+
+  test('claim with renew: a heartbeat on your own claim', async () => {
+    const first = (await (await send('/issues/1/claim')).json()) as Served;
+    const res = await send('/issues/1/claim', { renew: true });
+    expect(res.status).toBe(200);
+    const renewed = (await res.json()) as Served;
+    expect(renewed.assignee).toBe('test@test.com');
+    expect(renewed.status).toBe('in_progress');
+    expect(Date.parse(renewed.updated)).toBeGreaterThan(
+      Date.parse(first.updated),
+    );
+    expect(await readIssue(main, 1)).toEqual(renewed);
+    expect((await simpleGit(main).status()).isClean()).toBe(true);
+    // renew does not take over someone else's claim.
+    const theirs = await send('/issues/2/claim', { renew: true });
+    expect(theirs.status).toBe(409);
+    expect(((await theirs.json()) as ErrorBody).code).toBe('already_claimed');
+  });
+
+  test('a bad renew or stale is 400 and writes nothing', async () => {
+    const commit = await head();
+    expect((await send('/issues/1/claim', { renew: 'yes' })).status).toBe(400);
+    for (const stale of ['2 hours', '0h', 5, true]) {
+      const res = await send('/issues/2/unclaim', { stale });
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as ErrorBody).error).toBeTruthy();
+    }
+    expect((await readIssue(main, 2)).assignee).toBe('bob@example.com');
+    expect(await head()).toBe(commit);
+  });
+
+  test("unclaim with stale releases someone else's stale claim, not a fresh one", async () => {
+    // Issue 2 (Bob) has had no activity since 2026-01-01.
+    const res = await send('/issues/2/unclaim', { stale: '2h' });
+    expect(res.status).toBe(200);
+    const issue = (await res.json()) as Served;
+    expect(issue.assignee).toBe('');
+    expect(issue.status).toBe('todo');
+
+    // A fresh claim by Grace: 409 with the claim's age; nothing written.
+    await send('/issues/1/claim', { author: 'Grace' });
+    const commit = await head();
+    const fresh = await send('/issues/1/unclaim', { stale: '2h' });
+    expect(fresh.status).toBe(409);
+    const body = (await fresh.json()) as ErrorBody;
+    expect(body.code).toBe('already_claimed');
+    expect(body.assignee).toBe(GRACE.email);
+    expect(body.error).toContain('less than 2h');
+    expect((await readIssue(main, 1)).assignee).toBe(GRACE.email);
+    expect(await head()).toBe(commit);
+  });
+
+  test('staleClaim is served only when staleAfter is configured', async () => {
+    const plain = await get<WithStale>('/issues/2');
+    expect(plain).not.toHaveProperty('staleClaim');
+
+    await setStaleAfter('2h');
+    const one = await get<WithStale>('/issues/2');
+    expect(one.staleClaim).toEqual({
+      assignee: 'bob@example.com',
+      updated: '2026-01-01T00:00:00Z',
+    });
+    const list = await get<WithStale[]>('/issues');
+    expect(list.find((i) => i.id === 2)?.staleClaim).toEqual(one.staleClaim);
+    // Not claimed, or closed: no mark.
+    expect(list.find((i) => i.id === 1)).not.toHaveProperty('staleClaim');
+    // A threshold longer than the claim's age: no mark.
+    await setStaleAfter('100000d');
+    expect(await get<WithStale>('/issues/2')).not.toHaveProperty('staleClaim');
+  });
+
+  test('staleClaim says where a stale claim elsewhere is; 409 current has it too', async () => {
+    await setStaleAfter('2h');
+    await writeIn(wt1, 1, {
+      status: 'in_progress',
+      assignee: 'bob@example.com',
+      updated: LATER,
+    });
+    const one = await get<WithStale>('/issues/1');
+    expect(one.claimedElsewhere?.status).toBe('in_progress');
+    expect(one.staleClaim).toEqual({
+      assignee: 'bob@example.com',
+      updated: LATER,
+      ref: 'agent-1',
+      worktree: wt1,
+    });
+
+    // A changed version (If-Match) embeds `current` as GET serves it.
+    const res = await send('/issues/2/claim', undefined, {
+      'If-Match': '"old"',
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { current?: WithStale };
+    expect(body.current?.staleClaim?.assignee).toBe('bob@example.com');
+
+    // Releasing the stale claim elsewhere clears both marks.
+    const released = await send('/issues/1/unclaim', { stale: '2h' });
+    expect(released.status).toBe(200);
+    const issue = (await released.json()) as WithStale;
+    expect(issue.assignee).toBe('');
+    expect(issue).not.toHaveProperty('claimedElsewhere');
+    expect(issue).not.toHaveProperty('staleClaim');
+  });
+
+  test('a claim in the review status elsewhere carries that status', async () => {
+    const config = await readConfig(main);
+    config.statuses.splice(3, 0, { name: 'review', closed: false });
+    config.reviewStatus = 'review';
+    config.staleAfter = '2h';
+    await writeConfig(main, config);
+    await writeIn(wt1, 1, {
+      status: 'review',
+      assignee: 'bob@example.com',
+      updated: LATER,
+    });
+    const one = await get<WithStale>('/issues/1');
+    expect(one.claimedElsewhere).toEqual({
+      ref: 'agent-1',
+      worktree: wt1,
+      assignee: 'bob@example.com',
+      status: 'review',
+      updated: LATER,
+    });
+    // A claim in review waits on the reviewer: never stale.
+    expect(one).not.toHaveProperty('staleClaim');
   });
 });

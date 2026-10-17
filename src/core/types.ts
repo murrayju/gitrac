@@ -133,6 +133,14 @@ export interface Config {
   closeStatus?: Status;
   /** The status `close --cancelled` sets; closed. Unset: `cancelled`. */
   cancelStatus?: Status;
+  /**
+   * The web UI's stale-claim threshold: a duration such as `2h` (see
+   * `parseDuration` in `src/core/stale.ts`). When set, the web API marks
+   * issues whose claim has no activity for this long (`staleClaim`). The
+   * CLI does not use it: `--stale <duration>` stays explicit. Unset: no
+   * stale marks.
+   */
+  staleAfter?: string;
   git: GitConfig;
 }
 

@@ -6,6 +6,7 @@ import {
   type WorkflowConfig,
 } from '../../../core/workflow.ts';
 import { ApiError, type ApiIssue } from '../api.ts';
+import { claimStatus } from './claimed-elsewhere.ts';
 import { effectiveAuthor } from './identity.ts';
 
 /**
@@ -36,23 +37,44 @@ export function actingUser(
 export interface ClaimActions {
   /** "Claim": open, and not already the acting user's active claim. */
   claim: boolean;
-  /** "Release": assigned to someone (the acting user or not). */
+  /**
+   * "Release": assigned to someone (the acting user or not), except a stale
+   * claim by someone else (see `releaseStale`).
+   */
   release: boolean;
+  /** "Renew": the acting user's own active claim (a heartbeat). */
+  renew: boolean;
+  /**
+   * "Release stale claim": someone else's claim is stale (`staleClaim`, from
+   * the configured `staleAfter`). Sends `stale`, not `force`.
+   */
+  releaseStale: boolean;
 }
+
+const NO_ACTIONS: ClaimActions = {
+  claim: false,
+  release: false,
+  renew: false,
+  releaseStale: false,
+};
 
 /**
  * The buttons for `issue` and `user`, judged by its effective state: a
  * claim in another worktree or on another branch (`claimedElsewhere`) counts
- * as the assignee. None for an issue that is closed (here, or in a newer
- * version elsewhere) or before the identity is known.
+ * as the assignee, in its status. None for an issue that is closed (here,
+ * or in a newer version elsewhere) or before the identity is known.
  */
 export function claimActions(
   issue: Pick<
     ApiIssue,
-    'status' | 'assignee' | 'claimedElsewhere' | 'closedElsewhere'
+    | 'status'
+    | 'assignee'
+    | 'claimedElsewhere'
+    | 'closedElsewhere'
+    | 'staleClaim'
   >,
   user: ClaimUser | null,
-  config: WorkflowConfig | null,
+  config: (WorkflowConfig & { staleAfter?: string }) | null,
 ): ClaimActions {
   if (
     !user ||
@@ -60,14 +82,24 @@ export function claimActions(
     issue.closedElsewhere ||
     isClosedStatus(config, issue.status)
   ) {
-    return { claim: false, release: false };
+    return NO_ACTIONS;
   }
   const elsewhere = issue.claimedElsewhere;
   const assignee = (elsewhere ? elsewhere.assignee : issue.assignee).trim();
-  const active =
-    elsewhere !== undefined || issue.status === activeStatus(config);
-  const held = active && isAssignedTo(assignee, user);
-  return { claim: !held, release: assignee !== '' };
+  const status = elsewhere ? claimStatus(elsewhere, config) : issue.status;
+  const mine = isAssignedTo(assignee, user);
+  const held = status === activeStatus(config) && mine;
+  const stale =
+    issue.staleClaim !== undefined &&
+    config.staleAfter !== undefined &&
+    assignee !== '' &&
+    !mine;
+  return {
+    claim: !held,
+    release: assignee !== '' && !stale,
+    renew: held,
+    releaseStale: stale,
+  };
 }
 
 /** A claim or release the server refused (409 `already_claimed` / `issue_closed`). */

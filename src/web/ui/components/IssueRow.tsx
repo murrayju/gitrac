@@ -11,6 +11,7 @@ import { ClosedElsewhereBadge } from './ClosedElsewhereBadge.tsx';
 import { Dropdown } from './Dropdown.tsx';
 import { LabelBadge } from './LabelBadge.tsx';
 import { PriorityBadge } from './PriorityBadge.tsx';
+import { StaleClaimBadge } from './StaleClaimBadge.tsx';
 import { StatusBadge } from './StatusBadge.tsx';
 
 export function IssueRow({ issue }: { issue: ApiIssue }) {
@@ -50,6 +51,11 @@ export function IssueRow({ issue }: { issue: ApiIssue }) {
           {issue.closedElsewhere && (
             <span className="shrink-0">
               <ClosedElsewhereBadge closed={issue.closedElsewhere} />
+            </span>
+          )}
+          {issue.staleClaim && (
+            <span className="shrink-0">
+              <StaleClaimBadge claim={issue.staleClaim} />
             </span>
           )}
         </div>

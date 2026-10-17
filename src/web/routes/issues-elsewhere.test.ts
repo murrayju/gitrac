@@ -132,6 +132,7 @@ async function get<T>(path: string): Promise<T> {
 const WHERE = {
   ref: 'agent-1',
   assignee: 'bob@example.com',
+  status: 'in_progress',
   updated: '2026-01-02T00:00:00.000Z',
 };
 

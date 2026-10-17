@@ -89,6 +89,7 @@ describe('claimedElsewhere', () => {
       ref: 'feature',
       worktree: '/wt/a',
       assignee: 'bob@example.com',
+      status: 'in_progress',
       updated: '2026-01-03T00:00:00Z',
     });
     expect(
@@ -96,6 +97,7 @@ describe('claimedElsewhere', () => {
     ).toEqual({
       ref: 'feature',
       assignee: 'bob@example.com',
+      status: 'in_progress',
       updated: '2026-01-03T00:00:00Z',
     });
   });
@@ -200,6 +202,7 @@ describe('closedElsewhere (#93)', () => {
       claimedElsewhere: {
         ref: 'feature',
         assignee: 'bob@example.com',
+        status: 'in_progress',
         updated: '2026-01-03T00:00:00Z',
       },
     });
@@ -300,6 +303,7 @@ describe('claimedElsewhere with a review status (#105)', () => {
     expect(claimedElsewhere(local, review, states)).toEqual({
       ref: 'feature',
       assignee: 'bob@example.com',
+      status: 'review',
       updated: '2026-01-03T00:00:00.000Z',
     });
     expect(elsewhereMarks(local, review, states)).toHaveProperty(

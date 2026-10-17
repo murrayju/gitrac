@@ -119,6 +119,7 @@ describe('ElsewhereCache', () => {
         ref: 'agent-1',
         worktree: '/tmp/agent-1',
         assignee: 'bob@example.com',
+        status: 'in_progress',
         updated: '2026-01-02T00:00:00Z',
       },
     });

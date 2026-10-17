@@ -51,11 +51,15 @@ export interface IssueOnlyElsewhere {
   foundElsewhere: FoundElsewhere;
 }
 
-/** Where (and by whom) an issue is claimed, when that's not this working tree. */
+/**
+ * Where, by whom and in which held status (the active or the review status)
+ * an issue is claimed, when that's not this working tree.
+ */
 export interface ClaimedElsewhere {
   ref: string;
   worktree?: string;
   assignee: string;
+  status: Status;
   updated: string;
 }
 
@@ -215,14 +219,17 @@ export function elsewhereMarks(
   return undefined;
 }
 
-/** Where and by whom `state` is held (its location, assignee and `updated`). */
+/**
+ * Where and by whom `state` is held (its location, assignee, status and
+ * `updated`).
+ */
 export function toClaimedElsewhere(
   state: IssueStateElsewhere,
 ): ClaimedElsewhere {
-  const { ref, worktree, assignee, updated } = state;
+  const { ref, worktree, assignee, status, updated } = state;
   return worktree === undefined
-    ? { ref, assignee, updated }
-    : { ref, worktree, assignee, updated };
+    ? { ref, assignee, status, updated }
+    : { ref, worktree, assignee, status, updated };
 }
 
 /**

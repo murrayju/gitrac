@@ -16,15 +16,26 @@ import {
 import { effectiveAuthor } from '../lib/identity.ts';
 import { requestErrorReason } from '../lib/upload-error.ts';
 import { useIdentityStore } from '../stores/identityStore.ts';
+import { StaleClaimBadge } from './StaleClaimBadge.tsx';
 
 type Action = 'claim' | 'unclaim';
+
+/** How to send a claim / unclaim (see `ClaimInput`). */
+interface RunOptions {
+  force?: boolean;
+  renew?: boolean;
+  stale?: string;
+}
 
 /**
  * "Claim" / "Release" for the issue sidebar, as the "Acting as" user. They
  * go through `POST /api/issues/:id/claim` / `unclaim`, so the CLI's claim
  * rules apply (also to claims in other worktrees and on other branches). A
  * refusal is shown inline; if someone else holds the issue, the user can
- * retry with `force` ("Take over" / "Release anyway").
+ * retry with `force` ("Take over" / "Release anyway"). "Renew" renews the
+ * user's own claim (`renew`). For a stale claim by someone else (see
+ * `staleAfter`), "Release stale claim" sends `stale`, so the server
+ * releases it only if it is still stale.
  */
 export function ClaimControls({
   issue,
@@ -49,15 +60,19 @@ export function ClaimControls({
   const assignees = config?.assignees ?? [];
   const user = actingUser(stored, identity, assignees);
   const actions = claimActions(issue, user, config);
-  if (!actions.claim && !actions.release && !conflict && !error) return null;
+  const any =
+    actions.claim || actions.release || actions.renew || actions.releaseStale;
+  if (!any && !conflict && !error && !issue.staleClaim) return null;
 
-  async function run(action: Action, force: boolean) {
+  async function run(action: Action, options: RunOptions = {}) {
     setBusy(true);
     setError(null);
     setConflict(null);
     const input = {
       author: effectiveAuthor(stored, identity?.name ?? null, assignees),
-      force: force || undefined,
+      force: options.force || undefined,
+      renew: options.renew || undefined,
+      stale: options.stale,
     };
     try {
       const send = action === 'claim' ? claimIssue : unclaimIssue;
@@ -85,13 +100,18 @@ export function ClaimControls({
 
   return (
     <div className="mt-2" data-testid="claim-controls">
+      {issue.staleClaim && (
+        <div className="mb-2">
+          <StaleClaimBadge claim={issue.staleClaim} />
+        </div>
+      )}
       <div className="flex flex-wrap gap-2">
         {actions.claim && (
           <button
             type="button"
             className={button}
             disabled={busy}
-            onClick={() => run('claim', false)}
+            onClick={() => run('claim')}
             title={user ? `Assign to ${user.name} and start work` : undefined}
           >
             Claim
@@ -102,10 +122,32 @@ export function ClaimControls({
             type="button"
             className={button}
             disabled={busy}
-            onClick={() => run('unclaim', false)}
+            onClick={() => run('unclaim')}
             title="Clear the assignee and give the issue back"
           >
             Release
+          </button>
+        )}
+        {actions.renew && (
+          <button
+            type="button"
+            className={button}
+            disabled={busy}
+            onClick={() => run('claim', { renew: true })}
+            title="Renew your claim (a heartbeat), so it does not become stale"
+          >
+            Renew
+          </button>
+        )}
+        {actions.releaseStale && (
+          <button
+            type="button"
+            className={button}
+            disabled={busy}
+            onClick={() => run('unclaim', { stale: config?.staleAfter })}
+            title={`Release the claim only if it still has no activity for ${config?.staleAfter}`}
+          >
+            Release stale claim
           </button>
         )}
       </div>
@@ -118,7 +160,7 @@ export function ClaimControls({
                 type="button"
                 className={button}
                 disabled={busy}
-                onClick={() => run(conflict.action, true)}
+                onClick={() => run(conflict.action, { force: true })}
               >
                 {conflict.action === 'claim' ? 'Take over' : 'Release anyway'}
               </button>

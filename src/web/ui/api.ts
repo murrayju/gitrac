@@ -1,5 +1,6 @@
 import type { IssueDependencies } from '../../core/dependencies.ts';
 import type { ElsewhereMarks } from '../../core/elsewhere.ts';
+import type { StaleClaim } from '../../core/stale.ts';
 import type {
   Assignee,
   Config,
@@ -12,10 +13,12 @@ import type {
  * An issue as served by `GET /api/issues` / `GET /api/issues/:id` (and
  * mutation responses): plus `claimedElsewhere` / `closedElsewhere` when its
  * newest version is a claim / a close in another worktree or on another
- * branch, or `foundElsewhere` when it has no file in this working tree but
- * exists in another worktree or on another branch (read-only; no version).
+ * branch, `foundElsewhere` when it has no file in this working tree but
+ * exists in another worktree or on another branch (read-only; no version),
+ * and `staleClaim` when `staleAfter` is configured and its claim has had no
+ * activity for that long.
  */
-export type ApiIssue = Issue & ElsewhereMarks;
+export type ApiIssue = Issue & ElsewhereMarks & { staleClaim?: StaleClaim };
 
 export interface Draft {
   filename: string;
@@ -307,6 +310,10 @@ export interface ClaimInput {
   comment?: string;
   /** claim: take over someone else's claim. unclaim: release someone else's claim. */
   force?: boolean;
+  /** claim only: renew your own claim (a heartbeat, so it is not stale). */
+  renew?: boolean;
+  /** unclaim only: release someone else's claim only if it is this stale (e.g. `2h`). */
+  stale?: string;
 }
 
 /**

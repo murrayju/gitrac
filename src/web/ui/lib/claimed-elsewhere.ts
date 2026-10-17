@@ -4,6 +4,13 @@ import {
   describeLocation,
   type FoundElsewhere,
 } from '../../../core/elsewhere.ts';
+import { formatDuration, type StaleClaim } from '../../../core/stale.ts';
+import type { Status } from '../../../core/types.ts';
+import {
+  activeStatus,
+  isHeldStatus,
+  type WorkflowConfig,
+} from '../../../core/workflow.ts';
 
 /**
  * Wording for the "claimed (or closed) in another worktree / on another
@@ -13,24 +20,79 @@ import {
  * `label` is the closed status's display name.
  */
 
+/**
+ * The held status of `claim` (the active or the review status), for its
+ * badge style and label. The active status if the claim has no status (an
+ * older server) or a status that this config does not hold.
+ */
+export function claimStatus(
+  claim: Pick<ClaimedElsewhere, 'status'>,
+  config: WorkflowConfig,
+): Status {
+  const status = (claim as { status?: Status }).status;
+  return status !== undefined && isHeldStatus(config, status)
+    ? status
+    : activeStatus(config);
+}
+
 /** Last path segment of a worktree path (POSIX or Windows). */
 export function worktreeName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 }
 
-/** Compact badge text: `claimed by Bob in wt-1` / `claimed by Bob on origin/x`. */
-export function shortClaimText(claim: ClaimedElsewhere, who: string): string {
+/**
+ * Compact badge text: `claimed by Bob in wt-1` / `claimed by Bob on
+ * origin/x`. `label` is the display name of a held status other than the
+ * active one (e.g. the review status): `Review by Bob in wt-1`.
+ */
+export function shortClaimText(
+  claim: ClaimedElsewhere,
+  who: string,
+  label?: string,
+): string {
+  const what = label === undefined ? 'claimed' : label;
   return claim.worktree === undefined
-    ? `claimed by ${who} on ${claim.ref}`
-    : `claimed by ${who} in ${worktreeName(claim.worktree)}`;
+    ? `${what} by ${who} on ${claim.ref}`
+    : `${what} by ${who} in ${worktreeName(claim.worktree)}`;
 }
 
 /**
  * Full sentence: `Claimed by Bob in worktree /path (branch agent-1)` /
  * `Claimed by Bob on branch origin/agent-1` (same wording as the CLI's).
+ * With `label` (a held status other than the active one):
+ * `Claimed by Bob (Review) on branch origin/agent-1`.
  */
-export function fullClaimText(claim: ClaimedElsewhere, who: string): string {
-  return `Claimed by ${who} ${describeLocation(claim)}`;
+export function fullClaimText(
+  claim: ClaimedElsewhere,
+  who: string,
+  label?: string,
+): string {
+  const status = label === undefined ? '' : ` (${label})`;
+  return `Claimed by ${who}${status} ${describeLocation(claim)}`;
+}
+
+/**
+ * Stale badge text: `stale: no activity for 3h` (the time since the
+ * claim's last activity at `now`, in ms since the epoch).
+ */
+export function staleClaimText(claim: StaleClaim, now: number): string {
+  const at = Date.parse(claim.updated);
+  if (!Number.isFinite(at)) return 'stale claim';
+  return `stale: no activity for ${formatDuration(now - at)}`;
+}
+
+/**
+ * Stale badge hover text: `Stale claim by Bob: last activity <iso>, no
+ * activity for at least 2h`. `threshold` is the configured `staleAfter`.
+ */
+export function staleClaimTitle(
+  claim: StaleClaim,
+  who: string,
+  threshold: string | undefined,
+): string {
+  const limit =
+    threshold === undefined ? '' : `, no activity for at least ${threshold}`;
+  return `Stale claim by ${who}: last activity ${claim.updated}${limit}`;
 }
 
 /** Compact badge text: `done in wt-1` / `done on origin/x`. */

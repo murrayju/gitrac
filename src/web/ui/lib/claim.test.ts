@@ -25,25 +25,33 @@ describe('actingUser', () => {
 
 describe('claimActions', () => {
   const open = { status: 'todo', assignee: '' };
+  const none = {
+    claim: false,
+    release: false,
+    renew: false,
+    releaseStale: false,
+  };
 
   test('an unassigned open issue can be claimed, not released', () => {
     expect(claimActions(open, GRACE, config)).toEqual({
+      ...none,
       claim: true,
-      release: false,
     });
   });
 
-  test('your own active claim can be released, not claimed again', () => {
+  test('your own active claim can be released or renewed, not claimed again', () => {
     const mine = { status: 'in_progress', assignee: 'GRACE@example.com' };
     expect(claimActions(mine, GRACE, config)).toEqual({
-      claim: false,
+      ...none,
       release: true,
+      renew: true,
     });
   });
 
   test("someone else's claim shows both (the server asks before a takeover)", () => {
     const theirs = { status: 'in_progress', assignee: 'bob@example.com' };
     expect(claimActions(theirs, GRACE, config)).toEqual({
+      ...none,
       claim: true,
       release: true,
     });
@@ -52,6 +60,7 @@ describe('claimActions', () => {
   test('assigned to you but not active: Claim starts it', () => {
     const assigned = { status: 'todo', assignee: 'grace@example.com' };
     expect(claimActions(assigned, GRACE, config)).toEqual({
+      ...none,
       claim: true,
       release: true,
     });
@@ -61,18 +70,70 @@ describe('claimActions', () => {
     const where = {
       ref: 'agent-1',
       assignee: 'grace@example.com',
+      status: 'in_progress',
       updated: '2026-01-02T00:00:00Z',
     };
     expect(
       claimActions({ ...open, claimedElsewhere: where }, GRACE, config),
-    ).toEqual({ claim: false, release: true });
+    ).toEqual({ ...none, release: true, renew: true });
     expect(
       claimActions(
         { ...open, claimedElsewhere: { ...where, assignee: 'bob' } },
         GRACE,
         config,
       ),
-    ).toEqual({ claim: true, release: true });
+    ).toEqual({ ...none, claim: true, release: true });
+  });
+
+  test('your own claim in review elsewhere can be claimed again, not renewed (#111)', () => {
+    const review = {
+      ...config,
+      statuses: [...config.statuses, { name: 'review', closed: false }],
+      reviewStatus: 'review',
+    };
+    const where = {
+      ref: 'agent-1',
+      assignee: 'grace@example.com',
+      status: 'review',
+      updated: '2026-01-02T00:00:00Z',
+    };
+    expect(
+      claimActions({ ...open, claimedElsewhere: where }, GRACE, review),
+    ).toEqual({ ...none, claim: true, release: true });
+  });
+
+  test("someone else's stale claim offers Release stale claim, not Release (#111)", () => {
+    const staleAfter = { ...config, staleAfter: '2h' };
+    const theirs = {
+      status: 'in_progress',
+      assignee: 'bob@example.com',
+      staleClaim: {
+        assignee: 'bob@example.com',
+        updated: '2026-01-01T00:00:00Z',
+      },
+    };
+    expect(claimActions(theirs, GRACE, staleAfter)).toEqual({
+      ...none,
+      claim: true,
+      releaseStale: true,
+    });
+    // Without a configured threshold there is nothing to send: plain Release.
+    expect(claimActions(theirs, GRACE, config)).toEqual({
+      ...none,
+      claim: true,
+      release: true,
+    });
+    // Your own stale claim: renew it (or release it as usual).
+    const mine = {
+      ...theirs,
+      assignee: GRACE.email,
+      staleClaim: { ...theirs.staleClaim, assignee: GRACE.email },
+    };
+    expect(claimActions(mine, GRACE, staleAfter)).toEqual({
+      ...none,
+      release: true,
+      renew: true,
+    });
   });
 
   test('uses the configured active status', () => {
@@ -88,14 +149,10 @@ describe('claimActions', () => {
     const mine = { status: 'doing', assignee: 'grace@example.com' };
     expect(claimActions(mine, GRACE, custom).claim).toBe(false);
     const done = { status: 'shipped', assignee: '' };
-    expect(claimActions(done, GRACE, custom)).toEqual({
-      claim: false,
-      release: false,
-    });
+    expect(claimActions(done, GRACE, custom)).toEqual(none);
   });
 
   test('nothing for a closed issue, a close elsewhere, or before load', () => {
-    const none = { claim: false, release: false };
     expect(
       claimActions({ status: 'done', assignee: '' }, GRACE, config),
     ).toEqual(none);
