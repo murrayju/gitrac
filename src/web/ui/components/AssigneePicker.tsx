@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Assignee } from '../../../core/types.ts';
 import { updateAssignees } from '../api.ts';
 import { useConfig } from '../hooks.ts';
+import { requestErrorReason } from '../lib/upload-error.ts';
 
 interface AssigneePickerProps {
   value: string; // current assignee (email)
@@ -23,6 +24,7 @@ export function AssigneePicker({
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [newEmail, setNewEmail] = useState('');
+  const [createError, setCreateError] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -110,6 +112,7 @@ export function AssigneePicker({
       setNewName(trimmedFilter);
       setNewEmail('');
     }
+    setCreateError(null);
     setCreating(true);
   }
 
@@ -122,9 +125,13 @@ export function AssigneePicker({
     const updated = [...assignees, newAssignee];
     try {
       applyConfig(await updateAssignees(updated));
-    } catch {
-      // ignore
+    } catch (err) {
+      // Keep the form open with the typed values. Do not assign an email
+      // that is not in the config.
+      setCreateError(requestErrorReason(err));
+      return;
     }
+    setCreateError(null);
     onChange(email);
     setCreating(false);
     setOpen(false);
@@ -215,6 +222,11 @@ export function AssigneePicker({
               }
             }}
           />
+          {createError && (
+            <div role="alert" className="mb-2 text-xs text-red-500">
+              {createError}
+            </div>
+          )}
           <div className="flex gap-2 justify-end">
             <button
               type="button"
