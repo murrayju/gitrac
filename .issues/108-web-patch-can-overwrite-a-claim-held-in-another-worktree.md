@@ -1,14 +1,14 @@
 ---
 id: 108
 title: Web PATCH can overwrite a claim held in another worktree
-status: backlog
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - bug
 created: '2026-10-16T21:58:35.182Z'
 createdBy: Justin Murray
-updated: '2026-10-16T21:58:35.182Z'
+updated: '2026-10-17T13:34:17.573Z'
 ---
 
 Found by #103. The web UI's status and assignee dropdowns write through `PATCH /api/issues/:id` (`updateIssue`), which skips the claim rules (`decideClaim`). Setting the active status or an assignee there can silently overwrite a claim that an agent holds in another worktree or on another branch. The new Claim / Release buttons (#103) are the safe path, but the dropdowns still allow it.
