@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>gitrac: issue tracking that lives in your git repo</title>
+  <meta name="description" content="gitrac keeps issues as markdown files in your git repository, next to the code. A CLI for humans and coding agents, plus a local web UI. No server, no account." />
+  <link rel="canonical" href="https://gitrac.dev/" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="stylesheet" href="style.css" />
+  <meta name="theme-color" content="#0b0d17" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://gitrac.dev/" />
+  <meta property="og:title" content="gitrac: issue tracking that lives in your git repo" />
+  <meta property="og:description" content="Issues are markdown files committed next to your code. Close an issue in the same commit that fixes it." />
+  <meta property="og:image" content="https://gitrac.dev/images/issue-list.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <script src="copy.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-row">
+      <a class="brand" href="/">
+        <img src="favicon.svg" alt="" width="28" height="28" />
+        <span>gitrac</span>
+      </a>
+      <nav class="nav">
+        <a href="#how-it-compares">Compare</a>
+        <a href="#agents">Agents</a>
+        <a href="#get-started">Get started</a>
+        <a href="https://github.com/murrayju/gitrac">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero container">
+      <h1>Issue tracking that lives in your git&nbsp;repo.</h1>
+      <p class="lead">
+        gitrac keeps issues as markdown files in <code>.issues/</code>, committed next to the code
+        they describe. Work with them from the command line, a local web UI, or your coding agents.
+        There is no server to run and no account to create.
+      </p>
+      <div class="install">
+        <code>curl -fsSL https://get.gitrac.dev | bash</code>
+        <button type="button" class="copy" data-copy="curl -fsSL https://get.gitrac.dev | bash">Copy</button>
+      </div>
+      <p class="fineprint">
+        Or <code>npm install -g @gitrac/cli</code>. Linux and macOS (Apple Silicon). Open source, MIT.
+      </p>
+      <figure class="screenshot">
+        <img src="images/issue-list.png" width="1440" height="860"
+          alt="The gitrac web UI showing a list of issues with status, priority, assignee and labels" />
+      </figure>
+    </section>
+
+    <section class="container section">
+      <h2>Your issues belong with your code</h2>
+      <div class="prose">
+        <p>
+          Most trackers keep issues in a hosted database beside the repository. That works, but the
+          issues get their own history, their own permissions and their own search. The only link
+          between a fix and its issue is a line like <q>Fixes #123</q> in a commit message.
+        </p>
+        <p>
+          gitrac makes the issue part of the change. The commit that fixes a bug also closes its issue.
+          A branch carries its issues with it. A pull request shows the issue changes in the same diff
+          as the code.
+        </p>
+      </div>
+    </section>
+
+    <section class="container section split">
+      <div>
+        <h2>An issue is a markdown file</h2>
+        <ul class="points">
+          <li>Metadata is YAML frontmatter. The description and comments are plain markdown.</li>
+          <li>Anyone, or any tool, that can read markdown can read your backlog. gitrac does not
+            have to be installed.</li>
+          <li>History, blame, search and backups are the git tools you already use.</li>
+          <li>You define the statuses, priorities and labels in <code>.issues/config.yaml</code>.</li>
+        </ul>
+      </div>
+      <div class="code-card">
+        <div class="code-title">.issues/4-login-times-out-under-load.md</div>
+<pre><code><span class="m">---</span>
+<span class="k">id:</span> 4
+<span class="k">title:</span> Login times out under load
+<span class="k">status:</span> in_progress
+<span class="k">priority:</span> urgent
+<span class="k">assignee:</span> justin@example.com
+<span class="k">labels:</span>
+  - bug
+<span class="k">blockedBy:</span>
+  - 2
+<span class="k">created:</span> '2026-03-28T12:00:00.000Z'
+<span class="k">createdBy:</span> Justin Murray
+<span class="k">updated:</span> '2026-03-28T14:30:00.000Z'
+<span class="m">---</span>
+
+The login page times out after 30 seconds
+when the session middleware is under load.
+
+<span class="m">---</span>
+
+<span class="h">### Justin Murray — 2026-03-28T12:05:00.000Z</span>
+
+Reproduced locally with k6.</code></pre>
+      </div>
+    </section>
+
+    <section class="container section split">
+      <div>
+        <h2>Close it in the same commit that fixes it</h2>
+        <div class="prose">
+          <p>
+            Each gitrac command commits its own change, and that commit contains only the files
+            gitrac touched. Anything else you have staged stays staged.
+          </p>
+          <p>
+            Add <code>--no-commit</code> to leave the issue change in your working tree. Then it goes
+            into your fix commit, and the history shows the code and the issue changing together.
+          </p>
+        </div>
+      </div>
+      <div class="code-card">
+        <div class="code-title">terminal</div>
+<pre><code><span class="p">$</span> gitrac create -t "Login times out" -p urgent -l bug
+<span class="p">$</span> gitrac claim 1    <span class="c"># assign to you, set in_progress</span>
+<span class="c"># ... fix the bug ...</span>
+<span class="p">$</span> gitrac close 1 --no-commit -c "Accept both env var names."
+<span class="p">$</span> git add -A
+<span class="p">$</span> git commit -m "fix: login timeout (#1)"</code></pre>
+      </div>
+    </section>
+
+    <section class="container section" id="agents">
+      <h2>Built for coding agents</h2>
+      <div class="prose">
+        <p>
+          An agent does not need API tokens, an SDK or a rate limit to work with gitrac. It runs a
+          CLI and reads files. gitrac also adds the coordination that you need when several agents
+          work at the same time.
+        </p>
+      </div>
+      <div class="features">
+        <div class="feature">
+          <h3>A work queue that knows dependencies</h3>
+          <p><code>gitrac ready</code> lists open, unblocked issues by priority.
+            <code>gitrac next --claim</code> picks the top one and claims it in one locked step.</p>
+        </div>
+        <div class="feature">
+          <h3>Claims across worktrees</h3>
+          <p>Give each agent its own worktree and branch. A claim in any of them, committed or not,
+            is visible to all the others, so two agents do not take the same issue.</p>
+        </div>
+        <div class="feature">
+          <h3>Output for programs</h3>
+          <p><code>-o json</code> on every command, errors as one JSON line on stderr, and stable
+            exit codes to branch on.</p>
+        </div>
+        <div class="feature">
+          <h3>Recovery from stuck agents</h3>
+          <p><code>gitrac ls --stale 2h</code> finds claims with no recent activity.
+            <code>unclaim</code> releases them from any worktree.</p>
+        </div>
+      </div>
+      <div class="code-card">
+        <div class="code-title">a second agent tries to take the same issue</div>
+<pre class="wrap"><code><span class="p">$</span> gitrac claim 2
+Error: Issue #2 is already claimed by agent-1 (in_progress) in worktree /work/agent-1 (branch agent-1). Use --force to take it over.
+<span class="p">$</span> echo $?
+3</code></pre>
+      </div>
+      <p class="note">
+        A <a href="https://github.com/murrayju/gitrac/blob/main/skills/using-gitrac/SKILL.md">skill file</a>
+        teaches agents the workflow: claim, implement, close in the same commit. gitrac's own
+        backlog was worked through this way.
+      </p>
+    </section>
+
+    <section class="container section">
+      <h2>Git does the rest</h2>
+      <div class="features">
+        <div class="feature">
+          <h3>Issue-aware merges</h3>
+          <p>A merge driver for <code>.issues/</code> merges frontmatter field by field and keeps
+            comments from both sides. Only overlapping edits to a description need a manual fix.</p>
+        </div>
+        <div class="feature">
+          <h3>Issues follow branches</h3>
+          <p>Close an issue on a feature branch, and it closes on <code>main</code> when the branch
+            merges. Until then, other worktrees see it as closed on that branch.</p>
+        </div>
+        <div class="feature">
+          <h3>Simple IDs</h3>
+          <p>IDs are small integers. A new ID skips every ID in use in other worktrees and on local
+            or fetched branches.</p>
+        </div>
+        <div class="feature">
+          <h3>Safe in parallel</h3>
+          <p>All changes, from the CLI or the web UI, run under one lock that all worktrees of the
+            repo share.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="container section">
+      <h2>A local web UI when you want one</h2>
+      <div class="prose">
+        <p>
+          Run <code>gitrac</code> to open a Linear-style interface at
+          <code>localhost:3000</code>. It has filters, keyboard shortcuts, markdown editing with
+          autosave, and pasted images that are committed with the issue.
+        </p>
+        <p>
+          Changes from the CLI, an agent or a <code>git pull</code> show up live. The web UI and
+          the CLI use the same files and the same rules.
+        </p>
+      </div>
+      <figure class="screenshot wide">
+        <img src="images/issue-detail.png" width="1440" height="860" loading="lazy"
+          alt="An issue in the gitrac web UI with its description, comments, status, priority and labels" />
+      </figure>
+    </section>
+
+    <section class="container section" id="how-it-compares">
+      <h2>How it compares</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th>Hosted trackers<span class="sub">GitHub Issues, Jira, Linear</span></th>
+              <th>gitrac</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th>Where issues live</th><td>The vendor's database</td><td>Markdown files in your repo</td></tr>
+            <tr><th>Fix and issue</th><td>Linked by a <q>Fixes #123</q> reference</td><td>Changed by the same commit</td></tr>
+            <tr><th>Branches</th><td>One shared state for all branches</td><td>Issues branch and merge with the code</td></tr>
+            <tr><th>Review</th><td>In a separate UI</td><td>In the pull request diff</td></tr>
+            <tr><th>Agent access</th><td>API tokens and SDKs</td><td>A CLI with JSON output, or the files</td></tr>
+            <tr><th>Parallel agents</th><td>Coordination is up to you</td><td>Exclusive claims across worktrees</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="fit-title">When gitrac is not the right fit</h3>
+      <div class="prose">
+        <p>
+          gitrac is for the people and agents who work in the repository. It has no accounts,
+          permissions or notifications, and the web UI runs on your machine with no authentication.
+          If customers or other people outside the repo must file and follow issues, or you need
+          boards, planning across repos or reports, use a hosted tracker.
+        </p>
+      </div>
+    </section>
+
+    <section class="container section" id="get-started">
+      <h2>Get started</h2>
+      <div class="split">
+        <div class="prose">
+          <p>gitrac is one self-contained binary with the web UI built in. It needs only
+            <code>git</code>.</p>
+          <dl class="install-options">
+            <dt>Install script</dt>
+            <dd><code>curl -fsSL https://get.gitrac.dev | bash</code></dd>
+            <dt>npm</dt>
+            <dd><code>npm install -g @gitrac/cli</code></dd>
+            <dt>Binaries</dt>
+            <dd><a href="https://github.com/murrayju/gitrac/releases/latest">GitHub Releases</a></dd>
+          </dl>
+          <p>
+            The <a href="https://github.com/murrayju/gitrac#readme">README</a> has the full CLI
+            reference, configuration and a guide to running agents in parallel.
+          </p>
+        </div>
+        <div class="code-card">
+          <div class="code-title">terminal</div>
+<pre><code><span class="p">$</span> cd your-project
+<span class="p">$</span> gitrac init        <span class="c"># create .issues/ and commit it</span>
+<span class="p">$</span> gitrac create -t "My first issue"
+<span class="p">$</span> gitrac ls
+<span class="p">$</span> gitrac             <span class="c"># web UI at http://localhost:3000</span></code></pre>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-row">
+      <p>
+        gitrac tracks its own development with gitrac. See its
+        <a href="https://github.com/murrayju/gitrac/tree/main/.issues">.issues/ directory</a>.
+      </p>
+      <p>
+        <a href="https://github.com/murrayju/gitrac">GitHub</a> ·
+        <a href="https://github.com/murrayju/gitrac/blob/main/LICENSE">MIT License</a>
+      </p>
+    </div>
+  </footer>
+</body>
+</html>

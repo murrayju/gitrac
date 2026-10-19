@@ -55,6 +55,7 @@ scripts/
   release.ts  # Version bump, tag, push (triggers the Publish workflow)
   npm/        # npm packaging: @gitrac/cli wrapper + per-platform binary packages
 install.sh    # One-line installer served at https://get.gitrac.dev (see docs/releasing.md)
+www/          # Static marketing site for https://gitrac.dev (GitHub Pages, see docs/releasing.md)
 .issues/      # Project issues (managed by gitrac itself)
 ```
 
