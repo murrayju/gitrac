@@ -1,14 +1,14 @@
 ---
 id: 109
 title: Validate assignee names and serve --author like comment authors
-status: backlog
+status: todo
 priority: low
 assignee: ''
 labels:
   - bug
 created: '2026-10-16T21:58:36.141Z'
 createdBy: Justin Murray
-updated: '2026-10-16T21:58:36.141Z'
+updated: '2026-10-20T21:06:31.297Z'
 ---
 
 Found by #98. Author names are now checked (`authorError`: no line breaks, no em dash), but two inputs that become authors are not:
