@@ -1,6 +1,6 @@
 # Releasing gitrac
 
-How gitrac is built, released and distributed, plus the one-time setup for the install domain and npm. This setup mirrors the one used for [ox](https://github.com/timescale/ox).
+How gitrac is built, released and distributed, plus the one-time setup for the install domain, npm and the website. This setup mirrors the one used for [ox](https://github.com/timescale/ox).
 
 ## Distribution channels
 
@@ -102,6 +102,54 @@ Requirements the workflow already meets:
 - `id-token: write` permission;
 - npm ≥ 11.5.1 (run via `./bun x npm@>=11.5.1`);
 - a `repository.url` in every generated `package.json` that matches `github.com/murrayju/gitrac`.
+
+### 3. `gitrac.dev` website (GitHub Pages)
+
+The marketing site is the static files in [`www/`](../www) (plain HTML and CSS, no build step). The demo video in `www/video/` is made in [`video/`](../video/README.md). The **Pages** workflow (`.github/workflows/pages.yml`) publishes `www/` on every push to `main` that changes it. To preview it locally, run `python3 -m http.server -d www 8000` and open `http://localhost:8000`.
+
+1. **Enable Pages with GitHub Actions as the source.** Repo **Settings → Pages → Build and deployment → Source: GitHub Actions**, or:
+
+   ```bash
+   gh api -X POST repos/murrayju/gitrac/pages -f build_type=workflow
+   ```
+
+2. **Deploy once.** Run the workflow (**Actions → Pages → Run workflow**, or `gh workflow run pages.yml`). The site is then at `https://murrayju.github.io/gitrac/`.
+3. **Optional, recommended: verify the domain** so that no other GitHub account can use it. Profile **Settings → Pages → Add a domain** → `gitrac.dev`. GitHub shows a `TXT` record (`_github-pages-challenge-murrayju`) to add in Cloudflare (step 4). Then click **Verify**.
+4. **Cloudflare DNS** for the `gitrac.dev` zone: **DNS → Records**. Set **Proxy status: DNS only** (grey cloud) on all of these records. GitHub must reach the domain directly to issue and renew its certificate.
+
+   | Type | Name | Content |
+   |---|---|---|
+   | `A` | `@` | `185.199.108.153` |
+   | `A` | `@` | `185.199.109.153` |
+   | `A` | `@` | `185.199.110.153` |
+   | `A` | `@` | `185.199.111.153` |
+   | `AAAA` | `@` | `2606:50c0:8000::153` |
+   | `AAAA` | `@` | `2606:50c0:8001::153` |
+   | `AAAA` | `@` | `2606:50c0:8002::153` |
+   | `AAAA` | `@` | `2606:50c0:8003::153` |
+   | `CNAME` | `www` | `murrayju.github.io` |
+
+   The `get` record and its redirect rule (step 1) match only the hostname `get.gitrac.dev`, so they do not change. If you proxy the apex later (orange cloud), set **SSL/TLS → Overview** to **Full (strict)**. With **Flexible**, "Enforce HTTPS" on GitHub causes a redirect loop.
+5. **Set the custom domain.** Repo **Settings → Pages → Custom domain** → `gitrac.dev` → Save, or:
+
+   ```bash
+   gh api -X PUT repos/murrayju/gitrac/pages -f cname=gitrac.dev
+   ```
+
+   A workflow deploy ignores a `CNAME` file, so this setting is the only place the domain is configured. GitHub then redirects `www.gitrac.dev` and `murrayju.github.io/gitrac/` to `gitrac.dev`.
+6. **Enforce HTTPS** when the certificate is ready (this can take up to an hour). Tick **Enforce HTTPS** on the same page, or:
+
+   ```bash
+   gh api -X PUT repos/murrayju/gitrac/pages -F https_enforced=true
+   ```
+
+Verify:
+
+```bash
+dig +short gitrac.dev                        # the four 185.199.x.153 addresses
+curl -sI https://gitrac.dev | head -1        # HTTP/2 200
+curl -sI https://www.gitrac.dev | grep -i location   # https://gitrac.dev/
+```
 
 ---
 
