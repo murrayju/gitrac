@@ -861,3 +861,60 @@ describe('edit and claims across worktrees (#108)', () => {
     expect(await ok(main, 'Ada', 'ls')).not.toContain('[claimed');
   });
 });
+
+describe('close, reopen and claims across worktrees (#119)', () => {
+  test("closing an agent's claim from main is exit 3 unless --force; the holder needs nothing", async () => {
+    await ok(wt1, 'Bob', 'claim', '1', '--no-commit');
+    const where = `in worktree ${wt1} (branch agent-1)`;
+
+    const res = await cli(main, 'Ada', 'close', '1');
+    expect(res.code).toBe(EXIT_ALREADY_CLAIMED);
+    expect(res.stderr).toContain(
+      `Error: Issue #1 is already claimed by Bob (in_progress) ${where}. Use --force to close it anyway.`,
+    );
+    const err = await cli(main, 'Ada', '-o', 'json', 'close', '1');
+    expect(JSON.parse(err.stderr).error).toMatchObject({
+      code: 'already_claimed',
+      assignee: 'Bob',
+      claimedElsewhere: { ref: 'agent-1', worktree: wt1, assignee: 'Bob' },
+    });
+    expect((await readIssue(main, 1)).status).toBe('todo');
+
+    // The holder closes it from any worktree.
+    await ok(wt2, 'Bob', 'close', '1', '--no-commit');
+    expect((await readIssue(wt2, 1)).status).toBe('done');
+
+    // Claimed again in wt1 (newer than the close in wt2). --force closes
+    // it, and the close supersedes the claim.
+    await ok(wt1, 'Bob', 'claim', '1', '--force', '--no-commit');
+    expect((await cli(main, 'Ada', 'close', '1')).code).toBe(
+      EXIT_ALREADY_CLAIMED,
+    );
+    await ok(main, 'Ada', 'close', '1', '-f');
+    expect((await readIssue(main, 1)).status).toBe('done');
+    expect(
+      (await json<Listed>(main, 'Ada', 'show', '1')).claimedElsewhere,
+    ).toBeUndefined();
+  });
+
+  test('reopening an issue claimed again elsewhere is exit 3 unless --force', async () => {
+    await ok(main, 'Ada', 'close', '2');
+    // Bob reopens and claims it in his worktree (a newer version).
+    await ok(wt1, 'Bob', 'claim', '2', '--force', '--no-commit');
+
+    const res = await cli(main, 'Ada', 'reopen', '2');
+    expect(res.code).toBe(EXIT_ALREADY_CLAIMED);
+    expect(res.stderr).toContain(
+      'Error: Issue #2 is already claimed by Bob (in_progress) in worktree',
+    );
+    expect(res.stderr).toContain('Use --force to reopen it anyway.');
+    expect((await readIssue(main, 2)).status).toBe('done');
+
+    await ok(main, 'Bob', 'reopen', '2', '--no-commit');
+    expect((await readIssue(main, 2)).status).toBe('backlog');
+    await ok(main, 'Ada', 'close', '2', '--force');
+    await ok(wt1, 'Bob', 'claim', '2', '--force', '--no-commit');
+    await ok(main, 'Ada', 'reopen', '2', '--force');
+    expect((await readIssue(main, 2)).status).toBe('backlog');
+  });
+});

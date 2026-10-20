@@ -14,7 +14,7 @@ import { claimedElsewhere } from '../core/elsewhere.ts';
 import type { GitracError } from '../core/errors.ts';
 import { readConfig, readIssue, writeIssue } from '../fs/issue-store.ts';
 import { issueStatesElsewhere } from '../git/elsewhere.ts';
-import { updateIssue } from './issues.ts';
+import { closeIssue, reopenIssue, updateIssue } from './issues.ts';
 import {
   ADA,
   makeIssue,
@@ -25,7 +25,8 @@ import {
 /**
  * Regression tests for #108: `updateIssue` (`gitrac edit`, `PATCH
  * /api/issues/:id`) must not overwrite a claim held by someone else, here or
- * in another worktree, unless `force`.
+ * in another worktree, unless `force`. #119: the same rule for
+ * `closeIssue` / `reopenIssue`.
  */
 
 const BOB = 'bob@example.com';
@@ -195,5 +196,98 @@ describe('updateIssue and claims (#108)', () => {
       updateIssue(fx.context(), 1, { status: 'todo' }),
     );
     expect(err.code).toBe('already_claimed');
+  });
+});
+
+describe('closeIssue / reopenIssue and claims (#119)', () => {
+  test("closing someone else's local claim is already_claimed unless force", async () => {
+    const err = await rejection(closeIssue(fx.context(), 2));
+    expect(err.code).toBe('already_claimed');
+    expect(err.message).toBe(
+      `Issue #2 is already claimed by ${BOB} (in_progress).`,
+    );
+    expect(err.details).toEqual({ id: 2, assignee: BOB });
+    expect((await readIssue(fx.dir, 2)).status).toBe('in_progress');
+    expect(fx.events).toEqual([]);
+
+    const result = await closeIssue(fx.context(), 2, { force: true });
+    expect(result.issue.status).toBe('done');
+  });
+
+  test('a claim in another worktree is refused, saying where; force supersedes it', async () => {
+    await claimInWorktree(BOB, LATER);
+    const err = await rejection(closeIssue(fx.context(), 1));
+    expect(err.code).toBe('already_claimed');
+    expect(err.message).toBe(
+      `Issue #1 is already claimed by ${BOB} (in_progress) in worktree ${wt} (branch agent-1).`,
+    );
+    expect(err.details).toMatchObject({
+      id: 1,
+      assignee: BOB,
+      claimedElsewhere: { ref: 'agent-1', worktree: wt, assignee: BOB },
+    });
+    expect((await readIssue(fx.dir, 1)).status).toBe('todo');
+
+    setSystemTime(new Date(NOW));
+    const result = await closeIssue(fx.context(), 1, {
+      force: true,
+      comment: 'stuck',
+    });
+    // Strictly later than the claim elsewhere (its clock is ahead).
+    expect(result.issue.updated).toBe('2026-01-03T00:00:00.001Z');
+    expect(result.issue.comments.at(-1)?.timestamp).toBe(result.issue.updated);
+  });
+
+  test('the claim holder can close and reopen; unassigned issues are free', async () => {
+    await claimInWorktree(ADA.email);
+    expect((await closeIssue(fx.context(), 1)).issue.status).toBe('done');
+    expect((await reopenIssue(fx.context(), 1)).issue.status).toBe('backlog');
+    const holder = fx.context({
+      identity: async () => ({ name: 'Bob', email: BOB }),
+    });
+    expect((await closeIssue(holder, 2)).issue.status).toBe('done');
+    // Closed here and not held anywhere: anyone may reopen it.
+    expect((await reopenIssue(fx.context(), 2)).issue.status).toBe('backlog');
+  });
+
+  test('reopening an issue claimed again elsewhere is already_claimed unless force', async () => {
+    const holder = fx.context({
+      identity: async () => ({ name: 'Bob', email: BOB }),
+    });
+    await closeIssue(holder, 2);
+    // Bob claims it again (reopened) in another worktree, newer than the close.
+    await writeIssue(
+      wt,
+      makeIssue({
+        id: 2,
+        title: 'Taken',
+        status: 'in_progress',
+        assignee: BOB,
+        updated: '2099-01-01T00:00:00.000Z',
+      }),
+    );
+    const err = await rejection(reopenIssue(fx.context(), 2));
+    expect(err.code).toBe('already_claimed');
+    expect(err.details).toMatchObject({
+      id: 2,
+      assignee: BOB,
+      claimedElsewhere: { ref: 'agent-1', worktree: wt },
+    });
+    const result = await reopenIssue(fx.context(), 2, { force: true });
+    expect(result.issue.status).toBe('backlog');
+    expect(result.issue.updated).toBe('2099-01-01T00:00:00.001Z');
+    // The holder may reopen without force.
+    await closeIssue(fx.context(), 2);
+    await writeIssue(
+      wt,
+      makeIssue({
+        id: 2,
+        title: 'Taken',
+        status: 'in_progress',
+        assignee: BOB,
+        updated: '2099-02-01T00:00:00.000Z',
+      }),
+    );
+    expect((await reopenIssue(holder, 2)).issue.status).toBe('backlog');
   });
 });

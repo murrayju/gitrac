@@ -562,16 +562,26 @@ export function issueRoutes(ctx: ServerContext): Hono {
   // PATCH /issues/:id/close — close an issue. Optional JSON body
   // `{ status }` (a configured closed status) or `{ cancelled: true }` (the
   // configured cancel status); default: the configured close status (done).
+  // `author` (optional, the "Acting as" choice) is who closes it; `force:
+  // true` closes an issue someone else holds (else 409 `already_claimed`).
   app.patch('/issues/:id/close', locked, async (c) => {
     const id = Number.parseInt(c.req.param('id'), 10);
     if (Number.isNaN(id)) {
       return c.json({ error: 'Invalid issue ID' }, 400);
     }
-    const { status, cancelled } = asRecord(await readJsonBody(c));
+    const body = asRecord(await readJsonBody(c));
+    let force: boolean | undefined;
+    try {
+      force = forceInput(body);
+    } catch (err) {
+      return errorResponse(c, ctx, err);
+    }
+    const { status, cancelled, author } = body;
     return mutateIssue(c, (precondition) =>
-      closeIssue(webServiceContext(ctx), id, {
+      closeIssue(webServiceContext(ctx, { author: author ?? undefined }), id, {
         status: status ?? undefined,
         cancelled: cancelled === true,
+        force,
         precondition,
       }),
     );
@@ -579,15 +589,24 @@ export function issueRoutes(ctx: ServerContext): Hono {
 
   // PATCH /issues/:id/reopen — reopen a closed issue. Optional JSON body
   // `{ status }` picks the status (default: config.defaultStatus).
+  // `author` and `force` as for close.
   app.patch('/issues/:id/reopen', locked, async (c) => {
     const id = Number.parseInt(c.req.param('id'), 10);
     if (Number.isNaN(id)) {
       return c.json({ error: 'Invalid issue ID' }, 400);
     }
-    const { status } = asRecord(await readJsonBody(c));
+    const body = asRecord(await readJsonBody(c));
+    let force: boolean | undefined;
+    try {
+      force = forceInput(body);
+    } catch (err) {
+      return errorResponse(c, ctx, err);
+    }
+    const { status, author } = body;
     return mutateIssue(c, (precondition) =>
-      reopenIssue(webServiceContext(ctx), id, {
+      reopenIssue(webServiceContext(ctx, { author: author ?? undefined }), id, {
         status: status ?? undefined,
+        force,
         precondition,
       }),
     );
@@ -723,6 +742,18 @@ function claimInput(
         ? staleOptions((stale as string | null) ?? undefined)
         : undefined,
   };
+}
+
+/**
+ * The `force` field of a body (`null` = absent). Throws `invalid_input` if
+ * it is not a boolean.
+ */
+function forceInput(body: Record<string, unknown>): boolean | undefined {
+  const { force } = body;
+  if (force != null && typeof force !== 'boolean') {
+    throw invalidInput('force must be a boolean');
+  }
+  return force ?? undefined;
 }
 
 /**

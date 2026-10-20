@@ -639,3 +639,92 @@ describe('PATCH /api/issues/:id and claims', () => {
     expect(await head()).toBe(commit);
   });
 });
+
+/** Regression tests for #119: close and reopen must not overwrite a claim. */
+describe('PATCH /api/issues/:id/close and /reopen and claims', () => {
+  const close = (id: number, body?: unknown) =>
+    send(`/issues/${id}/close`, body, {}, 'PATCH');
+  const reopen = (id: number, body?: unknown) =>
+    send(`/issues/${id}/reopen`, body, {}, 'PATCH');
+
+  test("closing someone else's claim is 409 already_claimed unless force", async () => {
+    const commit = await head();
+    const res = await close(2);
+    expect(res.status).toBe(409);
+    const error = (await res.json()) as ErrorBody;
+    expect(error).toMatchObject({
+      code: 'already_claimed',
+      assignee: 'bob@example.com',
+      error: 'Issue #2 is already claimed by bob@example.com (in_progress).',
+    });
+    expect((await readIssue(main, 2)).status).toBe('in_progress');
+    expect(await head()).toBe(commit);
+
+    const forced = await close(2, { force: true });
+    expect(forced.status).toBe(200);
+    expect(((await forced.json()) as Served).status).toBe('done');
+  });
+
+  test('a claim in another worktree is 409 with claimedElsewhere; force supersedes it', async () => {
+    await writeIn(wt1, 1, {
+      status: 'in_progress',
+      assignee: 'bob@example.com',
+      updated: LATER,
+    });
+    const res = await close(1);
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as ErrorBody;
+    expect(body.code).toBe('already_claimed');
+    expect(body.claimedElsewhere).toMatchObject({
+      ref: 'agent-1',
+      worktree: wt1,
+      assignee: 'bob@example.com',
+    });
+    expect((await readIssue(main, 1)).status).toBe('todo');
+
+    const forced = await close(1, { force: true });
+    expect(forced.status).toBe(200);
+    const issue = (await forced.json()) as Served;
+    expect(issue.status).toBe('done');
+    expect(issue).not.toHaveProperty('claimedElsewhere');
+  });
+
+  test('reopen of an issue claimed again elsewhere is 409 unless force', async () => {
+    await writeIn(wt1, 3, {
+      status: 'in_progress',
+      assignee: 'bob@example.com',
+      updated: LATER,
+    });
+    const res = await reopen(3);
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as ErrorBody).code).toBe('already_claimed');
+    expect((await readIssue(main, 3)).status).toBe('done');
+    const forced = await reopen(3, { force: true });
+    expect(forced.status).toBe(200);
+    expect(((await forced.json()) as Served).status).toBe('backlog');
+  });
+
+  test('author: the acting user may close and reopen their own claim', async () => {
+    expect((await send('/issues/1/claim', { author: 'Grace' })).status).toBe(
+      200,
+    );
+    expect((await close(1)).status).toBe(409);
+    const closed = await close(1, { author: 'Grace' });
+    expect(closed.status).toBe(200);
+    expect(((await closed.json()) as Served).status).toBe('done');
+    expect((await reopen(1, { author: 'Grace' })).status).toBe(200);
+  });
+
+  test('a bad author or force is 400 and writes nothing', async () => {
+    const commit = await head();
+    for (const body of [{ author: 'Mallory' }, { author: 42 }]) {
+      expect((await close(1, body)).status).toBe(400);
+      expect((await reopen(3, body)).status).toBe(400);
+    }
+    expect((await close(1, { force: 'yes' })).status).toBe(400);
+    expect((await reopen(3, { force: 1 })).status).toBe(400);
+    expect((await readIssue(main, 1)).status).toBe('todo');
+    expect((await readIssue(main, 3)).status).toBe('done');
+    expect(await head()).toBe(commit);
+  });
+});

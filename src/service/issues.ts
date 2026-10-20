@@ -361,6 +361,35 @@ function assertCanEdit(
   );
 }
 
+/**
+ * For a close or a reopen (a status change): throw `already_claimed` if the
+ * effective state of `issue` (its stored state, plus its versions in other
+ * worktrees and on other branches) is held by someone other than `user`,
+ * unless `force` (see `decideEdit`). Returns the new `updated` timestamp:
+ * strictly later than every version, so the change (e.g. a forced close)
+ * supersedes a claim elsewhere.
+ */
+async function assertClaimFree(
+  ctx: ServiceContext,
+  id: number,
+  issue: Pick<Issue, 'status' | 'assignee' | 'updated'>,
+  user: ClaimUser,
+  config: Config,
+  options: { force?: boolean },
+): Promise<string> {
+  const elsewhere = (await issueStatesElsewhere(ctx.dir, { ids: [id] })).get(
+    id,
+  );
+  assertCanEdit(id, issue, true, user, config, {
+    force: options.force,
+    elsewhere,
+  });
+  return nextTimestamp([
+    issue.updated,
+    ...(elsewhere ?? []).map((s) => s.updated),
+  ]);
+}
+
 /** Throw unless `body` is a non-empty string; returns it trimmed. */
 function commentBody(body: unknown): string {
   if (typeof body !== 'string' || !body.trim()) {
@@ -500,6 +529,11 @@ export async function deleteComment(
  * file moved into `.issues/closed/`. A bad status, or `cancelled` with no
  * cancel status configured, is `invalid_input`; closing a closed issue is
  * `invalid_state`; neither writes anything (see `src/core/lifecycle.ts`).
+ *
+ * Like a status change by `updateIssue`, a close must not overwrite a
+ * claim: if the issue's effective state (here, in other worktrees or on
+ * other branches) is held by someone other than the context's identity, it
+ * throws `already_claimed` unless `force` (see {@link assertClaimFree}).
  */
 export async function closeIssue(
   ctx: ServiceContext,
@@ -508,6 +542,7 @@ export async function closeIssue(
     cancelled?: boolean;
     status?: unknown;
     comment?: string;
+    force?: boolean;
   } = {},
 ): Promise<IssueChange> {
   return withRepoLock(ctx.dir, async () => {
@@ -515,12 +550,13 @@ export async function closeIssue(
     // Input errors take precedence over issue errors (missing, closed...).
     const status = validStatus(() => closingStatus(config, options));
     const author = await commentAuthor(ctx, options.comment);
+    const user = await ctx.identity();
     const stored = await loadStoredIssue(ctx.dir, id, options.precondition);
     const { issue } = stored;
     assertCanClose(issue, stored.closed, config);
+    const now = await assertClaimFree(ctx, id, issue, user, config, options);
 
     issue.status = status;
-    const now = nextTimestamp([issue.updated]);
     issue.updated = now;
     appendComment(issue, author, options.comment, now);
 
@@ -550,24 +586,31 @@ function validStatus(pick: () => Status): Status {
 /**
  * Reopen a closed issue with `status` (default: `config.defaultStatus`),
  * moving its file back into `.issues/`. Reopening an open issue is
- * `invalid_state` and writes nothing (see `src/core/lifecycle.ts`).
+ * `invalid_state` and writes nothing (see `src/core/lifecycle.ts`). A claim
+ * held by someone else (e.g. the issue is claimed again in another worktree)
+ * is `already_claimed` unless `force`, as for {@link closeIssue}.
  */
 export async function reopenIssue(
   ctx: ServiceContext,
   id: number,
-  options: ExistingIssueOptions & { status?: unknown; comment?: string } = {},
+  options: ExistingIssueOptions & {
+    status?: unknown;
+    comment?: string;
+    force?: boolean;
+  } = {},
 ): Promise<IssueChange> {
   return withRepoLock(ctx.dir, async () => {
     const config = await loadConfig(ctx);
     // Input errors take precedence over issue errors (missing, open...).
     const status = validStatus(() => reopenStatus(config, options.status));
     const author = await commentAuthor(ctx, options.comment);
+    const user = await ctx.identity();
     const stored = await loadStoredIssue(ctx.dir, id, options.precondition);
     const { issue } = stored;
     assertCanReopen(issue, stored.closed, config);
+    const now = await assertClaimFree(ctx, id, issue, user, config, options);
 
     issue.status = status;
-    const now = nextTimestamp([issue.updated]);
     issue.updated = now;
     appendComment(issue, author, options.comment, now);
 

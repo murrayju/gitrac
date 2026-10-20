@@ -21,7 +21,7 @@ This project uses gitrac to track its own issues. The `.issues/` directory conta
 ./gitrac claim <id> --renew    # heartbeat: renew your own claim so it is not stale
 ./gitrac review <id>           # hand a claimed issue off for review (needs reviewStatus in config.yaml; stays claimed)
 ./gitrac comment <id> "text"    # add a comment (or --body-file <path|->)
-./gitrac close <id>            # close an issue
+./gitrac close <id>            # close an issue (--force if someone else holds it; same for reopen)
 ./gitrac delete <id> --yes     # delete an issue + assets only it uses, unlink it from others (--dry-run to preview)
 ./gitrac renumber <id> --file <path>   # give one copy of a duplicated ID a fresh ID (--update-refs repoints links)
 ./gitrac install-merge-driver  # once per clone: issue-aware git merges (`init` does it too)
