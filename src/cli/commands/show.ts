@@ -1,14 +1,15 @@
 import type { Command } from 'commander';
-import { describeDependencies, indexIssues } from '../../core/dependencies.ts';
 import { describeLocation, type ElsewhereMarks } from '../../core/elsewhere.ts';
 import { GitracError, parseIssueIdArg } from '../../core/errors.ts';
 import type { Issue } from '../../core/types.ts';
 import { readConfig, readIssue } from '../../fs/issue-store.ts';
 import { getBranchWarning } from '../../git/status.ts';
 import {
-  findIssueElsewhere,
-  findMarksElsewhere,
+  dependenciesWithElsewhere,
+  issueOnlyElsewhereIn,
   loadAllIssues,
+  marksFromStates,
+  scanElsewhere,
 } from '../../service/list.ts';
 import { resolveProjectOptions } from '../global-options.ts';
 import { formatIssueDetail } from '../output.ts';
@@ -31,6 +32,9 @@ export function registerShowCommand(program: Command): void {
         console.warn(`Warning: ${warning}`);
       }
 
+      // One scan (with the parsed issues) serves the issue itself if it is
+      // only elsewhere, its marks, and the linked issues only elsewhere.
+      const states = await scanElsewhere(dir);
       let issue: Issue;
       let mark: ElsewhereMarks | undefined;
       try {
@@ -41,7 +45,7 @@ export function registerShowCommand(program: Command): void {
         if (!(err instanceof GitracError && err.code === 'not_found')) {
           throw err;
         }
-        const found = await findIssueElsewhere(dir, id);
+        const found = issueOnlyElsewhereIn(id, states);
         if (!found) throw err;
         issue = found.issue;
         mark = { foundElsewhere: found.foundElsewhere };
@@ -50,11 +54,15 @@ export function registerShowCommand(program: Command): void {
         );
       }
       // Resolve the linked issues (and the derived "blocks" / sub-issues)
-      // against every issue. All output formats show them.
-      const byId = indexIssues((await loadAllIssues(dir)).issues);
-      byId.set(issue.id, issue);
-      const deps = describeDependencies(issue, byId, config);
-      mark ??= (await findMarksElsewhere(dir, [issue], config)).get(issue.id);
+      // against every issue, here and only elsewhere. All output formats
+      // show them.
+      const deps = dependenciesWithElsewhere(
+        issue,
+        await loadAllIssues(dir),
+        states,
+        config,
+      );
+      mark ??= marksFromStates([issue], config, states).get(issue.id);
       console.log(formatIssueDetail(issue, globalOpts.output, deps, mark));
     });
 }

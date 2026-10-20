@@ -1,3 +1,4 @@
+import type { FoundElsewhere, IssueOnlyElsewhere } from './elsewhere.ts';
 import type { Issue } from './types.ts';
 import { isClosedStatus, type StatusConfig } from './workflow.ts';
 
@@ -16,6 +17,11 @@ import { isClosedStatus, type StatusConfig } from './workflow.ts';
  * **or** `cancelled` (a cancelled blocker will never be done, so treating it
  * as blocking would strand its dependents forever; re-plan them instead) — or
  * when it doesn't exist any more (deleted), since nothing can resolve it.
+ *
+ * A blocker that has no file here but exists in another worktree or on
+ * another branch (see `issuesOnlyElsewhere` in `src/core/elsewhere.ts`) is
+ * not resolved, whatever its status there: its work is not here yet. Callers
+ * pass these issues (or their IDs) in as data.
  */
 
 /** The IDs an issue is blocked by (`[]` if none). */
@@ -48,23 +54,35 @@ export function childrenOf(id: number, issues: Iterable<Issue>): number[] {
   return ids.sort((a, b) => a - b);
 }
 
-/** Whether blocker `id` is resolved: in a closed status, or missing. */
+/**
+ * Whether blocker `id` is resolved: in a closed status, or missing. A
+ * blocker in `onlyElsewhere` (IDs of issues that have no file here but exist
+ * elsewhere) is never resolved.
+ */
 export function isBlockerResolved(
   id: number,
   byId: ReadonlyMap<number, Issue>,
   config: StatusConfig,
+  onlyElsewhere: ReadonlySet<number> = new Set(),
 ): boolean {
   const blocker = byId.get(id);
-  return blocker === undefined || isClosedStatus(config, blocker.status);
+  if (blocker === undefined) return !onlyElsewhere.has(id);
+  return isClosedStatus(config, blocker.status);
 }
 
-/** The blockers of `issue` that are still open (existing and not closed). */
+/**
+ * The blockers of `issue` that are still open: existing here and not
+ * closed, or only elsewhere (`onlyElsewhere`, in any status).
+ */
 export function openBlockers(
   issue: Pick<Issue, 'blockedBy'>,
   byId: ReadonlyMap<number, Issue>,
   config: StatusConfig,
+  onlyElsewhere: ReadonlySet<number> = new Set(),
 ): number[] {
-  return blockersOf(issue).filter((id) => !isBlockerResolved(id, byId, config));
+  return blockersOf(issue).filter(
+    (id) => !isBlockerResolved(id, byId, config, onlyElsewhere),
+  );
 }
 
 /**
@@ -279,8 +297,18 @@ export interface IssueRef {
   title: string;
   /** Null if the issue doesn't exist. */
   status: Issue['status'] | null;
-  /** Whether the linked issue is in a closed status, or missing. */
+  /**
+   * Whether the linked issue is in a closed status, or missing. False for an
+   * issue only elsewhere (`foundElsewhere`), in any status: its work is not
+   * here yet.
+   */
   resolved: boolean;
+  /**
+   * Set when the issue has no file here but exists in another worktree or
+   * on another branch: where its newest version is. `title` and `status`
+   * are those of that version.
+   */
+  foundElsewhere?: FoundElsewhere;
 }
 
 /** Every relation of one issue, with the linked issues' titles/statuses. */
@@ -298,27 +326,51 @@ export interface IssueDependencies {
 function issueRef(
   id: number,
   byId: ReadonlyMap<number, Issue>,
+  elsewhere: ReadonlyMap<number, IssueOnlyElsewhere>,
   config: StatusConfig,
 ): IssueRef {
   const issue = byId.get(id);
-  return issue
-    ? {
-        id,
-        title: issue.title,
-        status: issue.status,
-        resolved: isClosedStatus(config, issue.status),
-      }
-    : { id, title: '', status: null, resolved: true };
+  if (issue) {
+    return {
+      id,
+      title: issue.title,
+      status: issue.status,
+      resolved: isClosedStatus(config, issue.status),
+    };
+  }
+  const found = elsewhere.get(id);
+  if (found) {
+    return {
+      id,
+      title: found.issue.title,
+      status: found.issue.status,
+      resolved: false,
+      foundElsewhere: found.foundElsewhere,
+    };
+  }
+  return { id, title: '', status: null, resolved: true };
 }
 
-/** Resolve an issue's links (and derived inverses) against all issues. */
+/**
+ * Resolve an issue's links (and derived inverses) against all issues: the
+ * local ones (`byId`), then the ones only elsewhere (`elsewhere`, see
+ * `issuesOnlyElsewhere`). Sub-issues and "blocks" include the issues only
+ * elsewhere that link to `issue` (e.g. a sub-issue an agent filed in its
+ * worktree). `elsewhere` must not contain IDs in `byId`.
+ */
 export function describeDependencies(
   issue: Issue,
   byId: ReadonlyMap<number, Issue>,
   config: StatusConfig,
+  elsewhere: readonly IssueOnlyElsewhere[] = [],
 ): IssueDependencies {
-  const all = [...byId.values()];
-  const ref = (id: number) => issueRef(id, byId, config);
+  const others = new Map(
+    elsewhere
+      .filter((f) => !byId.has(f.issue.id))
+      .map((f) => [f.issue.id, f] as const),
+  );
+  const all = [...byId.values(), ...[...others.values()].map((f) => f.issue)];
+  const ref = (id: number) => issueRef(id, byId, others, config);
   const blockedBy = blockersOf(issue).map(ref);
   return {
     parent: issue.parent === undefined ? null : ref(issue.parent),

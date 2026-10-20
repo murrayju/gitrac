@@ -3,12 +3,14 @@ import { Link } from 'react-router-dom';
 import type { IssueRef } from '../../../core/dependencies.ts';
 import { linkIssue, unlinkIssue } from '../api.ts';
 import { useIssueDependencies } from '../hooks.ts';
+import { blockedNotice, refHoverText } from '../lib/claimed-elsewhere.ts';
 import {
   type ParsedIssueIds,
   parseIssueIds,
   parseSingleIssueId,
 } from '../lib/issue-id-input.ts';
 import { requestErrorReason } from '../lib/upload-error.ts';
+import { FoundElsewhereBadge } from './FoundElsewhereBadge.tsx';
 import { StatusBadge } from './StatusBadge.tsx';
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
@@ -31,7 +33,7 @@ function RefItem({
   busy?: boolean;
 }) {
   return (
-    <li className="group flex items-center gap-1.5 min-w-0">
+    <li className="group flex flex-wrap items-center gap-x-1.5 gap-y-0.5 min-w-0">
       {issueRef.status === null ? (
         <span className="text-gray-500 truncate" title="Issue not found">
           #{issueRef.id} (missing)
@@ -39,10 +41,11 @@ function RefItem({
       ) : (
         <>
           <StatusBadge status={issueRef.status} />
+          {/* An issue only elsewhere opens its read-only view. */}
           <Link
             to={`/issues/${issueRef.id}`}
-            title={issueRef.title}
-            className={`truncate hover:underline ${
+            title={refHoverText(issueRef)}
+            className={`min-w-0 flex-1 truncate hover:underline ${
               issueRef.resolved
                 ? 'text-gray-500 line-through'
                 : 'text-gray-700 dark:text-gray-300'
@@ -63,6 +66,12 @@ function RefItem({
         >
           ×
         </button>
+      )}
+      {/* On its own line, so the title keeps the narrow sidebar's width. */}
+      {issueRef.foundElsewhere && (
+        <span className="w-full">
+          <FoundElsewhereBadge found={issueRef.foundElsewhere} />
+        </span>
       )}
     </li>
   );
@@ -147,7 +156,10 @@ function AddLinkForm({
 
 /**
  * An issue's links: parent, sub-issues, blockers and the issues it blocks.
- * Resolved (closed or missing) issues are struck through. The parent and the
+ * Resolved (closed or missing) issues are struck through. An issue that
+ * exists only in another worktree or on another branch shows where it is,
+ * and links to its read-only view; as a blocker it blocks in any status
+ * (its work is not here yet). The parent and the
  * blockers are stored on this issue, so they can be set and removed here
  * (via `POST /api/issues/:id/link` / `unlink`). Sub-issues and "blocks" are
  * derived from other issues and are read-only.
@@ -159,6 +171,7 @@ export function DependenciesPanel({ issueId }: { issueId: number }) {
 
   if (!deps) return null;
   const { parent, children, blockedBy, blocks } = deps;
+  const blocked = blockedNotice(blockedBy);
 
   /** Run a link change; show the server's message if it fails. */
   async function change(action: () => Promise<unknown>): Promise<boolean> {
@@ -179,9 +192,9 @@ export function DependenciesPanel({ issueId }: { issueId: number }) {
 
   return (
     <div className="space-y-4 text-sm mt-4" data-testid="dependencies">
-      {deps.blocked && (
+      {blocked && (
         <div className="text-xs text-amber-600 dark:text-amber-400">
-          Blocked by an open issue
+          {blocked}
         </div>
       )}
       {error && (

@@ -1,6 +1,6 @@
 import type { ClaimUser } from '../core/claim.ts';
 import { indexIssues } from '../core/dependencies.ts';
-import type { ElsewhereMarks } from '../core/elsewhere.ts';
+import { type ElsewhereMarks, issuesOnlyElsewhere } from '../core/elsewhere.ts';
 import { GitracError } from '../core/errors.ts';
 import type { IssueQuery, QueryConfig } from '../core/query.ts';
 import { nextIssue, readyIssues, type StatesElsewhere } from '../core/ready.ts';
@@ -11,11 +11,16 @@ import {
 } from '../core/stale.ts';
 import type { Issue } from '../core/types.ts';
 import { isClosedStatus, type WorkflowConfig } from '../core/workflow.ts';
-import { issueStatesElsewhere } from '../git/elsewhere.ts';
 import { withRepoLock } from '../git/lock.ts';
 import { assertValidUser, type ClaimResult, claimIssue } from './claim.ts';
 import { loadConfig, type ServiceContext } from './context.ts';
-import { type IssueListing, loadAllIssues, marksFromStates } from './list.ts';
+import {
+  type IssueListing,
+  loadAllIssues,
+  localIds,
+  marksFromStates,
+  scanElsewhere,
+} from './list.ts';
 
 /**
  * `gitrac ready` / `gitrac next [--claim]`: the rules are in
@@ -74,7 +79,8 @@ function findStaleClaims(
  * Judged by each issue's effective state, so issues claimed (or closed) on
  * another branch or in another worktree are left out (see
  * `src/core/elsewhere.ts`), unless their claim is stale (`options.stale`).
- * `next` is the one `gitrac next` picks.
+ * A blocker that exists only elsewhere (no file here) blocks, in any status
+ * (see `src/core/ready.ts`). `next` is the one `gitrac next` picks.
  */
 export async function listReadyIssues(
   dir: string,
@@ -85,8 +91,14 @@ export async function listReadyIssues(
 ): Promise<ReadyListing> {
   const [{ issues, unreadable }, elsewhere] = await Promise.all([
     loadAllIssues(dir),
-    issueStatesElsewhere(dir),
+    scanElsewhere(dir),
   ]);
+  // The same scan gives the issues only elsewhere, for their blockers.
+  const onlyElsewhere = new Set(
+    issuesOnlyElsewhere(localIds(issues, unreadable), elsewhere).map(
+      (f) => f.issue.id,
+    ),
+  );
   const staleClaims = findStaleClaims(issues, config, elsewhere, options.stale);
   const stale = new Set(staleClaims.keys());
   const ready = readyIssues(
@@ -96,7 +108,7 @@ export async function listReadyIssues(
     query,
     config,
     elsewhere,
-    { stale },
+    { stale, onlyElsewhere },
   );
   // Keep only the ready ones (not blocked, matching the query).
   const readyIds = new Set(ready.map((i) => i.id));

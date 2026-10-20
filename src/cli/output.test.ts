@@ -197,6 +197,41 @@ describe('detail with resolved dependencies (#102)', () => {
   });
 });
 
+describe('dependencies only elsewhere (#120)', () => {
+  test('human output shows their title, status and location', () => {
+    const deps = {
+      parent: null,
+      children: [
+        {
+          id: 7,
+          title: 'Sub task',
+          status: 'todo',
+          resolved: false,
+          foundElsewhere: { ref: 'agent-1', worktree: '/w/wt-1' },
+        },
+      ],
+      blockedBy: [
+        {
+          id: 9,
+          title: 'Blocker',
+          status: 'done',
+          resolved: false,
+          foundElsewhere: { ref: 'origin/x' },
+        },
+      ],
+      blocks: [],
+      blocked: true,
+    };
+    const out = formatIssueDetail(SAMPLE_ISSUE_2, 'human', deps);
+    expect(out).toContain(
+      'Sub-issues: #7 Sub task (todo, only in worktree /w/wt-1 (branch agent-1))',
+    );
+    expect(out).toContain(
+      'Blocked by: #9 Blocker (done, only on branch origin/x)',
+    );
+  });
+});
+
 describe('marks for versions elsewhere (#93)', () => {
   const claim = {
     ref: 'agent-1',

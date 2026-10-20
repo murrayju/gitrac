@@ -532,3 +532,48 @@ describe('GET /api/issues/:id for an issue only elsewhere', () => {
     );
   });
 });
+
+/**
+ * Regression tests for #120: `GET /api/issues/:id/dependencies` resolves
+ * links to issues only elsewhere from the cached scan.
+ */
+describe('dependencies only elsewhere in the web API', () => {
+  test('shows them with title, status and foundElsewhere; they block', async () => {
+    // An agent files a sub-issue of #1 in its worktree, and #2 here is
+    // blocked by it.
+    await writeIssue(
+      wt1,
+      makeIssue({
+        id: 3,
+        title: 'Sub task',
+        parent: 1,
+        updated: WHERE.updated,
+      }),
+    );
+    await writeIssue(
+      main,
+      makeIssue({ id: 2, title: 'Second', blockedBy: [3] }),
+    );
+    const ref = {
+      id: 3,
+      title: 'Sub task',
+      status: 'todo',
+      resolved: false,
+      foundElsewhere: { ref: 'agent-1', worktree: wt1 },
+    };
+
+    const one = await get<IssueDependencies>('/issues/1/dependencies');
+    expect(one.children).toEqual([ref]);
+    const two = await get<IssueDependencies>('/issues/2/dependencies');
+    expect(two.blockedBy).toEqual([ref]);
+    expect(two.blocked).toBe(true);
+    // Closed there, it still blocks here: its work is not here yet.
+    await closeIn(wt1, 3, '2026-01-03T00:00:00Z');
+    clock.now += 60_000;
+    const closed = await get<IssueDependencies>('/issues/2/dependencies');
+    expect(closed.blockedBy).toEqual([{ ...ref, status: 'done' }]);
+    expect(closed.blocked).toBe(true);
+    // One cached scan per TTL, shared by every request.
+    expect(clock.scans).toBe(2);
+  });
+});

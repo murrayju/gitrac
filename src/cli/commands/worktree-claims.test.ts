@@ -469,6 +469,102 @@ describe('issues that exist only elsewhere', () => {
   });
 });
 
+/** Regression tests for #120: links to issues that exist only elsewhere. */
+describe('dependencies only elsewhere (#120)', () => {
+  type Ref = {
+    id: number;
+    title: string;
+    status: string | null;
+    resolved: boolean;
+    foundElsewhere?: { ref: string; worktree?: string };
+  };
+  type Shown = Listed & {
+    dependencies: {
+      parent: Ref | null;
+      children: Ref[];
+      blockedBy: Ref[];
+      blocks: Ref[];
+      blocked: boolean;
+    };
+  };
+
+  test('show lists them with their location; ready and next treat them as blockers', async () => {
+    // An agent files a sub-issue of #1 in its worktree (uncommitted).
+    await ok(
+      wt1,
+      'Bob',
+      'create',
+      '-t',
+      'Sub task',
+      '-s',
+      'todo',
+      '--no-commit',
+    );
+    await ok(wt1, 'Bob', 'link', '3', '--parent', '1', '--no-commit');
+    // #2 here is blocked by it (e.g. a hand edit, or a partial merge).
+    await writeIssue(main, { ...(await readIssue(main, 2)), blockedBy: [3] });
+    const inWt1 = `only in worktree ${wt1} (branch agent-1)`;
+    const found = { ref: 'agent-1', worktree: wt1 };
+
+    const one = await json<Shown>(main, 'Ada', 'show', '1');
+    expect(one.dependencies.children).toEqual([
+      {
+        id: 3,
+        title: 'Sub task',
+        status: 'todo',
+        resolved: false,
+        foundElsewhere: found,
+      },
+    ]);
+    expect(await ok(main, 'Ada', 'show', '1')).toContain(
+      `Sub-issues: #3 Sub task (todo, ${inWt1})`,
+    );
+    const two = await json<Shown>(main, 'Ada', 'show', '2');
+    expect(two.dependencies.blockedBy).toEqual([
+      {
+        id: 3,
+        title: 'Sub task',
+        status: 'todo',
+        resolved: false,
+        foundElsewhere: found,
+      },
+    ]);
+    expect(two.dependencies.blocked).toBe(true);
+    expect(await ok(main, 'Ada', 'show', '2')).toContain(
+      `Blocked by: #3 Sub task (todo, ${inWt1})`,
+    );
+    // The issue only elsewhere lists #2 under "blocks" too.
+    const three = await json<Shown>(main, 'Ada', 'show', '3');
+    expect(three.dependencies.parent).toMatchObject({ id: 1, title: 'First' });
+    expect(three.dependencies.blocks).toMatchObject([{ id: 2 }]);
+
+    // ready / next on main skip #2 ...
+    expect(
+      (await json<Listed[]>(main, 'Ada', 'ready')).map((i) => i.id),
+    ).toEqual([1]);
+    expect((await json<Listed>(main, 'Ada', 'next')).id).toBe(1);
+    // ... even once the blocker is closed there: its work is not here yet.
+    await ok(wt1, 'Bob', 'close', '3', '--no-commit');
+    expect(
+      (await json<Listed[]>(main, 'Ada', 'ready')).map((i) => i.id),
+    ).toEqual([1]);
+    expect(
+      (await json<Shown>(main, 'Ada', 'show', '2')).dependencies.blockedBy[0],
+    ).toMatchObject({ id: 3, status: 'done', resolved: false });
+
+    // A blocker found nowhere (deleted) is resolved.
+    await rm(wt1, { recursive: true, force: true });
+    await simpleGit(main).raw(['worktree', 'prune']);
+    await simpleGit(main).raw(['branch', '-D', 'agent-1']);
+    expect(
+      (await json<Listed[]>(main, 'Ada', 'ready')).map((i) => i.id),
+    ).toEqual([1, 2]);
+    expect(
+      (await json<Shown>(main, 'Ada', 'show', '2')).dependencies.blockedBy,
+    ).toEqual([{ id: 3, title: '', status: null, resolved: true }]);
+  });
+});
+
 /** Regression tests for #105: an issue in review stays claimed elsewhere. */
 describe('review handoff across worktrees (#105)', () => {
   /** Add a `review` status and set it as `reviewStatus` in `dir`'s config. */

@@ -149,11 +149,16 @@ function formatComment(comment: Comment): string {
   return `--- ${comment.author} (${comment.timestamp}) ---\n${comment.body}`;
 }
 
-/** `#3 Title (done)`, or `#3 (missing)` for a deleted issue. */
+/**
+ * `#3 Title (done)`, `#3 (missing)` for a deleted issue, or `#3 Title (todo,
+ * only in worktree P (branch X))` for an issue only elsewhere.
+ */
 function formatRef(ref: IssueRef): string {
-  return ref.status === null
-    ? `#${ref.id} (missing)`
-    : `#${ref.id} ${ref.title} (${ref.status})`;
+  if (ref.status === null) return `#${ref.id} (missing)`;
+  const where = ref.foundElsewhere
+    ? `, ${describeFoundElsewhere(ref.foundElsewhere)}`
+    : '';
+  return `#${ref.id} ${ref.title} (${ref.status}${where})`;
 }
 
 /**

@@ -1,12 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { createDefaultConfig } from '../../../core/config.ts';
 import {
+  blockedNotice,
   claimStatus,
   foundElsewhereNotice,
   fullClaimText,
   fullCloseText,
   fullFoundText,
   localFirst,
+  refHoverText,
   shortClaimText,
   shortCloseText,
   shortFoundText,
@@ -160,5 +162,34 @@ describe('claim status and wording (#111)', () => {
     expect(staleClaimTitle(claim, 'Bob', undefined)).toBe(
       `Stale claim by Bob: last activity ${base.updated}`,
     );
+  });
+});
+
+/** Regression tests for #120: linked issues only elsewhere. */
+describe('dependencies only elsewhere', () => {
+  const found = { ref: 'agent-1', worktree: '/work/wt-1' };
+
+  test('hover text adds the location', () => {
+    expect(refHoverText({ title: 'Sub task' })).toBe('Sub task');
+    expect(refHoverText({ title: 'Sub task', foundElsewhere: found })).toBe(
+      'Sub task (Only in worktree /work/wt-1 (branch agent-1))',
+    );
+  });
+
+  test('blocked notice', () => {
+    expect(blockedNotice([])).toBeNull();
+    expect(blockedNotice([{ resolved: true }])).toBeNull();
+    expect(blockedNotice([{ resolved: false }])).toBe(
+      'Blocked by an open issue',
+    );
+    expect(blockedNotice([{ resolved: false, foundElsewhere: found }])).toBe(
+      'Blocked by an issue that is only in another worktree or on another branch',
+    );
+    expect(
+      blockedNotice([
+        { resolved: false, foundElsewhere: found },
+        { resolved: false },
+      ]),
+    ).toBe('Blocked by an open issue');
   });
 });

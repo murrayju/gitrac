@@ -126,6 +126,35 @@ export function fullFoundText(found: FoundElsewhere): string {
 }
 
 /**
+ * Hover text of a linked issue (`IssueRef`): its title, plus where it is
+ * when it exists only elsewhere: `Sub task (Only in worktree /path (branch
+ * agent-1))`.
+ */
+export function refHoverText(ref: {
+  title: string;
+  foundElsewhere?: FoundElsewhere;
+}): string {
+  return ref.foundElsewhere
+    ? `${ref.title} (${fullFoundText(ref.foundElsewhere)})`
+    : ref.title;
+}
+
+/**
+ * The "blocked" notice of the dependencies panel, from the blockers
+ * (`IssueRef`s), or null if none blocks. A blocker only elsewhere blocks in
+ * any status, so when only those block, the notice says so.
+ */
+export function blockedNotice(
+  blockedBy: readonly { resolved: boolean; foundElsewhere?: FoundElsewhere }[],
+): string | null {
+  const open = blockedBy.filter((ref) => !ref.resolved);
+  if (open.length === 0) return null;
+  return open.every((ref) => ref.foundElsewhere)
+    ? 'Blocked by an issue that is only in another worktree or on another branch'
+    : 'Blocked by an open issue';
+}
+
+/**
  * The notice of the read-only view of an issue that has no file in this
  * working tree: where it is, and what to do to edit it here.
  */

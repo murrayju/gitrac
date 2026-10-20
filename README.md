@@ -336,7 +336,7 @@ gitrac link 2 --parent 1           # #2 is a sub-issue of #1
 gitrac ready                       # open, unassigned or yours, unblocked, sorted by priority
 ```
 
-Cancelled or deleted blockers unblock their dependents. `next` skips issues that are already in progress, so several agents running under one git identity still get different issues.
+Cancelled or deleted blockers unblock their dependents. A blocker that exists only in another worktree or on an unmerged branch still blocks, even if it is closed there, until that work is merged. `next` skips issues that are already in progress, so several agents running under one git identity still get different issues.
 
 ### 4. Run agents in parallel with worktrees
 

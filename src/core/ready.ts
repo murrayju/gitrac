@@ -26,7 +26,10 @@ import {
  * Availability uses the issue's *effective* state: the newest version here
  * or on another branch / worktree (`elsewhere`, see `src/core/elsewhere.ts`),
  * so an issue claimed (or closed) in another worktree isn't offered here.
- * Blockers are judged by their local state.
+ * Blockers are judged by their local state. A blocker that has no file here
+ * but exists elsewhere (`options.onlyElsewhere`) blocks in any status: its
+ * work is not here yet. Only a blocker that exists nowhere counts as
+ * resolved (deleted).
  */
 
 /** Versions of issues on other branches and worktrees, by issue ID. */
@@ -67,7 +70,7 @@ export function isReady(
   return (
     (options.stale?.has(issue.id) ||
       isAvailableTo(issue, user, config, elsewhere.get(issue.id))) &&
-    openBlockers(issue, byId, config).length === 0
+    openBlockers(issue, byId, config, options.onlyElsewhere).length === 0
   );
 }
 
@@ -79,6 +82,12 @@ export interface ReadyOptions {
    * pick them although they are held.
    */
   stale?: ReadonlySet<number>;
+  /**
+   * IDs of issues that have no file here but exist in another worktree or
+   * on another branch (`issuesOnlyElsewhere`). As blockers they block, in
+   * any status.
+   */
+  onlyElsewhere?: ReadonlySet<number>;
 }
 
 /**

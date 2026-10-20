@@ -128,6 +128,36 @@ describe('readyIssues', () => {
   });
 });
 
+describe('blockers only elsewhere (#120)', () => {
+  const issues = [
+    issue(1, { blockedBy: [5] }),
+    issue(2, { blockedBy: [6] }),
+    issue(3, { blockedBy: [99] }),
+  ];
+  const query = parseIssueQuery({ sort: 'id' }, config);
+  // #5 is open and #6 is closed in another worktree; #99 is nowhere.
+  const onlyElsewhere = new Set([5, 6]);
+
+  test('block ready and next, open or closed there; a deleted one does not', () => {
+    const list = readyIssues(
+      issues,
+      indexIssues(issues),
+      ME,
+      query,
+      config,
+      new Map(),
+      { onlyElsewhere },
+    );
+    expect(list.map((i) => i.id)).toEqual([3]);
+    expect(nextIssue(list, config)?.id).toBe(3);
+  });
+
+  test('without them, such blockers look deleted', () => {
+    const list = readyIssues(issues, indexIssues(issues), ME, query, config);
+    expect(list.map((i) => i.id)).toEqual([1, 2, 3]);
+  });
+});
+
 describe('nextIssue', () => {
   test('the first ready issue that is not already in progress', () => {
     const list = [

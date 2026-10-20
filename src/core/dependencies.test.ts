@@ -88,6 +88,98 @@ describe('derived relations', () => {
   });
 });
 
+describe('links to issues only elsewhere (#120)', () => {
+  const here = indexIssues([
+    issue(1, { blockedBy: [5, 6, 42], parent: 7 }),
+    issue(2),
+  ]);
+  const wt = { ref: 'agent-1', worktree: '/w/wt-1' };
+  const elsewhere = [
+    { issue: issue(5, { title: 'Open there' }), foundElsewhere: wt },
+    {
+      issue: issue(6, { title: 'Done there', status: 'done' }),
+      foundElsewhere: { ref: 'origin/x' },
+    },
+    { issue: issue(7, { title: 'Epic there' }), foundElsewhere: wt },
+    {
+      issue: issue(8, { title: 'Sub there', parent: 1, blockedBy: [1] }),
+      foundElsewhere: wt,
+    },
+  ];
+
+  test('describeDependencies shows them with title, status and location', () => {
+    const deps = describeDependencies(
+      here.get(1) as Issue,
+      here,
+      CONFIG,
+      elsewhere,
+    );
+    expect(deps).toEqual({
+      parent: {
+        id: 7,
+        title: 'Epic there',
+        status: 'todo',
+        resolved: false,
+        foundElsewhere: wt,
+      },
+      children: [
+        {
+          id: 8,
+          title: 'Sub there',
+          status: 'todo',
+          resolved: false,
+          foundElsewhere: wt,
+        },
+      ],
+      blockedBy: [
+        {
+          id: 5,
+          title: 'Open there',
+          status: 'todo',
+          resolved: false,
+          foundElsewhere: wt,
+        },
+        // Closed there, but its work is not here yet: still blocks.
+        {
+          id: 6,
+          title: 'Done there',
+          status: 'done',
+          resolved: false,
+          foundElsewhere: { ref: 'origin/x' },
+        },
+        // Found nowhere (deleted): resolved.
+        { id: 42, title: '', status: null, resolved: true },
+      ],
+      blocks: [
+        {
+          id: 8,
+          title: 'Sub there',
+          status: 'todo',
+          resolved: false,
+          foundElsewhere: wt,
+        },
+      ],
+      blocked: true,
+    });
+  });
+
+  test('a local issue wins over a version elsewhere', () => {
+    const deps = describeDependencies(here.get(1) as Issue, here, CONFIG, [
+      {
+        issue: issue(2, { title: 'Stale copy', blockedBy: [1] }),
+        foundElsewhere: wt,
+      },
+    ]);
+    expect(deps.blocks).toEqual([]);
+  });
+
+  test('openBlockers counts blockers only elsewhere, in any status', () => {
+    const one = here.get(1) as Issue;
+    expect(openBlockers(one, here, CONFIG)).toEqual([]);
+    expect(openBlockers(one, here, CONFIG, new Set([5, 6]))).toEqual([5, 6]);
+  });
+});
+
 describe('validateLinks', () => {
   const byId = indexIssues([
     issue(1),

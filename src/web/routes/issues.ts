@@ -1,10 +1,8 @@
 import { type Context, Hono } from 'hono';
 import type { ClaimUser } from '../../core/claim.ts';
-import { describeDependencies, indexIssues } from '../../core/dependencies.ts';
-import {
-  type ElsewhereMarks,
-  type IssueOnlyElsewhere,
-  issuesOnlyElsewhere,
+import type {
+  ElsewhereMarks,
+  IssueOnlyElsewhere,
 } from '../../core/elsewhere.ts';
 import { GitracError, invalidInput } from '../../core/errors.ts';
 import { parseIssueFile } from '../../core/issue.ts';
@@ -32,7 +30,12 @@ import {
   updateIssue,
 } from '../../service/issues.ts';
 import { linkIssue, unlinkIssue } from '../../service/links.ts';
-import { listIssues, loadAllIssues } from '../../service/list.ts';
+import {
+  dependenciesWithElsewhere,
+  issueOnlyElsewhereIn,
+  listIssues,
+  loadAllIssues,
+} from '../../service/list.ts';
 import type { Precondition } from '../../service/load.ts';
 import { elsewhereCache } from '../elsewhere-cache.ts';
 import { ifMatchSatisfied, issueETag } from '../etag.ts';
@@ -402,11 +405,10 @@ export function issueRoutes(ctx: ServerContext): Hono {
     }
     if (typeof local !== 'string') return local;
     if (local === 'missing') {
-      const states = await elsewhereCache(ctx).states();
-      const list = states.get(id);
-      const [found] = list
-        ? issuesOnlyElsewhere(new Set(), new Map([[id, list]]))
-        : [];
+      const found = issueOnlyElsewhereIn(
+        id,
+        await elsewhereCache(ctx).states(),
+      );
       if (found) return found;
     }
     return c.json({ error: `Issue #${id} not found` }, 404);
@@ -630,9 +632,11 @@ export function issueRoutes(ctx: ServerContext): Hono {
 
   // GET /issues/:id/dependencies — the issue's parent, sub-issues, blockers
   // and the issues it blocks (derived), each `{ id, title, status, resolved }`
-  // (`status: null` for a missing issue), plus `blocked`. Works for an issue
-  // only elsewhere too (as `GET /issues/:id`), resolved against the local
-  // issues, as `gitrac show` does.
+  // (`status: null` for a missing issue; plus `foundElsewhere` for one only
+  // in another worktree or on another branch), plus `blocked`. Works for an
+  // issue only elsewhere too (as `GET /issues/:id`). Resolved against the
+  // local issues and, from the cached scan, the issues only elsewhere, as
+  // `gitrac show` does.
   app.get('/issues/:id/dependencies', async (c) => {
     const id = Number.parseInt(c.req.param('id'), 10);
     if (Number.isNaN(id)) {
@@ -640,9 +644,13 @@ export function issueRoutes(ctx: ServerContext): Hono {
     }
     const found = await readIssueForView(c, id);
     if (found instanceof Response) return found;
-    const byId = indexIssues((await loadAllIssues(ctx.dir)).issues);
-    byId.set(id, found.issue);
-    return c.json(describeDependencies(found.issue, byId, ctx.config));
+    const [listing, states] = await Promise.all([
+      loadAllIssues(ctx.dir),
+      elsewhereCache(ctx).states(),
+    ]);
+    return c.json(
+      dependenciesWithElsewhere(found.issue, listing, states, ctx.config),
+    );
   });
 
   // POST /issues/:id/link — `{ blockedBy?: id | id[], parent?: id }`: add

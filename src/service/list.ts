@@ -1,6 +1,11 @@
 import { readFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import {
+  describeDependencies,
+  type IssueDependencies,
+  indexIssues,
+} from '../core/dependencies.ts';
+import {
   type ElsewhereMarks,
   elsewhereMarks,
   type IssueOnlyElsewhere,
@@ -175,7 +180,7 @@ export async function listIssues(
  * the `unreadable` files (by file name), so a broken local file doesn't
  * make its ID look like it's only elsewhere.
  */
-function localIds(
+export function localIds(
   issues: readonly Issue[],
   unreadable: readonly string[],
 ): Set<number> {
@@ -223,18 +228,16 @@ export function scanElsewhere(
 
 /**
  * Issue `id` as found in another worktree or on another branch (its newest
- * version and where), for when this working tree has no file for it; null
- * if there's none. Read-only; one scan.
+ * version and where, from `states`, a scan with `withIssues`), for when this
+ * working tree has no file for it; null if there's none. Pure.
  */
-export async function findIssueElsewhere(
-  dir: string,
+export function issueOnlyElsewhereIn(
   id: number,
-): Promise<IssueOnlyElsewhere | null> {
-  const states = await issueStatesElsewhere(dir, {
-    ids: [id],
-    withIssues: true,
-  });
-  return issuesOnlyElsewhere(new Set(), states)[0] ?? null;
+  states: States,
+): IssueOnlyElsewhere | null {
+  const list = states.get(id);
+  if (!list) return null;
+  return issuesOnlyElsewhere(new Set(), new Map([[id, list]]))[0] ?? null;
 }
 
 /**
@@ -247,6 +250,34 @@ export async function loadAllIssues(dir: string): Promise<IssueListing> {
     issues: [...open, ...closed].map((f) => f.issue),
     unreadable,
   };
+}
+
+/**
+ * The links of `issue` (`describeDependencies`), resolved against the local
+ * issues (`listing`, from `loadAllIssues`) and the issues only elsewhere
+ * (from `states`, a scan with `withIssues`, maybe cached). So a linked issue
+ * that exists only in another worktree or on another branch shows its title,
+ * status and location (`foundElsewhere`), and counts as a blocker; one that
+ * links to `issue` from there is a sub-issue or "blocks" entry. `issue` may
+ * itself be only elsewhere. Pure; used by `gitrac show` and
+ * `GET /api/issues/:id/dependencies`.
+ */
+export function dependenciesWithElsewhere(
+  issue: Issue,
+  listing: IssueListing,
+  states: States,
+  config: WorkflowConfig,
+): IssueDependencies {
+  const byId = indexIssues(listing.issues);
+  byId.set(issue.id, issue);
+  const ids = localIds(listing.issues, listing.unreadable);
+  ids.add(issue.id);
+  return describeDependencies(
+    issue,
+    byId,
+    config,
+    issuesOnlyElsewhere(ids, states),
+  );
 }
 
 /**
