@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import ts from 'typescript';
 
 // Guards that `./bun run typecheck` and `./bun run lint` cover every
@@ -7,6 +8,18 @@ import ts from 'typescript';
 // vite.config.ts, ...).
 
 const repoRoot = resolve(import.meta.dir, '..');
+
+/**
+ * Whether `file` (repo-relative) is in a nested project: a directory below
+ * the root with its own `tsconfig.json` (e.g. `video/`, which has its own
+ * dependencies). That project type-checks it, not the root config.
+ */
+function inNestedProject(file: string): boolean {
+  for (let dir = dirname(file); dir !== '.'; dir = dirname(dir)) {
+    if (existsSync(resolve(repoRoot, dir, 'tsconfig.json'))) return true;
+  }
+  return false;
+}
 
 function trackedTsFiles(): string[] {
   const proc = Bun.spawnSync(['git', 'ls-files', '-z', '--', '*.ts', '*.tsx'], {
@@ -40,7 +53,9 @@ describe('tooling coverage', () => {
     );
     if (!parsed) throw new Error('could not parse tsconfig.json');
     const included = new Set(parsed.fileNames.map((f) => resolve(f)));
-    const missing = files.filter((f) => !included.has(resolve(repoRoot, f)));
+    const missing = files.filter(
+      (f) => !inNestedProject(f) && !included.has(resolve(repoRoot, f)),
+    );
     expect(missing).toEqual([]);
   });
 
