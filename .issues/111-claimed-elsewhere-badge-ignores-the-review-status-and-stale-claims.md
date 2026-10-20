@@ -1,14 +1,14 @@
 ---
 id: 111
 title: Claimed-elsewhere badge ignores the review status and stale claims
-status: backlog
+status: todo
 priority: low
 assignee: ''
 labels:
   - enhancement
 created: '2026-10-16T21:58:38.249Z'
 createdBy: Justin Murray
-updated: '2026-10-16T21:58:38.249Z'
+updated: '2026-10-20T21:04:52.076Z'
 ---
 
 Follow-ups from #105 and #106:
