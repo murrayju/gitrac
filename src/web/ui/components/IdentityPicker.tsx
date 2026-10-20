@@ -52,7 +52,7 @@ export function IdentityPicker() {
       <select
         value={options.some((o) => o.value === author) ? author : ''}
         onChange={(e) => setAuthor(e.target.value)}
-        className="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 px-1.5 py-1 text-xs"
+        className="select-caret w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 pl-1.5 py-1 text-xs"
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>

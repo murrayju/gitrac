@@ -9,6 +9,30 @@ body {
     Arial, sans-serif;
 }
 
+/*
+ * Native <select> with a padded caret (#116). The browser draws its own caret
+ * against the right border, and padding does not move it. So this class
+ * removes the native caret and draws a chevron as a background image, with
+ * room on the right. The element stays a native <select>, so keyboard and
+ * screen-reader behavior do not change. It is in the components layer, so
+ * utilities on the element can still override it. Do not set `px-*` on the
+ * element: that removes the right padding. Use `pl-*`.
+ */
+@layer components {
+  .select-caret {
+    appearance: none;
+    padding-right: 2rem;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none'%3e%3cpath d='M6 8l4 4 4-4' stroke='%236b7280' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3e%3c/svg%3e");
+    background-position: right 0.5rem center;
+    background-repeat: no-repeat;
+    background-size: 1em 1em;
+  }
+
+  .dark .select-caret {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none'%3e%3cpath d='M6 8l4 4 4-4' stroke='%239ca3af' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3e%3c/svg%3e");
+  }
+}
+
 /* Tiptap placeholder styling */
 .tiptap p.is-editor-empty:first-child::before {
   color: #6b7280;

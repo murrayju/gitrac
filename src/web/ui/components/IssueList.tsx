@@ -324,7 +324,7 @@ function FilterSelect({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="bg-white border border-gray-300 rounded px-2 py-1 text-sm text-gray-700 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-300"
+      className="select-caret bg-white border border-gray-300 rounded pl-2 py-1 text-sm text-gray-700 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-300"
     >
       {options.map((opt) => (
         <option key={opt.value} value={opt.value}>

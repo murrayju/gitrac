@@ -98,3 +98,39 @@ describe('globals.css prose styling', () => {
     );
   });
 });
+
+describe('globals.css select-caret (#116)', () => {
+  test('drops the native caret and pads a drawn one away from the edge', async () => {
+    const css = await buildCss(['select-caret']);
+    const rule = ruleBody(css, '.select-caret {');
+    expect(rule).toContain('appearance: none');
+    expect(rule).toMatch(/padding-right:\s*2rem/);
+    expect(rule).toContain('background-image: url("data:image/svg+xml');
+    expect(rule).toMatch(/background-position:\s*right \.5rem center/);
+    expect(rule).toContain('background-repeat: no-repeat');
+    // The dark theme gets its own (lighter) caret color.
+    const dark = ruleBody(css, '.dark .select-caret {');
+    expect(dark).toContain('background-image: url("data:image/svg+xml');
+    expect(dark).not.toEqual(rule);
+  });
+
+  test('every <select> in the UI uses it, without a px-*/pr-* that resets the right padding', async () => {
+    const uiDir = join(import.meta.dir, '..');
+    let count = 0;
+    for await (const file of new Bun.Glob('**/*.tsx').scan(uiDir)) {
+      const source = await Bun.file(join(uiDir, file)).text();
+      for (const m of source.matchAll(
+        /<select\b[\s\S]*?className="([^"]*)"/g,
+      )) {
+        count++;
+        const classes = (m[1] ?? '').split(/\s+/);
+        expect({ file, classes }).toMatchObject({
+          file,
+          classes: expect.arrayContaining(['select-caret']),
+        });
+        expect(classes.filter((c) => /^(?:\w+:)*p[xr]-/.test(c))).toEqual([]);
+      }
+    }
+    expect(count).toBeGreaterThanOrEqual(2);
+  });
+});
