@@ -1,14 +1,14 @@
 ---
 id: 117
 title: add `gitrac commit` command
-status: todo
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - feature
 created: '2026-10-20T21:03:15.462Z'
 createdBy: Justin Murray
-updated: '2026-10-20T21:03:15.462Z'
+updated: '2026-10-20T22:23:49.666Z'
 ---
 
 This command acts as a proxy to `git commit`, while simultaneously closing the issue. This will allow us to clean up the suggested workflow, that involves using `gitrac close <id> --no-commit` to make the commit atomic (fix and close together).
