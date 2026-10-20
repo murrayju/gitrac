@@ -1,14 +1,14 @@
 ---
 id: 112
 title: Web metadata and title saves drop errors
-status: backlog
+status: todo
 priority: low
 assignee: ''
 labels:
   - bug
 created: '2026-10-16T21:58:39.311Z'
 createdBy: Justin Murray
-updated: '2026-10-16T21:58:39.311Z'
+updated: '2026-10-20T21:04:03.526Z'
 ---
 
 Found by #100. Comment saves and label toggles now show errors inline, but the status, priority and assignee dropdowns (`MetadataPanel`, `IssueRow`) and the title editor (`saveTitle` in `IssueDetail`) still drop failures as unhandled rejections. The comment conflict notice is also a `window.alert`.
