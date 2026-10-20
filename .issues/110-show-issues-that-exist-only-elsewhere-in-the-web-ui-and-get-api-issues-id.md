@@ -1,14 +1,14 @@
 ---
 id: 110
 title: 'Show issues that exist only elsewhere in the web UI and GET /api/issues/:id'
-status: backlog
+status: todo
 priority: low
 assignee: ''
 labels:
   - enhancement
 created: '2026-10-16T21:58:37.177Z'
 createdBy: Justin Murray
-updated: '2026-10-16T21:58:37.177Z'
+updated: '2026-10-20T21:05:53.724Z'
 ---
 
 Follow-up from #107. `gitrac ls --elsewhere`, `gitrac show <id>` and `GET /api/issues?elsewhere=1` can see issues that exist only in another worktree or on an unmerged branch, but:
