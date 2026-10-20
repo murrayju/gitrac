@@ -105,7 +105,7 @@ Requirements the workflow already meets:
 
 ### 3. `gitrac.dev` website (GitHub Pages)
 
-The marketing site is the static files in [`www/`](../www) (plain HTML and CSS, no build step). The **Pages** workflow (`.github/workflows/pages.yml`) publishes `www/` on every push to `main` that changes it. To preview it locally, run `python3 -m http.server -d www 8000` and open `http://localhost:8000`.
+The marketing site is the static files in [`www/`](../www) (plain HTML and CSS, no build step). The demo video in `www/video/` is made in [`video/`](../video/README.md). The **Pages** workflow (`.github/workflows/pages.yml`) publishes `www/` on every push to `main` that changes it. To preview it locally, run `python3 -m http.server -d www 8000` and open `http://localhost:8000`.
 
 1. **Enable Pages with GitHub Actions as the source.** Repo **Settings → Pages → Build and deployment → Source: GitHub Actions**, or:
 

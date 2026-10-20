@@ -205,7 +205,8 @@ pre {
   margin-top: 32px;
 }
 
-.screenshot img {
+.screenshot img,
+.screenshot video {
   display: block;
   width: 100%;
   height: auto;
