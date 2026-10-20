@@ -25,8 +25,9 @@ This project uses gitrac to track its own issues. The `.issues/` directory conta
 ./gitrac delete <id> --yes     # delete an issue + assets only it uses, unlink it from others (--dry-run to preview)
 ./gitrac renumber <id> --file <path>   # give one copy of a duplicated ID a fresh ID (--update-refs repoints links)
 ./gitrac install-merge-driver  # once per clone: issue-aware git merges (`init` does it too)
-./gitrac                       # start the web UI at http://localhost:3000
-./gitrac serve -p 4000         # same, on another port (or: ./gitrac --port 4000)
+./gitrac                       # start the web UI at http://localhost:3000 (next free port if busy) and open a browser
+./gitrac serve -p 4000         # same, on exactly this port (or: ./gitrac --port 4000)
+./gitrac serve -n              # no browser (--no-open; also skipped without a TTY, with CI or GITRAC_NO_OPEN=1)
 ./gitrac serve --host 0.0.0.0  # listen on all interfaces (default: 127.0.0.1 only; no auth!)
 ```
 

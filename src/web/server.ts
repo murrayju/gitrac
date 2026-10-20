@@ -6,6 +6,7 @@ import { AmendTracker } from '../git/amend-tracker.ts';
 import { IdentityResolver } from '../git/identity.ts';
 import { getBranchWarning } from '../git/status.ts';
 import type { ElsewhereCache } from './elsewhere-cache.ts';
+import { bindFirstFreePort } from './listen.ts';
 import { freshConfig } from './live-config.ts';
 import { assetRoutes, MAX_UPLOAD_BYTES, serveAsset } from './routes/assets.ts';
 import { configRoutes } from './routes/config.ts';
@@ -74,6 +75,11 @@ const MAX_REQUEST_BODY_BYTES = MAX_UPLOAD_BYTES + 1024 * 1024;
 export async function startServer(options: {
   dir: string;
   port?: number;
+  /**
+   * How many ports to try from `port` when it is busy (default: 1, so only
+   * `port`). `gitrac serve` with no port uses `DEFAULT_PORT_ATTEMPTS`.
+   */
+  portAttempts?: number;
   host?: string;
   config: Config;
   /** Fixed default author name (`--author`); otherwise git config is used. */
@@ -95,12 +101,18 @@ export async function startServer(options: {
   const app = createApp(ctx, { host, ui });
 
   // Bind before starting the watcher so a bad --host / busy port fails fast.
-  const server = Bun.serve({
-    hostname: host,
+  // A busy port shows as EADDRINUSE from Bun.serve. Then try the next port.
+  const server = bindFirstFreePort(
+    (p) =>
+      Bun.serve({
+        hostname: host,
+        port: p,
+        maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
+        fetch: app.fetch,
+      }),
     port,
-    maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
-    fetch: app.fetch,
-  });
+    options.portAttempts ?? 1,
+  );
 
   // Start file watcher
   watcher.start();

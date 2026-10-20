@@ -424,6 +424,64 @@ describe('startServer', () => {
     }
   });
 
+  // #118: with portAttempts, a busy port falls back to the next one.
+  test('falls back to the next port when the port is busy', async () => {
+    await gitDir();
+    const handler = () => new Response('busy');
+    const blocker = Bun.serve({
+      hostname: '127.0.0.1',
+      port: 0,
+      fetch: handler,
+    });
+    const busy = blocker.port as number;
+    try {
+      const server = await startServer({
+        dir,
+        port: busy,
+        portAttempts: 5,
+        config: createDefaultConfig(),
+      });
+      try {
+        expect(server.port).toBeGreaterThan(busy);
+        const res = await fetch(`http://127.0.0.1:${server.port}/api/issues`);
+        expect(res.status).toBe(200);
+        // The startup line names the port actually bound.
+        const logged = (
+          console.log as unknown as { mock: { calls: unknown[][] } }
+        ).mock.calls
+          .flat()
+          .join('\n');
+        expect(logged).toContain(`http://localhost:${server.port}`);
+      } finally {
+        await server.stop();
+      }
+    } finally {
+      blocker.stop(true);
+    }
+  });
+
+  test('a busy port fails without portAttempts', async () => {
+    await gitDir();
+    const handler = () => new Response('busy');
+    const blocker = Bun.serve({
+      hostname: '127.0.0.1',
+      port: 0,
+      fetch: handler,
+    });
+    const busy = blocker.port as number;
+    try {
+      const err = await startServer({
+        dir,
+        port: busy,
+        config: createDefaultConfig(),
+      }).catch((e: unknown) => e);
+      expect((err as { code?: string }).code).toBe('EADDRINUSE');
+      expect((err as Error).message).toBe(`port ${busy} is already in use`);
+    } finally {
+      blocker.stop(true);
+    }
+  });
+
   test('--host opts into another interface', async () => {
     await gitDir();
     const server = await startServer({

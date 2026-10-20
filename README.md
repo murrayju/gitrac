@@ -126,7 +126,7 @@ gitrac claim 1                                # assign to you + set in_progress
 gitrac close 1 --no-commit -c "Fixed: the env var was renamed; accept both names."
 git add -A && git commit -m "fix: login timeout (#1)"   # code + issue in ONE commit
 
-gitrac                                        # web UI at http://localhost:3000
+gitrac                                        # web UI at http://localhost:3000, opens in your browser
 ```
 
 Every gitrac change commits automatically with a descriptive message (`issue: create #1 Login times out under load`). Use `--no-commit` when you want to fold the issue change into your own commit, as in the `close` step above.
@@ -228,9 +228,12 @@ The CLI and the web UI share one service layer, so validation, locking and commi
 
 ```bash
 gitrac                       # or: gitrac serve
-gitrac serve -p 4000         # another port
+gitrac serve -p 4000         # this exact port (fails if it is busy)
+gitrac serve -n              # do not open a browser (or: --no-open)
 gitrac serve --host 0.0.0.0  # expose on your network (no authentication!)
 ```
+
+Without `-p`, the server uses port 3000, or the next free port if 3000 is busy, and prints the URL. It then opens that URL in your default browser, except with `-n` / `--no-open`, when stdout is not a terminal, when `CI` is set, or when `GITRAC_NO_OPEN=1`. So scripts, CI and agents never open a window.
 
 ![Issue detail view](docs/images/issue-detail.png)
 
@@ -263,7 +266,7 @@ The server binds to `127.0.0.1` by default and rejects cross-origin and DNS-rebi
 | `next [--claim]` | The top ready issue; with `--claim`, picks and claims it in one locked step. `--stale <duration>` lets it take over a stale claim |
 | `delete` / `rm <id>` | Delete an issue, any assets only it uses, and links to it (`--yes`, `--dry-run`) |
 | `renumber <id>` | Give one copy of a duplicated ID a fresh ID (`--file`, `--update-refs`) |
-| `serve` | Start the web UI (the default when no command is given) |
+| `serve` | Start the web UI (the default when no command is given): first free port from 3000 unless `-p`, opens a browser unless `-n` / `--no-open` |
 | `install-merge-driver` | Set up issue-aware git merges in a clone (also adds `.issues/.gitignore` for drafts if missing) |
 
 **Global flags:**

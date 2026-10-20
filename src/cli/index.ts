@@ -54,7 +54,13 @@ export function createProgram(): Command {
     // Long-only on purpose: subcommands own short flags like `-p` (e.g.
     // `create -p high`). Program-level options are matched anywhere in argv,
     // so a global `-p` would swallow them. `serve` accepts `-p, --port`.
-    .option('--port <port>', 'Port for the web server (default: 3000)')
+    .option(
+      '--port <port>',
+      'Port for the web server (default: first free port from 3000)',
+    )
+    // Global on purpose, so `gitrac -n` and `gitrac serve -n` both work. No
+    // subcommand may define `-n`: this option would take it (a test checks).
+    .option('-n, --no-open', 'Do not open the web UI in a browser (serve)')
     .option(
       '--host <host>',
       'Interface for the web server (default: 127.0.0.1)',

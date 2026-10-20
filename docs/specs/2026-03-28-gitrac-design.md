@@ -234,8 +234,8 @@ src/
 
 | Command | Aliases | Description |
 |---------|---------|------------|
-| `gitrac` | | Start web UI (default; alias for `gitrac serve`). Accepts `--port <port>` and `--host <host>`. |
-| `gitrac serve` | | Start web UI. `-p, --port <port>` (default: 3000), `--host <host>` (default: `127.0.0.1`). The port must be a plain integer from 0 to 65535; anything else (`abc`, `99999`, `4000abc`) is an `invalid_input` error (exit 2) that echoes the value given, checked before anything else. |
+| `gitrac` | | Start web UI (default; alias for `gitrac serve`). Accepts `--port <port>`, `--host <host>` and `-n, --no-open`. |
+| `gitrac serve` | | Start web UI. `-p, --port <port>`, `--host <host>` (default: `127.0.0.1`), `-n, --no-open`. The port must be a plain integer from 0 to 65535; anything else (`abc`, `99999`, `4000abc`) is an `invalid_input` error (exit 2) that echoes the value given, checked before anything else. Without a port (neither `-p` nor the global `--port`), the server binds 3000, or the next free port when it is busy (3001, 3002, ..., at most 20 ports; then `server_error`, exit 1). It detects a busy port from the bind error (`EADDRINUSE`), not by a probe first. An explicit port is used as is: if it is busy, the server exits with `server_error` (exit 1) that names the port. `-p 0` binds any free port. The startup line prints the port actually bound. After it starts, the server opens that URL in the default browser (`xdg-open` on Linux, `open` on macOS, `cmd /c start` on Windows), detached; if that fails it prints a note to stderr and keeps running. It does not open a browser with `-n` / `--no-open`, when stdout is not a terminal (scripts, tests, agents), when `CI` is set, or when `GITRAC_NO_OPEN` is set (any value except empty, `0` or `false`). |
 | `gitrac init` | | Initialize `.issues/` in current repo (`config.yaml`, plus `.gitignore` ignoring web UI `drafts/`) and install the merge driver (see [Conflict Resolution](#conflict-resolution)); commits all three. Sets `git.defaultBranch` to the repo's default branch: the branch `origin/HEAD` points at, else the current (possibly unborn) branch, else git's `init.defaultBranch`, else `main`. Errors if already exists (use `--force` to reinitialize). Errors if not in a git repo. |
 | `gitrac create` | `new`, `add` | Create a new issue (interactive or via flags); one created with a closed status (`-s done`, or `POST /api/issues`) is written straight into `.issues/closed/` |
 | `gitrac list` | `ls` | List issues with filters (`--status`, `--priority`, `--label`, `--assignee`, `--mine`, `--search`, `--sort`; see [List Filters](#list-filters)). Default: open issues, sorted by ID ascending. `--elsewhere` also lists the issues that exist only in another worktree or on another branch, after the local ones (see [Claims on other branches and worktrees](#claims-on-other-branches-and-worktrees)). `--stale <duration>` lists only the issues whose claim is stale (see [Stale claims](#stale-claims)). |
@@ -266,14 +266,15 @@ src/
 | `--author <name>` | Override comment author / `createdBy` (default: `git config user.name`); with `serve`, the default author for web changes |
 | `--dir <path>` | Directory to locate the project from (default: cwd). Any path inside the repo works. |
 | `--debug` | Print stack traces on errors |
-| `--port <port>` | Web server port for bare `gitrac` (long form only; `serve` also accepts `-p`) |
+| `--port <port>` | Web server port for bare `gitrac` (long form only; `serve` also accepts `-p`). Default: the first free port from 3000 |
+| `-n`, `--no-open` | Do not open the web UI in a browser (bare `gitrac` and `serve`) |
 | `--host <host>` | Web server bind interface (default `127.0.0.1`; e.g. `0.0.0.0` for all interfaces) |
 
 **Project root resolution:** every command (including `serve` / bare `gitrac`) resolves the project root once, via `git rev-parse --show-toplevel` starting from `--dir` (or the cwd), so gitrac works from any subdirectory of the repo. `.issues/` always lives at that root. Outside a git repo, commands exit 8 (`not_a_git_repo`) with `Error: Not inside a git repository`; if `.issues/config.yaml` is missing, every command except `init` exits 8 (`not_initialized`) with a message to run `gitrac init`.
 
 Global flags may appear before or after the subcommand (`gitrac --no-commit close 1` and `gitrac close 1 --no-commit` are equivalent). `--no-commit` applies to every mutating command (`init`, `create`, `edit`, `comment`, `close`, `reopen`, `claim`, `unclaim`, `review`, `next --claim`, `link`, `unlink`, `delete`, `renumber`) and also suppresses push. If both `--push` and `--no-push` are given, the last one wins.
 
-Because global flags are matched anywhere on the command line, they must not define short flags that subcommands also use. In particular `-p` belongs to the subcommands (`create -p high`, `edit -p high`, `serve -p 4000`); the global port option is long-only (`--port`).
+Because global flags are matched anywhere on the command line, they must not define short flags that subcommands also use. In particular `-p` belongs to the subcommands (`create -p high`, `edit -p high`, `serve -p 4000`); the global port option is long-only (`--port`). `-n` is the one global short flag (`--no-open`), so `gitrac -n` and `gitrac serve -n` both work; no subcommand may define `-n` (a test checks for collisions).
 
 ### Claiming
 

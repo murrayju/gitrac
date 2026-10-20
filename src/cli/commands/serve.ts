@@ -3,10 +3,18 @@ import { GitracError, invalidInput } from '../../core/errors.ts';
 import { authorError } from '../../core/validate.ts';
 import { readConfig } from '../../fs/issue-store.ts';
 import { getGlobalOptions, resolveProjectRoot } from '../global-options.ts';
+import { openBrowser, shouldOpenBrowser } from '../open-browser.ts';
 
 export interface ServeOptions {
   dir: string;
   port: number;
+  /**
+   * True when no port was given: then try the next ports if `port` is busy
+   * (#118). An explicit port is used as is.
+   */
+  autoPort: boolean;
+  /** False with `--no-open` / `-n`: do not open a browser (#115). */
+  open: boolean;
   /** Interface to bind (default: 127.0.0.1, loopback only). */
   host: string;
   /** Default author for web changes (`--author`); '' = git config. */
@@ -20,7 +28,8 @@ export interface ServeOptions {
  * long-only program-level option (so bare `gitrac --port 4000` keeps working);
  * Commander consumes it at the program level even when written after `serve`.
  * The subcommand's value wins when both are present. `--host` works the same
- * way (long-only at both levels).
+ * way (long-only at both levels). `-n, --no-open` is only a program-level
+ * option: Commander matches it also when it is written after `serve`.
  *
  * The port is validated here from the raw option string (not
  * `GlobalOptions.port`, which is already `parseInt`ed and can't tell `abc`
@@ -32,10 +41,13 @@ export function resolveServeOptions(
 ): ServeOptions {
   const globalOpts = getGlobalOptions(program);
   const local = serveCommand?.opts<{ port?: string; host?: string }>() ?? {};
-  const globalPort = program.opts<{ port?: string }>().port;
+  const global = program.opts<{ port?: string; open?: boolean }>();
+  const explicitPort = local.port ?? global.port;
   return {
     dir: globalOpts.dir,
-    port: parsePort(local.port ?? globalPort ?? String(DEFAULT_PORT)),
+    port: parsePort(explicitPort ?? String(DEFAULT_PORT)),
+    autoPort: explicitPort === undefined,
+    open: global.open !== false,
     host: local.host ?? globalOpts.host,
     author: globalOpts.author,
   };
@@ -81,9 +93,18 @@ export async function runServe(options: ServeOptions): Promise<void> {
   const config = await readConfig(dir);
   // Load the web server only here. Other CLI commands then do not load Hono
   // and the web routes at startup.
-  const { startServer } = await import('../../web/server.ts');
+  const { startServer, displayUrl } = await import('../../web/server.ts');
+  const { DEFAULT_PORT_ATTEMPTS } = await import('../../web/listen.ts');
+  let server: { port: number };
   try {
-    await startServer({ dir, port, host, config, author: options.author });
+    server = await startServer({
+      dir,
+      port,
+      portAttempts: options.autoPort ? DEFAULT_PORT_ATTEMPTS : 1,
+      host,
+      config,
+      author: options.author,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw new GitracError(
@@ -92,16 +113,31 @@ export async function runServe(options: ServeOptions): Promise<void> {
       { cause: err },
     );
   }
+  const open = shouldOpenBrowser({
+    open: options.open,
+    isTTY: Boolean(process.stdout.isTTY),
+    env: process.env,
+  });
+  if (open) openBrowser(displayUrl(host, server.port));
 }
 
 export function registerServeCommand(program: Command): void {
   program
     .command('serve')
     .description('Start the web UI (default when no command is given)')
-    .option('-p, --port <port>', 'Port for the web server (default: 3000)')
+    .option(
+      '-p, --port <port>',
+      'Port for the web server (default: first free port from 3000)',
+    )
     .option(
       '--host <host>',
       'Interface to bind (default: 127.0.0.1; e.g. 0.0.0.0 for all — no auth!)',
+    )
+    // `-n, --no-open` is a program-level option (see `createProgram`), so
+    // list it here too.
+    .addHelpText(
+      'after',
+      '\nAlso: -n, --no-open  Do not open the web UI in a browser',
     )
     .action(async (_options: unknown, cmd: Command) => {
       await runServe(resolveServeOptions(program, cmd));

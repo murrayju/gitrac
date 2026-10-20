@@ -198,6 +198,32 @@ describe('serve / bare gitrac port resolution', () => {
     expect(resolve([]).author).toBe('');
   });
 
+  // #118: only a port the user did not give falls back to the next ports.
+  test('autoPort is set only when no port is given', () => {
+    expect(resolve([]).autoPort).toBe(true);
+    expect(resolve(['serve']).autoPort).toBe(true);
+    expect(resolve(['serve', '-p', '3000']).autoPort).toBe(false);
+    expect(resolve(['serve', '--port', '0']).autoPort).toBe(false);
+    expect(resolve(['--port', '4000']).autoPort).toBe(false);
+    expect(resolve(['--port', '4000', 'serve']).autoPort).toBe(false);
+  });
+
+  // #115: a browser opens unless -n / --no-open is given.
+  test('open is on by default; -n / --no-open turn it off', () => {
+    expect(resolve([]).open).toBe(true);
+    expect(resolve(['serve']).open).toBe(true);
+    for (const args of [
+      ['-n'],
+      ['--no-open'],
+      ['serve', '-n'],
+      ['serve', '--no-open'],
+      ['-n', 'serve'],
+      ['serve', '-p', '4000', '-n'],
+    ]) {
+      expect(resolve(args).open).toBe(false);
+    }
+  });
+
   test('accepts the full port range 0-65535', () => {
     expect(resolve(['serve', '-p', '0']).port).toBe(0);
     expect(resolve(['serve', '-p', '65535']).port).toBe(65535);

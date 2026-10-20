@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { EXIT_INVALID_INPUT } from '../../core/errors.ts';
+import simpleGit from 'simple-git';
+import { EXIT_GENERAL, EXIT_INVALID_INPUT } from '../../core/errors.ts';
 import { parsePort } from './serve.ts';
 
 const ENTRY = join(import.meta.dir, '..', '..', '..', 'index.ts');
@@ -98,5 +99,91 @@ describe('gitrac serve with an invalid port or author (end-to-end)', () => {
         message: 'Invalid port "abc": must be an integer from 0 to 65535.',
       },
     });
+  });
+});
+
+// #118: an explicit port is used as is. If it is busy, serve fails with a
+// server_error that names the port, and does not move to another port.
+describe('gitrac serve port selection (end-to-end)', () => {
+  let dir: string;
+
+  beforeAll(async () => {
+    dir = await realpath(await mkdtemp(join(tmpdir(), 'gitrac-serve-busy-')));
+    const git = simpleGit(dir);
+    await git.init();
+    await git.addConfig('user.email', 'test@test.com');
+    await git.addConfig('user.name', 'Test');
+    await git.addConfig('commit.gpgsign', 'false');
+    const init = Bun.spawn([process.execPath, ENTRY, 'init'], {
+      cwd: dir,
+      stdout: 'ignore',
+      stderr: 'ignore',
+    });
+    expect(await init.exited).toBe(0);
+  });
+
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  function serve(...args: string[]) {
+    // stdout is a pipe (not a TTY), so no browser opens.
+    return Bun.spawn([process.execPath, ENTRY, ...args], {
+      cwd: dir,
+      stdout: 'pipe',
+      stderr: 'pipe',
+      stdin: 'ignore',
+    });
+  }
+
+  for (const flag of ['-p', '--port']) {
+    test(`serve ${flag} <busy port> fails with server_error`, async () => {
+      const handler = () => new Response('busy');
+      const blocker = Bun.serve({
+        hostname: '127.0.0.1',
+        port: 0,
+        fetch: handler,
+      });
+      const busy = blocker.port as number;
+      try {
+        const args =
+          flag === '-p' ? ['serve', '-p', String(busy)] : ['--port', `${busy}`];
+        const proc = serve('-o', 'json', ...args);
+        const timer = setTimeout(() => proc.kill(), 10_000);
+        const [stderr, code] = await Promise.all([
+          new Response(proc.stderr).text(),
+          proc.exited,
+        ]);
+        clearTimeout(timer);
+        expect(code).toBe(EXIT_GENERAL);
+        const { error } = JSON.parse(stderr.trim().split('\n').at(-1) ?? '');
+        expect(error.code).toBe('server_error');
+        expect(error.message).toContain(`127.0.0.1:${busy}`);
+        expect(error.message).toContain(`port ${busy} is already in use`);
+      } finally {
+        blocker.stop(true);
+      }
+    });
+  }
+
+  test('serve -p 0 binds a free port and prints it', async () => {
+    const proc = serve('serve', '-p', '0');
+    try {
+      const reader = proc.stdout.getReader();
+      let out = '';
+      const deadline = Date.now() + 10_000;
+      while (!/localhost:\d+/.test(out) && Date.now() < deadline) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        out += new TextDecoder().decode(value);
+      }
+      const port = Number(out.match(/localhost:(\d+)/)?.[1]);
+      expect(port).toBeGreaterThan(0);
+      const res = await fetch(`http://127.0.0.1:${port}/api/issues`);
+      expect(res.status).toBe(200);
+    } finally {
+      proc.kill();
+      await proc.exited;
+    }
   });
 });
