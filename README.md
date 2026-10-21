@@ -123,13 +123,14 @@ gitrac show 1                                 # full detail, comments included
 
 gitrac claim 1                                # assign to you + set in_progress
 # ... fix the bug ...
-gitrac close 1 --no-commit -c "Fixed: the env var was renamed; accept both names."
-git add -A && git commit -m "fix: login timeout (#1)"   # code + issue in ONE commit
+git add -A                                    # stage the fix
+gitrac commit 1 -c "Fixed: the env var was renamed; accept both names." \
+  -- -m "fix: login timeout (#1)"             # close + git commit: code + issue in ONE commit
 
 gitrac                                        # web UI at http://localhost:3000, opens in your browser
 ```
 
-Every gitrac change commits automatically with a descriptive message (`issue: create #1 Login times out under load`). Use `--no-commit` when you want to fold the issue change into your own commit, as in the `close` step above.
+Every gitrac change commits automatically with a descriptive message (`issue: create #1 Login times out under load`). `gitrac commit <id>` closes the issue and runs `git commit` with everything after `--`, so the fix and the close land in one commit. Or use `--no-commit` to leave any issue change in the working tree and fold it into your own commit (`gitrac close 1 --no-commit`, then `git add -A && git commit`).
 
 ---
 
@@ -192,7 +193,7 @@ Root cause: `getSessionTimeout()` reads a renamed env var.
 ### Git integration
 
 - **Auto-commit, path-limited.** Each change is committed on its own and contains *only* the files gitrac touched. Anything else you have staged stays staged and isn't swept in. Use `--no-commit` to skip it, and `--push` / `--no-push` or `git.autoPush` to control pushing.
-- **Atomic with your code.** `close --no-commit` (or `edit`, `comment`, ...) leaves the issue change in the working tree, so it ships in your fix commit.
+- **Atomic with your code.** `gitrac commit <id> -- -m "..."` closes the issue and commits it together with your staged changes in one `git commit`. If git fails (or a hook rejects the commit), the issue is left exactly as it was. `--no-commit` on `close` (or `edit`, `comment`, ...) leaves the issue change in the working tree, so it ships in your fix commit.
 - **Web edits amend.** Rapid edits in the web UI fold into the previous commit for that issue, but only while it's still HEAD and unpushed. Edits that end up changing nothing are dropped without touching the rest of your work tree.
 - **Safe concurrency.** Every mutation runs under one lock that is shared by all worktrees of the repo, so parallel CLI calls and the web server never interleave.
 - **Collision-free IDs.** IDs stay simple integers. A new ID is one more than the highest ID seen in a shared counter, the working tree, *and every local/remote-tracking branch*, so worktrees and branches never hand out the same number. If two separate clones still collide, `gitrac renumber` fixes it.
@@ -261,6 +262,7 @@ The server binds to `127.0.0.1` by default and rejects cross-origin and DNS-rebi
 | `unclaim` / `release <id>` | Give an issue back, even a claim held in another worktree. `--stale <duration>` releases someone else's claim if it is stale |
 | `review <id>` | Hand a claimed issue off for review (needs `reviewStatus`). It stays claimed until closed or unclaimed |
 | `close <id>` / `reopen <id>` | Close (moves to `closed/`; `--cancelled`, `-s`) or reopen it. Exit 3 if someone else holds the issue (here or in another worktree / branch); `--force` overrides |
+| `commit <id> [-- <git commit args>]` | Close the issue (same options as `close`) and run `git commit` with the args after `--`, so your staged changes and the close are one commit. Exit 2 if nothing else is staged (unless `-- -a`) or git gets pathspecs; exit 7 if git fails or makes no commit, and the close is undone |
 | `link` / `unlink <id>` | `--blocked-by <ids>`, `--parent <id>`. Cycles are rejected |
 | `ready` | Open, unassigned (or yours), unblocked issues, sorted by priority. `--stale <duration>` also lists stale claims |
 | `next [--claim]` | The top ready issue; with `--claim`, picks and claims it in one locked step. `--stale <duration>` lets it take over a stale claim |
@@ -307,7 +309,7 @@ gitrac was built for (and largely *by*) coding agents. Its own backlog in [`.iss
   ```markdown
   ## Issues
   This project tracks issues with gitrac in `.issues/`. Use the `gitrac` CLI
-  (`gitrac ready`, `gitrac claim <id>`, `gitrac close <id> --no-commit -c "..."`)
+  (`gitrac ready`, `gitrac claim <id>`, `gitrac commit <id> -c "..." -- -m "... (#<id>)"`)
   and close issues in the same commit as the fix.
   ```
 
@@ -317,9 +319,11 @@ gitrac was built for (and largely *by*) coding agents. Its own backlog in [`.iss
 gitrac next --claim -o json            # pick + claim the top unblocked issue (exit 5 = nothing to do)
 gitrac show <id> -o json               # read the spec
 # ... implement, test ...
-gitrac close <id> --no-commit -c "What changed and why (PR-style summary)"
-git add -A && git commit -m "fix: <summary> (#<id>)"
+git add -A
+gitrac commit <id> -c "What changed and why (PR-style summary)" -- -m "fix: <summary> (#<id>)"
 ```
+
+`gitrac commit` closes the issue and commits it with the staged code in one `git commit` (exit 7 and nothing closed if git fails). The alternative is `gitrac close <id> --no-commit -c "..."` followed by `git add -A && git commit`.
 
 Agents can file what they discover as they go:
 
@@ -350,7 +354,7 @@ Give each agent its own worktree and branch. Claims made in any worktree, commit
 for n in 1 2 3; do
   git worktree add -b "agent-$n" "../agent-$n"
   (cd "../agent-$n" && your-agent --prompt "Run 'gitrac next --claim', implement it,
-     close it with --no-commit + commit on this branch, then stop.") &
+     close it with 'gitrac commit <id> -c ... -- -m ...' on this branch, then stop.") &
 done
 wait
 ```
@@ -371,7 +375,7 @@ $ echo $?
 ```
 
 - **Picking work:** `next --claim` runs under the shared lock and accounts for claims in every worktree and on every branch, so concurrent agents always get distinct issues.
-- **Finishing:** the agent closes on its branch with `close --no-commit` and commits code and issue together. That issue then drops out of `ready` / `next` everywhere until the branch is merged.
+- **Finishing:** the agent stages its changes and runs `gitrac commit <id> -c "..." -- -m "..."` on its branch, which commits code and issue together. That issue then drops out of `ready` / `next` everywhere until the branch is merged.
 - **Review handoff:** with a `reviewStatus` configured, the agent runs `gitrac review <id>` when its work is ready. The issue keeps its assignee and stays claimed everywhere until the orchestrator closes it (with `--force` if it uses another identity) or `unclaim`s it; the agent's `claim` sends it back to the active status for rework.
 - **Stuck or dead agents:** release the claim from anywhere with `gitrac unclaim <id>`, adding `--force` if it was someone else's. The newer release supersedes the claim, and the issue becomes ready again. To close it instead, use `gitrac close <id> --force` (a plain `close` of someone else's claim exits 3). To find dead agents without tracking them yourself, use `gitrac ls --stale 2h`: it lists claims whose newest version (in any worktree or branch) has had no activity for 2 hours (`staleClaim` in `-o json`). `gitrac unclaim <id> --stale 2h` releases such a claim without `--force`, and `gitrac next --claim --stale 2h` can take one over (it checks again under the lock, so a claim renewed meanwhile is never taken). Claims in the review status are never stale. Agents send a heartbeat with `gitrac --no-commit claim <id> --renew`.
 - **Merging:** the merge driver handles `.issues/` (comments combined, fields merged). Delete merged or abandoned agent branches so their stale claims stop showing up.

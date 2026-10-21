@@ -5,6 +5,7 @@ import packageJson from '../../package.json' with { type: 'json' };
 import { registerClaimCommand } from './commands/claim.ts';
 import { registerCloseCommand } from './commands/close.ts';
 import { registerCommentCommand } from './commands/comment.ts';
+import { registerCommitCommand } from './commands/commit.ts';
 import { registerCreateCommand } from './commands/create.ts';
 import { registerDeleteCommand } from './commands/delete.ts';
 import { registerEditCommand } from './commands/edit.ts';
@@ -78,6 +79,7 @@ export function createProgram(): Command {
   registerEditCommand(program);
   registerCommentCommand(program);
   registerCloseCommand(program);
+  registerCommitCommand(program);
   registerReopenCommand(program);
   registerClaimCommand(program);
   registerUnclaimCommand(program);

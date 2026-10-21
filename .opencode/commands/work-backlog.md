@@ -14,9 +14,8 @@ For each issue:
 4. Dispatch a subagent to implement the fix/feature
 5. Review the subagent's work -- check code quality, verify all checks pass with `./bun run check`
 6. If not satisfied, iterate until the solution is correct
-7. Add a comment to the issue documenting what was done (like a PR description -- summarize the changes, what was fixed/added, files affected, and any notable decisions): `./gitrac comment <id> -b "comment text"`
-8. Close the issue: `./gitrac close <id> --no-commit`
-9. Commit everything together (code changes + comment + issue close) with a descriptive commit message referencing the issue number
-10. Only then move on to the next issue
+7. Stage the code changes: `git add -A`
+8. Close the issue and commit everything together (code changes + comment + issue close) with a descriptive commit message referencing the issue number: `./gitrac commit <id> -c "comment text" -- -m "fix: summary (#<id>)"`. The comment documents what was done (like a PR description -- summarize the changes, what was fixed/added, files affected, and any notable decisions). If `git commit` fails (for example a hook rejects it), the issue stays open: fix the problem and run it again
+9. Only then move on to the next issue
 
 Run `./bun run check` before every commit. Never move on until fully satisfied with the current solution.

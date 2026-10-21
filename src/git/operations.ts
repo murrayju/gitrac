@@ -33,6 +33,7 @@ async function stagePaths(
   git: SimpleGit,
   dir: string,
   files: string[],
+  options: { removeMissing?: boolean } = {},
 ): Promise<string[]> {
   const unique = [...new Set(files)];
   const present = await Promise.all(
@@ -43,6 +44,17 @@ async function stagePaths(
 
   if (onDisk.length > 0) {
     await git.raw(['add', '-A', '--', ...onDisk.map(literal)]);
+  }
+  if (options.removeMissing && missing.length > 0) {
+    // Stage the removal too, for a commit that is not path-limited.
+    await git.raw([
+      'rm',
+      '--cached',
+      '--quiet',
+      '--ignore-unmatch',
+      '--',
+      ...missing.map(literal),
+    ]);
   }
 
   const hasHead = (
@@ -68,6 +80,62 @@ async function stagePaths(
   );
 
   return [...onDisk, ...missing.filter((_, i) => known[i])].map(literal);
+}
+
+/**
+ * Stage exactly the given repo-relative paths (new, modified, or removed from
+ * disk) and leave the rest of the index as it is.
+ */
+export async function stageFiles(dir: string, files: string[]): Promise<void> {
+  await stagePaths(simpleGit(dir), dir, files, { removeMissing: true });
+}
+
+/** Repo-relative paths with staged changes (index vs HEAD, or all if unborn). */
+export async function stagedFiles(dir: string): Promise<string[]> {
+  const out = await simpleGit(dir).raw([
+    'diff',
+    '--cached',
+    '--name-only',
+    '--no-renames',
+    '-z',
+  ]);
+  return out.split('\0').filter(Boolean);
+}
+
+/** The hash of the HEAD commit, or null on an unborn branch. */
+export async function headCommit(dir: string): Promise<string | null> {
+  const out = await simpleGit(dir)
+    .raw(['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'])
+    .catch(() => '');
+  return out.trim() || null;
+}
+
+/**
+ * Run `git commit <args>` in `dir` with the terminal attached (stdin and
+ * stderr inherited), so git can open the editor for the message. git's
+ * stdout goes to `stdout` (default: this process's stdout). While git runs,
+ * SIGINT (Ctrl-C) does not stop this process, so the caller can clean up
+ * after git stops. Returns git's exit code (null if a signal stopped it).
+ */
+export async function runGitCommit(
+  dir: string,
+  args: readonly string[],
+  options: { stdout?: 'stdout' | 'stderr' } = {},
+): Promise<number | null> {
+  const ignore = () => {};
+  process.on('SIGINT', ignore);
+  try {
+    const proc = Bun.spawn(['git', 'commit', ...args], {
+      cwd: dir,
+      stdin: 'inherit',
+      stdout: options.stdout === 'stderr' ? 2 : 'inherit',
+      stderr: 'inherit',
+    });
+    await proc.exited;
+    return proc.exitCode;
+  } finally {
+    process.off('SIGINT', ignore);
+  }
 }
 
 /**

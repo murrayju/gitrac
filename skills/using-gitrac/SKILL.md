@@ -62,7 +62,8 @@ gitrac --version
 | `gitrac claim <id> --renew` | Heartbeat: renew your own claim (newer `updated`) so it is not stale |
 | `gitrac review <id>` | Hand a claimed issue off for review: sets `reviewStatus`, keeps you as assignee, so it stays claimed until closed or unclaimed (exit 2 if no `reviewStatus` is configured; exit 3 if not claimed or someone else's, `--force` overrides; `-c` comment) |
 | `gitrac close <id>` | Close an issue (moves to closed/; status = config `closeStatus`, default `done`; `--cancelled` = `cancelStatus`, default `cancelled`; `-s <status>` any closed status). Closing an issue someone else holds (here, in another worktree or on another branch) is exit 3 (`already_claimed`); `--force` overrides. Your own claim needs nothing |
-| `gitrac close <id> --no-commit` | Close without committing (for atomic commits) |
+| `gitrac commit <id> -c "summary" -- -m "fix: ... (#<id>)"` | Close the issue and `git commit` it with your staged changes, in ONE commit (the recommended way to finish). Takes the `close` options (`-c`, `--cancelled`, `-s`, `-f`); everything after `--` goes to `git commit` (no `-m`: git opens the editor). Exit 2 if nothing besides the issue is staged (stage with `git add`, or pass `-- -a`) or the git args have pathspecs; exit 7 if git fails or makes no commit (the close is undone, the issue is as before) |
+| `gitrac close <id> --no-commit` | Close without committing (the alternative for atomic commits: then `git add -A && git commit`) |
 | `gitrac close <id> -c "text"` | Close with an inline comment |
 | `gitrac delete <id> --yes` | Delete an issue (duplicates, test issues) and the assets only it uses, and drop it from other issues' `blockedBy`/`parent`, in one commit. Without `--yes` and no terminal it only prints what would be deleted and exits 2; `--dry-run` previews (exit 0) |
 | `gitrac renumber <id> --file <path>` | Give one copy of a duplicated issue ID (`duplicate_issue`) a fresh ID: renames the file, updates its `id`, adds a `Renumbered from #<old>` comment, commits (`-o json`: `oldId`, `newId`, `from`, `to`, `references`). Without `--file` it lists the files (exit 3). Issues linking to / mentioning the old ID are listed, not changed; `--update-refs` repoints their `blockedBy`/`parent`. `--force` for a non-duplicated ID |
@@ -124,8 +125,8 @@ Write code, run tests — the normal development workflow. The issue file in `.i
 # Standalone comment
 gitrac comment <id> "Summary of changes: what was fixed/added, why, files affected, and any notable decisions."
 
-# Or inline with close (preferred for atomic workflows)
-gitrac close <id> --no-commit --comment "Summary of changes"
+# Or inline when you close (preferred)
+gitrac commit <id> --comment "Summary of changes" -- -m "fix: ... (#<id>)"
 ```
 
 The comment becomes part of the issue's permanent history. Write it for someone who needs to understand what happened without reading every diff line.
@@ -137,17 +138,29 @@ The `--comment` / `-c` flag is also available on `claim`, `unclaim`, `edit`, and
 This is the key pattern. Close the issue **in the same commit** as the code change:
 
 ```bash
-# Close the issue with a comment, without auto-committing
-gitrac close <id> --no-commit -c "Summary of what was done"
-
-# Stage everything together: code changes + the closed issue file
+# Stage the code changes
 git add -A
 
-# One atomic commit
-git commit -m "fix: resolve the problem (#<id>)"
+# Close the issue (with a comment) and git commit it with the staged changes
+gitrac commit <id> -c "Summary of what was done" -- -m "fix: resolve the problem (#<id>)"
 ```
 
 This creates a single commit that contains both the code fix and the issue state change. Anyone looking at the commit sees exactly what was fixed and why.
+
+- Everything after `--` goes to `git commit` unchanged. gitrac adds no commit message: use `-m`, `-F`, or leave them out to get the editor. Reference the issue in the message (`(#<id>)`).
+- Stage your changes first, or pass `-- -a` to commit all changes to tracked files. If nothing besides the issue is staged, it exits 2 and changes nothing (use `gitrac close <id>` to commit only the issue). `--amend` needs no staged changes.
+- Pathspecs (`-- -m msg src/file.ts`) are rejected (exit 2): git would commit only those paths and leave the issue file out. Stage the files with `git add` instead.
+- If `git commit` fails or makes no commit (a hook rejects it, `--dry-run`, an empty message), it exits 7 (`git_error`, `exitCode` = git's status) and the issue files and index are put back as they were (the issue is still open, your claim is unchanged). Fix the problem and run it again.
+- The close rules are those of `close`: someone else's claim needs `-f` (exit 3 without it). `--no-commit` cannot be used with it (exit 2). With `-o json`, git's output goes to stderr and stdout is one `{ issue, commit }` object.
+- It pushes afterwards per `--push` / `git.autoPush`, like other commands.
+
+The alternative is to close without committing and commit yourself:
+
+```bash
+gitrac close <id> --no-commit -c "Summary of what was done"
+git add -A                   # code changes + the closed issue file
+git commit -m "fix: resolve the problem (#<id>)"
+```
 
 ### 6. Verify
 
@@ -162,7 +175,7 @@ Recommended workflow when an orchestrator runs several agents at once:
 
 1. The orchestrator creates one worktree (and branch) per agent: `git worktree add -b agent-1 ../agent-1`.
 2. Each agent runs gitrac **inside its own worktree** and claims there: `gitrac claim <id>` (or `gitrac next --claim`). The claim is visible to every other worktree immediately — committed or not — so other agents' `claim` fails with exit 3 and their `ready`/`next` skip it. Agents sharing one git identity still get different issues from `next --claim`.
-3. When done, the agent closes with `gitrac close <id> --no-commit -c "summary"` and commits the code and the issue file together on its branch. Until that branch is merged, the issue no longer shows up in `ready`/`next` elsewhere.
+3. When done, the agent stages its changes and runs `gitrac commit <id> -c "summary" -- -m "fix: ... (#<id>)"`, which commits the code and the issue file together on its branch (or `gitrac close <id> --no-commit -c "summary"` and then `git commit`). Until that branch is merged, the issue no longer shows up in `ready`/`next` elsewhere.
    **Review handoff** (if the project sets `reviewStatus` in `config.yaml`): instead of closing, the agent runs `gitrac review <id> --no-commit -c "summary"` and commits on its branch. The issue keeps its assignee and stays claimed: other agents' `claim` fails with exit 3, `next` skips it, `ls` shows `[claimed … by <agent>]`. The orchestrator verifies, merges and closes it. The issue is still the agent's claim, so if the orchestrator has a different identity it closes with `gitrac close <id> --force` (exit 3 without it). To send it back, the agent runs `gitrac claim <id>` again (it returns to `in_progress`).
 4. If an agent gives up or dies, release its claim from anywhere (e.g. the main worktree): `gitrac unclaim <id>` (add `--force` if the agent used a different identity). The newer release supersedes the claim in its worktree, so `ready`/`next` offer the issue again. To close a stuck agent's issue instead (e.g. the work is done or no longer needed), use `gitrac close <id> --force` (exit 3 without it, since the agent still holds it); the forced close supersedes the claim in its worktree. An agent closing its own claim (step 3) needs no `--force`.
    **Dead-agent recovery:** a claim is *stale* when the issue's newest version (here, in any worktree or on any branch) is in `in_progress`, assigned, and its `updated` is older than a duration (`30s`, `45m`, `2h`, `1d`). Every gitrac write to the issue bumps `updated`, so any activity counts. `gitrac ls --stale 2h` lists the stale claims (`[stale claim by X, last activity <iso>]`; `staleClaim: { assignee, updated, ref?, worktree? }` in `-o json`). `gitrac unclaim <id> --stale 2h` releases one without `--force` (exit 3 if it is not stale, with its age). `gitrac next --claim --stale 2h` can pick one and take it over: under the repo lock it checks again that the claim is still stale, so it never steals a claim that was just renewed. A claim in the review status is never stale. Without `--stale`, nothing changes. The optional `staleAfter: 2h` key in `config.yaml` is only the web UI's threshold (stale badges, "Release stale claim", `staleClaim` in API responses); CLI commands ignore it, so always pass `--stale` explicitly.
@@ -222,12 +235,12 @@ stdout only ever holds the result. Errors and warnings (e.g. "not on the default
 |------|--------|---------|
 | 0 | | Success |
 | 1 | `error`, `invalid_config`, `invalid_issue` | Unexpected error, unparseable `.issues/config.yaml`, or a malformed issue file (no frontmatter, bad YAML, `id` not matching the file name; `file` names it, nothing is written — fix the file by hand) |
-| 2 | `invalid_input`, `usage`, `confirmation_required` | Bad ID / field value / flag / missing argument, or `delete` without `--yes` (stdin not a terminal) — nothing was written |
+| 2 | `invalid_input`, `usage`, `confirmation_required` | Bad ID / field value / flag / missing argument, `commit` with nothing staged besides the issue or with git pathspecs, or `delete` without `--yes` (stdin not a terminal). Nothing was written |
 | 3 | `already_claimed`, `already_initialized`, `invalid_state`, `duplicate_issue` | Conflict: claimed by someone else (`claim`, `unclaim`, `review`, `close`, `reopen`, or `edit` of the status / assignee), already initialized, closing a closed / reopening an open issue, or several files on disk for one issue ID (`files` lists them: merge them by hand and delete all but one, or `gitrac renumber <id> --file <path>` if they are different issues); `renumber` of a non-duplicated ID without `--force` |
 | 4 | `issue_closed` | `claim`/`unclaim`/`review` on a closed issue |
 | 5 | `not_found`, `no_ready_issues` | No such issue; `next` found no ready issue |
 | 6 | `lock_timeout` | Another gitrac process held the repo lock too long — retry |
-| 7 | `git_error` | git commit/push failed (the issue file may already be changed — check `git status`) |
+| 7 | `git_error` | git commit/push failed (the issue file may already be changed: check `git status`). For `gitrac commit`, a failed `git commit` undoes the close |
 | 8 | `not_a_git_repo`, `not_initialized` | Not in a git repo, or run `gitrac init` |
 
 Stack traces are hidden unless you pass `--debug`.
@@ -236,11 +249,12 @@ Stack traces are hidden unless you pass `--debug`.
 
 | Mistake | Why it's wrong | Fix |
 |---------|---------------|-----|
-| Closing in a separate commit | Breaks the atomic link between fix and issue | Use `--no-commit` on close, commit together |
+| Closing in a separate commit | Breaks the atomic link between fix and issue | `git add` the code, then `gitrac commit <id> -c "..." -- -m "..."` |
 | Not claiming before working | Another agent may start the same work | Always `claim` first |
 | `edit -s`/`-a` instead of `claim` / `unclaim` | Skips the claim checks; on someone else's claim it fails (exit 3) | Use `claim` / `unclaim`; `edit --force` only if you mean to overwrite their claim |
 | Editing issue files directly | Bypasses git auto-commit, may produce invalid format | Use the CLI |
-| Forgetting `--no-commit` on close | Creates two commits instead of one | Close with `--no-commit`, then `git add -A && git commit` |
+| `gitrac close` without `--no-commit` before your own commit | Creates two commits instead of one | Use `gitrac commit <id>`, or close with `--no-commit`, then `git add -A && git commit` |
+| `gitrac commit <id> -- -m msg some/file` | Pathspecs would leave the issue out of the commit, so it is rejected (exit 2) | `git add some/file`, then `gitrac commit <id> -- -m msg` |
 | Working on closed issues | They live in `closed/` and are done | Check `gitrac show <id>` first |
 | Closing without a comment | Loses context about what was done and why | Always `gitrac comment <id> "..."` before closing |
 | Deleting an issue you just don't want to do | Erases its history from the tracker | `gitrac close <id> --cancelled -c "why"`; reserve `delete` for duplicates / test issues |

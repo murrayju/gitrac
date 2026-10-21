@@ -22,6 +22,7 @@ This project uses gitrac to track its own issues. The `.issues/` directory conta
 ./gitrac review <id>           # hand a claimed issue off for review (needs reviewStatus in config.yaml; stays claimed)
 ./gitrac comment <id> "text"    # add a comment (or --body-file <path|->)
 ./gitrac close <id>            # close an issue (--force if someone else holds it; same for reopen)
+./gitrac commit <id> -c "summary" -- -m "fix: ... (#<id>)"   # close + git commit the staged changes in ONE commit
 ./gitrac delete <id> --yes     # delete an issue + assets only it uses, unlink it from others (--dry-run to preview)
 ./gitrac renumber <id> --file <path>   # give one copy of a duplicated ID a fresh ID (--update-refs repoints links)
 ./gitrac install-merge-driver  # once per clone: issue-aware git merges (`init` does it too)
@@ -31,7 +32,7 @@ This project uses gitrac to track its own issues. The `.issues/` directory conta
 ./gitrac serve --host 0.0.0.0  # listen on all interfaces (default: 127.0.0.1 only; no auth!)
 ```
 
-When working on a task, claim the corresponding issue first. Close it in the same commit that implements the fix when possible.
+When working on a task, claim the corresponding issue first. Close it in the same commit that implements the fix when possible (`gitrac commit`).
 
 ### Slash Commands
 
@@ -61,7 +62,7 @@ video/        # Remotion project for the gitrac.dev demo video, from real record
 .issues/      # Project issues (managed by gitrac itself)
 ```
 
-The architecture is layered: `core` (pure functions, no I/O) -> `fs` (filesystem) -> `git` (git operations) -> `service` (one function per mutation: `createIssue`, `updateIssue`, `addComment`, `editComment`, `deleteComment`, `closeIssue`, `reopenIssue`, `deleteIssue`, `renumberIssue`, `claimIssue`, `unclaimIssue`, `submitForReview`, `claimNextIssue`, `linkIssue`, `unlinkIssue`, `initProject`, `updateLabelColors`, `updateAssignees`, `installMergeDriver`) -> `cli`/`web` (thin adapters: parse input -> call the service -> format output, mapping `GitracError`s to exit codes / HTTP statuses). Each layer only depends on layers below it.
+The architecture is layered: `core` (pure functions, no I/O) -> `fs` (filesystem) -> `git` (git operations) -> `service` (one function per mutation: `createIssue`, `updateIssue`, `addComment`, `editComment`, `deleteComment`, `closeIssue`, `reopenIssue`, `deleteIssue`, `renumberIssue`, `claimIssue`, `unclaimIssue`, `submitForReview`, `closeWithCommit`, `claimNextIssue`, `linkIssue`, `unlinkIssue`, `initProject`, `updateLabelColors`, `updateAssignees`, `installMergeDriver`) -> `cli`/`web` (thin adapters: parse input -> call the service -> format output, mapping `GitracError`s to exit codes / HTTP statuses). Each layer only depends on layers below it.
 
 ## Development
 
@@ -173,7 +174,6 @@ Unknown frontmatter keys (hand-added `estimate:`, `externalId:`, ...) are preser
 1. Run `./gitrac ls` (or `./gitrac ready`) to see open issues
 2. Pick one and claim it: `./gitrac claim <id>` (or `./gitrac next --claim` to take the top ready one)
 3. Implement the fix/feature
-4. Add a comment summarizing what was done: `./gitrac comment <id> "text"` — or use `--comment` flag on close
-5. Close the issue: `./gitrac close <id> --no-commit --comment "summary of changes"` (use `--no-commit` so you can commit the code changes, comment, and close together)
-6. Commit everything together (code + issue changes) with a descriptive message referencing the issue number
-7. Run `./bun run check` before pushing
+4. Run `./bun run check`, then stage the code changes: `git add -A`
+5. Close the issue and commit everything together (code + issue changes) with a summary comment and a descriptive message referencing the issue number: `./gitrac commit <id> --comment "summary of changes" -- -m "fix: ... (#<id>)"`. If `git commit` fails (for example a hook rejects it), the issue is left as it was: fix the problem and run it again
+6. Alternative: `./gitrac close <id> --no-commit --comment "summary of changes"`, then `git add -A && git commit -m "... (#<id>)"`
