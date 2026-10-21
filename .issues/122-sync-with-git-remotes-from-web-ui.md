@@ -1,14 +1,14 @@
 ---
 id: 122
 title: sync with git remotes from web ui
-status: todo
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - feature
 created: '2026-10-21T20:32:29.596Z'
 createdBy: Justin Murray
-updated: '2026-10-21T20:34:43.672Z'
+updated: '2026-10-21T20:47:23.483Z'
 ---
 
 The web UI should show an indication of how far ahead/behind the current repo is from the configured remote(s). It should also have an interface to trigger a sync.
