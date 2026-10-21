@@ -356,14 +356,6 @@ export async function unclaimIssue(
   });
 }
 
-export async function closeIssue(id: number): Promise<Issue> {
-  return request<Issue>(`/api/issues/${id}/close`, { method: 'PATCH' });
-}
-
-export async function reopenIssue(id: number): Promise<Issue> {
-  return request<Issue>(`/api/issues/${id}/reopen`, { method: 'PATCH' });
-}
-
 /** What `DELETE /api/issues/:id` removed (or, for a dry run, would). */
 export interface IssueDeletion {
   /** False for a dry run (`?dryRun=1`): nothing was written. */
