@@ -61,18 +61,26 @@ export async function isOnDefaultBranch(
 }
 
 /**
- * Get a warning message if not on the default branch, null otherwise.
+ * Get a warning message if not on the default branch, null otherwise. For a
+ * detached HEAD it says that HEAD is detached (and at which commit).
  */
 export async function getBranchWarning(
   dir: string,
   config: Config,
 ): Promise<string | null> {
-  const current = await getCurrentBranch(dir);
+  const [branch, head] = await Promise.all([
+    gitOutput(dir, ['symbolic-ref', '--quiet', '--short', 'HEAD']),
+    gitOutput(dir, ['rev-parse', '--short', '--verify', '--quiet', 'HEAD']),
+  ]);
   const defaultBranch = getDefaultBranch(config);
-  if (current === defaultBranch) {
+  if (branch === defaultBranch) {
     return null;
   }
-  return `You are on branch "${current}", not the default branch "${defaultBranch}".`;
+  if (branch === null) {
+    const at = head ? ` at ${head}` : '';
+    return `HEAD is detached${at}, not on the default branch "${defaultBranch}".`;
+  }
+  return `You are on branch "${branch}", not the default branch "${defaultBranch}".`;
 }
 
 /**

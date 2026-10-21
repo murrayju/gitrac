@@ -9,6 +9,7 @@ import {
 import { Link, useLocation } from 'react-router-dom';
 import type { Draft } from '../api.ts';
 import { useDrafts, useGitStatus } from '../hooks.ts';
+import { BranchSwitcher } from './BranchSwitcher.tsx';
 import { BranchWarning } from './BranchWarning.tsx';
 import type { CreateIssueModalProps } from './CreateIssueModal.tsx';
 import { CreateIssueModal } from './CreateIssueModal.tsx';
@@ -180,6 +181,7 @@ export function Layout({ children }: { children: ReactNode }) {
           </nav>
 
           <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-800 space-y-2">
+            <BranchSwitcher />
             <IdentityPicker />
             <ThemeToggle />
             <button

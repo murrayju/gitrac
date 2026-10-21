@@ -247,6 +247,14 @@ function refetchIdentity(): void {
   void identityQuery.refetch();
 }
 
+/** The `fetch` of each mounted {@link useGitStatus}, for {@link refetchGitStatus}. */
+const gitStatusFetchers = new Set<() => void>();
+
+/** Refetch the git status now (e.g. after a branch switch) in every user. */
+export function refetchGitStatus(): void {
+  for (const fetch of gitStatusFetchers) fetch();
+}
+
 export function useGitStatus(): {
   gitStatus: GitStatus | null;
   loading: boolean;
@@ -268,8 +276,12 @@ export function useGitStatus(): {
     }
 
     fetch();
+    gitStatusFetchers.add(fetch);
     const interval = setInterval(fetch, 30000);
-    return () => clearInterval(interval);
+    return () => {
+      gitStatusFetchers.delete(fetch);
+      clearInterval(interval);
+    };
   }, []);
 
   return { gitStatus, loading, error };

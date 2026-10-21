@@ -129,6 +129,20 @@ describe('getBranchWarning', () => {
     expect(warning).not.toBeNull();
     expect(warning).toContain('feature-branch');
   });
+
+  test('says that HEAD is detached, not "branch HEAD"', async () => {
+    const git = simpleGit(dir);
+    await Bun.write(join(dir, 'README.md'), 'hello');
+    await git.add('.');
+    await git.commit('initial');
+    await git.raw(['switch', '-q', '--detach']);
+    const head = (await git.raw(['rev-parse', '--short', 'HEAD'])).trim();
+    const warning = await getBranchWarning(dir, makeConfig());
+    expect(warning).toBe(
+      `HEAD is detached at ${head}, not on the default branch "main".`,
+    );
+    expect(warning).not.toContain('"HEAD"');
+  });
 });
 
 describe('isPushed', () => {

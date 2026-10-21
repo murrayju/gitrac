@@ -78,7 +78,7 @@ gitrac --version
 | `gitrac ls --elsewhere` | Also list issues that exist only in another worktree or on an unmerged branch |
 | `gitrac ls --priority urgent,high --label bug` | Filters take comma-separated values (any of); `--status all` includes closed |
 | `gitrac ls --search "login timeout"` | Title/description contains every word |
-| `gitrac serve -p 4000` | Start the web UI (bare `gitrac` also serves, on :3000 or the next free port; `-p` fails if that port is busy). It opens a browser unless `-n` / `--no-open`, stdout is not a TTY, `CI` is set, or `GITRAC_NO_OPEN=1`. Binds 127.0.0.1; `--host 0.0.0.0` exposes it to the network (no auth). Web changes are attributed to your git `user.name` (or `--author`); the sidebar's "Acting as" picker can switch to a configured assignee |
+| `gitrac serve -p 4000` | Start the web UI (bare `gitrac` also serves, on :3000 or the next free port; `-p` fails if that port is busy). It opens a browser unless `-n` / `--no-open`, stdout is not a TTY, `CI` is set, or `GITRAC_NO_OPEN=1`. Binds 127.0.0.1; `--host 0.0.0.0` exposes it to the network (no auth). Web changes are attributed to your git `user.name` (or `--author`); the sidebar's "Acting as" picker can switch to a configured assignee. The sidebar's branch picker runs `git switch` in the served worktree (only when no tracked files are modified and no merge/rebase is in progress); don't serve a worktree an agent is working in |
 
 ## The Workflow
 

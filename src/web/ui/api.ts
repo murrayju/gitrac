@@ -483,3 +483,39 @@ export async function uploadAsset(file: File): Promise<AssetUploadResult> {
   }
   return res.json() as Promise<AssetUploadResult>;
 }
+
+// Branch indicator and switcher (`GET /api/git/branches`,
+// `POST /api/git/switch`; see `src/core/branches.ts`).
+
+export type BranchState = import('../../core/branches.ts').BranchState;
+export type BranchInfo = import('../../core/branches.ts').BranchInfo;
+
+/** What `POST /api/git/switch` did. */
+export interface BranchSwitchResult {
+  /** The branch checked out before (null if HEAD was detached). */
+  previous: string | null;
+  /** The branch state after the switch. */
+  state: BranchState;
+  /** False if the branch was already checked out. */
+  switched: boolean;
+}
+
+/** The checked-out branch, the local branches and whether a switch is possible. */
+export async function fetchBranches(): Promise<BranchState> {
+  return request<BranchState>('/api/git/branches');
+}
+
+/**
+ * Check out the local branch `branch`. Rejects with an `ApiError`: 400 for an
+ * unknown branch, 409 if the working tree has modified tracked files, an
+ * operation is in progress, the branch is checked out in another worktree,
+ * or git refuses.
+ */
+export async function switchBranch(
+  branch: string,
+): Promise<BranchSwitchResult> {
+  return request<BranchSwitchResult>('/api/git/switch', {
+    method: 'POST',
+    body: JSON.stringify({ branch }),
+  });
+}

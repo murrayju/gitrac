@@ -240,6 +240,7 @@ Without `-p`, the server uses port 3000, or the next free port if 3000 is busy, 
 
 - WYSIWYG markdown editing (Tiptap) with autosave, including GFM tables. `#N` references become links. Pasted images go to `.issues/assets/` and are committed with the issue; rejected uploads (SVG, over 10 MiB) show an inline error.
 - **Live updates.** Changes in this worktree (CLI, agents, `git pull`) show up immediately over server-sent events. Claims made in other worktrees or on other branches appear within about 20 seconds. If you're editing when someone else changes the description, you get a "keep mine / load theirs" prompt instead of a silent overwrite.
+- **Branch indicator and switcher.** The sidebar shows the checked-out branch (or `detached at <sha>`) and lets you switch to another local branch. Switching is disabled while tracked files have uncommitted changes or a merge or rebase is in progress. Branches checked out in another worktree are listed but can't be picked. Untracked files and unsaved drafts are kept.
 - Filters, sorting, keyboard shortcuts (press `?`), an "Acting as" identity picker, and dependency and claim panels:
 
 ![Dependencies and claim indicators](docs/images/issue-dependencies.png)

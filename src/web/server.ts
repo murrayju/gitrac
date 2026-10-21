@@ -9,6 +9,7 @@ import type { ElsewhereCache } from './elsewhere-cache.ts';
 import { bindFirstFreePort } from './listen.ts';
 import { freshConfig } from './live-config.ts';
 import { assetRoutes, MAX_UPLOAD_BYTES, serveAsset } from './routes/assets.ts';
+import { branchRoutes } from './routes/branches.ts';
 import { configRoutes } from './routes/config.ts';
 import { draftRoutes } from './routes/drafts.ts';
 import { eventsRoute } from './routes/events.ts';
@@ -230,6 +231,7 @@ export function createApp(ctx: ServerContext, options: AppOptions = {}): Hono {
   app.route('/api', assetRoutes(ctx));
   app.route('/api', configRoutes(ctx));
   app.route('/api', gitRoutes(ctx));
+  app.route('/api', branchRoutes(ctx));
   app.route('/api', identityRoutes(ctx));
   app.route('/api', eventsRoute(ctx));
 
