@@ -519,3 +519,45 @@ export async function switchBranch(
     body: JSON.stringify({ branch }),
   });
 }
+
+// Sync with git remotes (`src/web/routes/sync.ts`).
+
+type SyncOperation = import('../../core/sync.ts').SyncOperation;
+type SyncResult = import('../../core/sync.ts').SyncResult;
+type SyncStatus = import('../../core/sync.ts').SyncStatus;
+
+/** What a sync operation returns: its result and the status after it. */
+export interface SyncResponse {
+  result: SyncResult;
+  status: SyncStatus;
+}
+
+/** The sync state of the current branch (local refs only, no network). */
+export async function fetchSyncStatus(): Promise<SyncStatus> {
+  return request<SyncStatus>('/api/git/sync');
+}
+
+/**
+ * Run a sync operation (`fetch`, `pull`, `push` or `sync`) with one remote,
+ * or without `remote` with the remotes included in the simple sync.
+ */
+export async function runSyncOperation(
+  operation: SyncOperation,
+  remote?: string,
+): Promise<SyncResponse> {
+  return request<SyncResponse>(`/api/git/sync/${operation}`, {
+    method: 'POST',
+    body: JSON.stringify(remote === undefined ? {} : { remote }),
+  });
+}
+
+/** Include or exclude a remote from the simple sync (local git config). */
+export async function setRemoteIncluded(
+  remote: string,
+  included: boolean,
+): Promise<SyncStatus> {
+  return request<SyncStatus>(
+    `/api/git/sync/remotes/${encodeURIComponent(remote)}`,
+    { method: 'PUT', body: JSON.stringify({ included }) },
+  );
+}

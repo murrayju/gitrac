@@ -62,7 +62,7 @@ video/        # Remotion project for the gitrac.dev demo video, from real record
 .issues/      # Project issues (managed by gitrac itself)
 ```
 
-The architecture is layered: `core` (pure functions, no I/O) -> `fs` (filesystem) -> `git` (git operations) -> `service` (one function per mutation: `createIssue`, `updateIssue`, `addComment`, `editComment`, `deleteComment`, `closeIssue`, `reopenIssue`, `deleteIssue`, `renumberIssue`, `claimIssue`, `unclaimIssue`, `submitForReview`, `closeWithCommit`, `claimNextIssue`, `linkIssue`, `unlinkIssue`, `initProject`, `updateLabelColors`, `updateAssignees`, `installMergeDriver`) -> `cli`/`web` (thin adapters: parse input -> call the service -> format output, mapping `GitracError`s to exit codes / HTTP statuses). Each layer only depends on layers below it.
+The architecture is layered: `core` (pure functions, no I/O) -> `fs` (filesystem) -> `git` (git operations) -> `service` (one function per mutation: `createIssue`, `updateIssue`, `addComment`, `editComment`, `deleteComment`, `closeIssue`, `reopenIssue`, `deleteIssue`, `renumberIssue`, `claimIssue`, `unclaimIssue`, `submitForReview`, `closeWithCommit`, `claimNextIssue`, `linkIssue`, `unlinkIssue`, `initProject`, `updateLabelColors`, `updateAssignees`, `installMergeDriver`, and in `src/service/sync.ts` `syncStatus`, `fetchRemotes`, `pullRemotes`, `pushRemotes`, `syncRemotes`, `setSyncIncluded`) -> `cli`/`web` (thin adapters: parse input -> call the service -> format output, mapping `GitracError`s to exit codes / HTTP statuses). Each layer only depends on layers below it.
 
 ## Development
 

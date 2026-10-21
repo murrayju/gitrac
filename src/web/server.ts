@@ -16,6 +16,7 @@ import { eventsRoute } from './routes/events.ts';
 import { gitRoutes } from './routes/git.ts';
 import { identityRoutes } from './routes/identity.ts';
 import { issueRoutes } from './routes/issues.ts';
+import { syncRoutes } from './routes/sync.ts';
 import {
   antiFraming,
   DEFAULT_HOST,
@@ -232,6 +233,7 @@ export function createApp(ctx: ServerContext, options: AppOptions = {}): Hono {
   app.route('/api', configRoutes(ctx));
   app.route('/api', gitRoutes(ctx));
   app.route('/api', branchRoutes(ctx));
+  app.route('/api', syncRoutes(ctx));
   app.route('/api', identityRoutes(ctx));
   app.route('/api', eventsRoute(ctx));
 

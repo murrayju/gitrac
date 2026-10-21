@@ -127,3 +127,18 @@ export function elsewhereRefresh(): RefreshTimer {
   shared ??= createRefreshTimer({ intervalMs: ELSEWHERE_REFRESH_MS });
   return shared;
 }
+
+/**
+ * How often the UI fetches the remotes in the background, so the sync
+ * indicator shows new remote commits. Network access, so much less often
+ * than {@link ELSEWHERE_REFRESH_MS}.
+ */
+export const SYNC_FETCH_MS = 5 * 60_000;
+
+let syncFetch: RefreshTimer | null = null;
+
+/** The tab-wide background fetch timer (created lazily). */
+export function syncFetchRefresh(): RefreshTimer {
+  syncFetch ??= createRefreshTimer({ intervalMs: SYNC_FETCH_MS });
+  return syncFetch;
+}

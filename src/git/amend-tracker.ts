@@ -4,6 +4,7 @@ import simpleGit from 'simple-git';
 import { differsOnlyInUpdated } from '../core/issue.ts';
 import { withRepoLock } from './lock.ts';
 import { commitIssueChange, commitPaths } from './operations.ts';
+import { isPublished } from './remotes.ts';
 import { hasRemote } from './status.ts';
 
 /** Suffix appended to an amended commit's subject to mark folded-in edits. */
@@ -34,7 +35,8 @@ export function amendedMessage(existing: string, incoming: string): string {
  * Amend is allowed only if:
  * - Same issue ID
  * - HEAD matches the stored hash
- * - Not pushed to remote
+ * - Not pushed to remote: not on any remote-tracking branch (a sync can push
+ *   to remotes other than the upstream), and ahead of `origin`'s upstream
  */
 export class AmendTracker {
   private issueId: number | null = null;
@@ -58,6 +60,11 @@ export class AmendTracker {
     const git = simpleGit(dir);
     const head = await git.revparse(['HEAD']);
     if (!head.trim().startsWith(this.commitHash)) {
+      return false;
+    }
+    // A commit on any remote (not only the upstream) is published: never
+    // rewrite it.
+    if (await isPublished(dir, 'HEAD')) {
       return false;
     }
     // If there's no remote, commit can't be pushed, so always amendable

@@ -3,6 +3,7 @@ import { DraftList } from './components/DraftList.tsx';
 import { IssueDetail } from './components/IssueDetail.tsx';
 import { IssueList } from './components/IssueList.tsx';
 import { Layout } from './components/Layout.tsx';
+import { RemotesPanel } from './components/RemotesPanel.tsx';
 
 function IssueDetailWrapper() {
   const { id } = useParams<{ id: string }>();
@@ -16,6 +17,7 @@ export function App() {
         <Route path="/" element={<IssueList />} />
         <Route path="/issues/:id" element={<IssueDetailWrapper />} />
         <Route path="/drafts" element={<DraftList />} />
+        <Route path="/remotes" element={<RemotesPanel />} />
       </Routes>
     </Layout>
   );

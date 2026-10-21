@@ -16,6 +16,7 @@ import { CreateIssueModal } from './CreateIssueModal.tsx';
 import { IdentityPicker } from './IdentityPicker.tsx';
 import { ImageLightbox } from './ImageLightbox.tsx';
 import { ShortcutsModal } from './ShortcutsModal.tsx';
+import { SyncBanner, SyncStatus } from './SyncStatus.tsx';
 import { ThemeToggle } from './ThemeToggle.tsx';
 
 interface ModalState {
@@ -182,6 +183,7 @@ export function Layout({ children }: { children: ReactNode }) {
 
           <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-800 space-y-2">
             <BranchSwitcher />
+            <SyncStatus onNavigate={() => setSidebarOpen(false)} />
             <IdentityPicker />
             <ThemeToggle />
             <button
@@ -209,6 +211,7 @@ export function Layout({ children }: { children: ReactNode }) {
               defaultBranch={gitStatus.defaultBranch}
             />
           )}
+          <SyncBanner />
           <div className="flex-1 overflow-auto">{children}</div>
         </main>
 
