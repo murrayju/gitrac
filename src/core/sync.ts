@@ -248,6 +248,55 @@ export function classifyGitError(
   return 'git';
 }
 
+/** One ref status line of `git push --porcelain`, with the URL it is for. */
+export interface PushRefStatus {
+  /** The URL of the `To <url>` block (one block per push URL). */
+  url: string;
+  /**
+   * git's flag: ` ` (fast-forward), `+` (forced), `-` (deleted), `*` (new
+   * ref), `=` (up to date), `!` (rejected or failed).
+   */
+  flag: string;
+  /** The summary column (e.g. `[rejected] (fetch first)`). */
+  summary: string;
+}
+
+/**
+ * Parse `git push --porcelain` stdout. A remote with several push URLs
+ * gives one `To <url>` block for each URL that git reached.
+ */
+export function parsePushPorcelain(stdout: string): PushRefStatus[] {
+  const statuses: PushRefStatus[] = [];
+  let url = '';
+  for (const line of stdout.split(/\r?\n/)) {
+    if (line.startsWith('To ')) {
+      url = line.slice(3).trim();
+      continue;
+    }
+    const match = /^(.)\t[^\t]*\t?(.*)$/.exec(line);
+    if (match) {
+      statuses.push({ url, flag: match[1] ?? '', summary: match[2] ?? '' });
+    }
+  }
+  return statuses;
+}
+
+/**
+ * Whether all `urlCount` push URLs reported the ref as accepted (any flag
+ * but `!`). Then the push worked even if git exited with an error: e.g. a
+ * server prints an error after it took the ref. git hides credentials in
+ * the URLs it prints, so this counts the URLs instead of comparing them.
+ */
+export function pushAcceptedEverywhere(
+  statuses: readonly PushRefStatus[],
+  urlCount: number,
+): boolean {
+  if (statuses.length === 0 || statuses.some((s) => s.flag === '!')) {
+    return false;
+  }
+  return urlCount > 0 && new Set(statuses.map((s) => s.url)).size >= urlCount;
+}
+
 /**
  * The files listed after git's "would be overwritten by merge:" (or
  * "untracked working tree files would be overwritten") line.

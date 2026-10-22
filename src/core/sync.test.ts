@@ -6,7 +6,9 @@ import {
   integrationPlan,
   overwrittenFiles,
   parseIncluded,
+  parsePushPorcelain,
   pullCommand,
+  pushAcceptedEverywhere,
   redactUrl,
   remoteError,
   summarizeSync,
@@ -71,6 +73,56 @@ describe('commands', () => {
     expect(conflictCommands('origin', 'main')[0]).toBe(
       'git pull --no-rebase origin main',
     );
+  });
+});
+
+describe('push porcelain (#124)', () => {
+  // A remote with two push URLs: git prints one `To` block per URL.
+  const twoUrls = [
+    'To git@github.com:me/repo.git',
+    ' \trefs/heads/main:refs/heads/main\ta4334b1..a00e5e0',
+    'Done',
+    'To ssh://git@example.org:55588/me/repo.git',
+    ' \trefs/heads/main:refs/heads/main\ta4334b1..a00e5e0',
+    'Done',
+  ].join('\n');
+
+  test('parses one status per URL', () => {
+    expect(parsePushPorcelain(twoUrls)).toEqual([
+      {
+        url: 'git@github.com:me/repo.git',
+        flag: ' ',
+        summary: 'a4334b1..a00e5e0',
+      },
+      {
+        url: 'ssh://git@example.org:55588/me/repo.git',
+        flag: ' ',
+        summary: 'a4334b1..a00e5e0',
+      },
+    ]);
+    expect(
+      parsePushPorcelain(
+        'To ../b.git\n!\trefs/heads/main:refs/heads/main\t[rejected] (fetch first)\nDone',
+      ),
+    ).toEqual([
+      { url: '../b.git', flag: '!', summary: '[rejected] (fetch first)' },
+    ]);
+    expect(parsePushPorcelain('')).toEqual([]);
+  });
+
+  test('accepted everywhere only when every URL took the ref', () => {
+    const statuses = parsePushPorcelain(twoUrls);
+    expect(pushAcceptedEverywhere(statuses, 2)).toBe(true);
+    // A URL that git could not reach prints no block.
+    expect(pushAcceptedEverywhere(statuses.slice(0, 1), 2)).toBe(false);
+    expect(
+      pushAcceptedEverywhere(
+        [...statuses, { url: 'x', flag: '!', summary: '[remote rejected]' }],
+        3,
+      ),
+    ).toBe(false);
+    expect(pushAcceptedEverywhere([], 1)).toBe(false);
+    expect(pushAcceptedEverywhere(statuses, 0)).toBe(false);
   });
 });
 

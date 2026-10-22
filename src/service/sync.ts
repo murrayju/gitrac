@@ -330,23 +330,23 @@ async function pushAll(
   outcomes: Map<string, RemoteSyncOutcome>,
   options: SyncOptions & { create?: boolean },
 ): Promise<void> {
-  await Promise.all(
-    remotes.map(async (remote) => {
-      const outcome = outcomes.get(remote) ?? { remote };
-      outcomes.set(remote, outcome);
-      if (outcome.error) return;
-      if (!options.create) {
-        const theirs = await resolveCommit(dir, trackingRef(remote, branch));
-        if (!theirs) {
-          outcome.skipped = 'no-branch';
-          return;
-        }
+  // One remote at a time: remotes can share push URLs (several `pushurl`s),
+  // and two parallel pushes of the same commit to one server race (#124).
+  for (const remote of remotes) {
+    const outcome = outcomes.get(remote) ?? { remote };
+    outcomes.set(remote, outcome);
+    if (outcome.error) continue;
+    if (!options.create) {
+      const theirs = await resolveCommit(dir, trackingRef(remote, branch));
+      if (!theirs) {
+        outcome.skipped = 'no-branch';
+        continue;
       }
-      const pushed = await pushBranch(dir, remote, branch, options);
-      if ('outcome' in pushed) outcome.pushed = pushed.outcome;
-      else outcome.error = remoteError(pushed.kind, remote, branch, pushed);
-    }),
-  );
+    }
+    const pushed = await pushBranch(dir, remote, branch, options);
+    if ('outcome' in pushed) outcome.pushed = pushed.outcome;
+    else outcome.error = remoteError(pushed.kind, remote, branch, pushed);
+  }
 }
 
 /** In-flight fetches per repo and remote, so concurrent requests share one. */

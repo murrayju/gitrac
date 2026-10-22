@@ -263,6 +263,48 @@ describe('syncRemotes', () => {
     );
   });
 
+  test('remotes that share push URLs sync without racing (#124)', async () => {
+    // Like a clone whose remotes each push to every server (several
+    // `pushurl`s): `git push origin` and `git push backup` both reach both
+    // bare repos. Parallel pushes made each server get the same push twice.
+    f = await remotesFixture();
+    const backup = await f.addRemote('backup');
+    await pushRemotes(ctx(), { remote: 'backup' });
+    for (const remote of ['origin', 'backup']) {
+      await f
+        .git(f.work, 'config', '--unset-all', `remote.${remote}.pushurl`)
+        .catch(() => '');
+      await f.git(
+        f.work,
+        'config',
+        '--add',
+        `remote.${remote}.pushurl`,
+        f.origin,
+      );
+      await f.git(
+        f.work,
+        'config',
+        '--add',
+        `remote.${remote}.pushurl`,
+        backup,
+      );
+    }
+    for (let i = 0; i < 5; i++) {
+      await f.commitFile(f.work, 'a', String(i), `local work ${i}`);
+      const result = await syncRemotes(ctx());
+      expect(result.remotes.map((r) => r.error?.message ?? null)).toEqual([
+        null,
+        null,
+      ]);
+      expect(result.ok).toBe(true);
+      for (const bare of [f.origin, backup]) {
+        expect(await f.git(bare, 'log', '-1', '--format=%s', 'main')).toBe(
+          `local work ${i}`,
+        );
+      }
+    }
+  });
+
   test('an unreachable remote is a per-remote error; others still sync', async () => {
     f = await remotesFixture();
     await f.git(f.work, 'remote', 'add', 'bogus', join(f.base, 'missing.git'));

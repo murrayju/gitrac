@@ -7,6 +7,8 @@ import {
   classifyGitError,
   type GitOperation,
   parseIncluded,
+  parsePushPorcelain,
+  pushAcceptedEverywhere,
   redactUrl,
   type SyncErrorKind,
 } from '../core/sync.ts';
@@ -568,20 +570,44 @@ export async function pushBranch(
       timeoutMs: options.timeoutMs ?? NETWORK_TIMEOUT_MS,
     },
   );
-  const flag = /^(.)\t/m.exec(run.stdout)?.[1];
-  if (run.code === 0 && !run.timedOut) {
-    if (flag === '=') return { outcome: 'up-to-date' };
-    if (flag === '*') return { outcome: 'created' };
+  // A remote can have several push URLs; git reports the ref for each one.
+  const statuses = parsePushPorcelain(run.stdout);
+  const outcome = (): { outcome: PushOutcome } => {
+    if (statuses.length > 0 && statuses.every((s) => s.flag === '=')) {
+      return { outcome: 'up-to-date' };
+    }
+    if (statuses.some((s) => s.flag === '*')) return { outcome: 'created' };
     return { outcome: 'pushed' };
+  };
+  if (run.code === 0 && !run.timedOut) return outcome();
+  // git can exit with an error although every URL took the ref (e.g. a
+  // server prints an error after the update). The push worked then.
+  if (
+    !run.timedOut &&
+    pushAcceptedEverywhere(statuses, (await pushUrls(dir, remote)).length)
+  ) {
+    return outcome();
   }
   const stderr = `${run.stderr}\n${run.stdout}`;
   return {
-    kind:
-      flag === '!'
-        ? 'rejected'
-        : classifyGitError(stderr, { timedOut: run.timedOut }),
+    kind: statuses.some((s) => s.flag === '!')
+      ? 'rejected'
+      : classifyGitError(stderr, { timedOut: run.timedOut }),
     stderr,
   };
+}
+
+/** The push URLs of `remote` (its `pushurl`s, else its `url`). */
+async function pushUrls(dir: string, remote: string): Promise<string[]> {
+  const out = await gitText(dir, [
+    'remote',
+    'get-url',
+    '--push',
+    '--all',
+    '--',
+    remote,
+  ]);
+  return (out ?? '').split('\n').filter((u) => u.trim() !== '');
 }
 
 /**
