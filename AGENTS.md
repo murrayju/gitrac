@@ -106,7 +106,7 @@ Tests are colocated with source files (`*.test.ts` next to `*.ts`). Use `bun:tes
 
 ### Releasing
 
-`./bun run scripts/release.ts <patch|minor|major|x.y.z>` bumps the version, tags and pushes; the tag-triggered Publish workflow builds the binaries, creates the GitHub Release and publishes the npm packages. See `docs/releasing.md` (including the one-time Cloudflare/npm setup). Keep `install.sh`, `scripts/npm/` and the workflow's platform matrix in sync.
+`./bun run scripts/release.ts <patch|minor|major|x.y.z>` bumps the version, tags and pushes; the tag-triggered Publish workflow builds the binaries, creates the GitHub Release and publishes the npm packages. See `docs/releasing.md` (including the one-time Cloudflare/npm setup). Keep `install.sh`, `scripts/npm/`, `releaseAssetName` (`src/core/install-method.ts`, used by `gitrac update`) and the workflow's platform matrix in sync.
 
 ### Building
 

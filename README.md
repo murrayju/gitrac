@@ -59,7 +59,7 @@ The script:
 - offers to add that directory to your `PATH`;
 - checks that the binary runs.
 
-Re-run it at any time to update. Options (environment variables, e.g. `curl -fsSL https://get.gitrac.dev | GITRAC_VERSION=0.2.0 bash`):
+Update later with `gitrac update` (or re-run the script). Options (environment variables, e.g. `curl -fsSL https://get.gitrac.dev | GITRAC_VERSION=0.2.0 bash`):
 
 | Variable | Effect |
 |---|---|
@@ -75,7 +75,7 @@ The script is [`install.sh`](install.sh) in this repo. Read it first if you like
 npm install -g @gitrac/cli
 ```
 
-This installs a small Node wrapper plus the prebuilt binary for your platform. It doesn't add a Bun or Node runtime dependency to gitrac itself. It also works with `pnpm add -g`, `bun add -g`, and one-off runs via `npx @gitrac/cli ls`.
+This installs a small Node wrapper plus the prebuilt binary for your platform. It doesn't add a Bun or Node runtime dependency to gitrac itself. It also works with `pnpm add -g`, `bun add -g`, and one-off runs via `npx @gitrac/cli ls`. `gitrac update` updates it with the package manager that installed it.
 
 ### Manual download
 
@@ -272,6 +272,7 @@ The server binds to `127.0.0.1` by default and rejects cross-origin and DNS-rebi
 | `renumber <id>` | Give one copy of a duplicated ID a fresh ID (`--file`, `--update-refs`) |
 | `serve` | Start the web UI (the default when no command is given): first free port from 3000 unless `-p`, opens a browser unless `-n` / `--no-open` |
 | `install-merge-driver` | Set up issue-aware git merges in a clone (also adds `.issues/.gitignore` for drafts if missing) |
+| `update` / `upgrade` | Update gitrac to the latest release, the way it was installed (binary or npm/pnpm/bun/yarn). `--check` only reports |
 
 **Global flags:**
 - `-o json|yaml`: machine-readable output.

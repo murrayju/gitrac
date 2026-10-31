@@ -26,7 +26,7 @@ The script:
 The tag triggers **Publish** (`.github/workflows/publish.yml`):
 
 1. **build**: compiles each platform binary on its native runner. The linux-x64 binary is smoke-tested with `--version`.
-2. **release**: creates the GitHub Release with the raw binaries attached (`gitrac-linux-x64`, ...). `install.sh` downloads these from `releases/latest/download/…`.
+2. **release**: creates the GitHub Release with the raw binaries attached (`gitrac-linux-x64`, ...). `install.sh` downloads these from `releases/latest/download/…`, and `gitrac update` downloads them for a standalone binary (it reads the version from the `releases/latest` redirect).
 3. **publish-npm**: `scripts/npm/publish.ts` generates and publishes four packages via npm trusted publishing (OIDC, no token):
    - `@gitrac/cli-linux-x64`, `@gitrac/cli-linux-arm64` and `@gitrac/cli-darwin-arm64` each contain one binary (`os`/`cpu` restricted).
    - `@gitrac/cli` is the entry point: [`wrapper.cjs`](../scripts/npm/wrapper.cjs) plus the three platform packages as `optionalDependencies`, so npm installs only the matching one.
@@ -161,4 +161,4 @@ curl -sI https://www.gitrac.dev | grep -i location   # https://gitrac.dev/
 | Linux arm64 | `gitrac-linux-arm64` | `@gitrac/cli-linux-arm64` |
 | macOS arm64 (Apple Silicon) | `gitrac-darwin-arm64` | `@gitrac/cli-darwin-arm64` |
 
-Adding a platform means updating the build matrix in `publish.yml`, `PLATFORMS` in `scripts/npm/publish.ts` and `wrapper.cjs`, the `case` blocks in `install.sh`, and this table. A new npm platform package also has to be bootstrapped as in step 2 above.
+Adding a platform means updating the build matrix in `publish.yml`, `PLATFORMS` in `scripts/npm/publish.ts` and `wrapper.cjs`, the `case` blocks in `install.sh`, `releaseAssetName` in `src/core/install-method.ts`, and this table. A new npm platform package also has to be bootstrapped as in step 2 above.

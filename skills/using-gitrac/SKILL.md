@@ -41,6 +41,7 @@ digraph when {
 curl -fsSL https://get.gitrac.dev | bash     # binary to ~/.local/bin (GITRAC_NONINTERACTIVE=1 in CI)
 npm install -g @gitrac/cli                   # or via npm
 gitrac --version
+gitrac update                                # update to the latest release (--check: only report)
 ```
 
 **From source (if working in the gitrac repo itself):** use `./gitrac <command>` instead of `gitrac`.

@@ -27,6 +27,7 @@ import {
 } from './commands/serve.ts';
 import { registerShowCommand } from './commands/show.ts';
 import { registerUnclaimCommand } from './commands/unclaim.ts';
+import { registerUpdateCommand } from './commands/update.ts';
 import { reportError, scanErrorOptions } from './errors.ts';
 
 export function createProgram(): Command {
@@ -90,6 +91,7 @@ export function createProgram(): Command {
   registerRenumberCommand(program);
   registerInstallMergeDriverCommand(program);
   registerMergeDriverCommand(program);
+  registerUpdateCommand(program);
 
   return program;
 }
