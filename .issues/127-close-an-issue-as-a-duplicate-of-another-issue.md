@@ -1,14 +1,14 @@
 ---
 id: 127
 title: Close an issue as a duplicate of another issue
-status: done
+status: backlog
 priority: medium
 assignee: justin@tigerdata.com
 labels:
   - feature
 created: '2026-11-02T04:01:59.991Z'
 createdBy: Justin Murray
-updated: '2026-11-02T15:52:47.972Z'
+updated: '2026-11-02T17:17:17.295Z'
 ---
 
 Close an issue as a duplicate of another one, and record the link.
@@ -51,3 +51,7 @@ Replaced the scalar duplicateOf (and parent / blockedBy) with a general links fi
 - Web UI: links panel lists every relation with remove buttons, a relationship select + issue number to add, and URL / PR links with an add input. The duplicate status prompt links then sets the status.
 - Merge driver merges links as a keyed set and converts version-1 sides.
 - This repo's .issues/ is migrated to version 2 in this commit. Docs: spec, README, skill, AGENTS.md, www.
+
+### Justin Murray — 2026-11-02T17:17:17.295Z
+
+Follow-up: store each issue link on a fixed home issue (the dependent one), so an issue's file reliably lists what constrains it; index the link graph.
