@@ -92,7 +92,7 @@ export function RefList({ title, refs }: { title: string; refs: IssueRef[] }) {
 }
 
 /** A small "issue number" input that submits the parsed IDs. */
-function AddLinkForm({
+export function AddLinkForm({
   placeholder,
   buttonLabel,
   ariaLabel,
@@ -162,7 +162,8 @@ function AddLinkForm({
  * (its work is not here yet). The parent and the
  * blockers are stored on this issue, so they can be set and removed here
  * (via `POST /api/issues/:id/link` / `unlink`). Sub-issues and "blocks" are
- * derived from other issues and are read-only.
+ * derived from other issues and are read-only. "Duplicate of" is set with
+ * the status (see `MetadataPanel`); "duplicates" is derived.
  */
 export function DependenciesPanel({ issueId }: { issueId: number }) {
   const { dependencies: deps, refetch } = useIssueDependencies(issueId);
@@ -170,7 +171,7 @@ export function DependenciesPanel({ issueId }: { issueId: number }) {
   const [error, setError] = useState<string | null>(null);
 
   if (!deps) return null;
-  const { parent, children, blockedBy, blocks } = deps;
+  const { parent, children, blockedBy, blocks, duplicateOf, duplicates } = deps;
   const blocked = blockedNotice(blockedBy);
 
   /** Run a link change; show the server's message if it fails. */
@@ -262,6 +263,9 @@ export function DependenciesPanel({ issueId }: { issueId: number }) {
         />
       </div>
       <RefList title="Blocks" refs={blocks} />
+      {/* Set with the status (the duplicate status asks for the issue). */}
+      <RefList title="Duplicate of" refs={duplicateOf ? [duplicateOf] : []} />
+      <RefList title="Duplicates" refs={duplicates} />
     </div>
   );
 }

@@ -258,12 +258,12 @@ The server binds to `127.0.0.1` by default and rejects cross-origin and DNS-rebi
 | `create` / `new` | Create an issue: `-t` title, `-d`/`--description-file`, `-p`, `-l`, `-a`, `-s` |
 | `list` / `ls` | List issues: `--status` (`all`), `--priority`, `--label`, `--assignee`, `--mine`, `--search`, `--sort`, `--elsewhere` (also issues only in other worktrees/branches), `--stale <duration>` (only claims with no activity for that long). Multi-value filters are comma-separated |
 | `show` / `view <id>` | Show an issue with comments, dependencies and claims elsewhere |
-| `edit <id>` | Change title, status, priority, assignee, labels, description. **Changing the status or assignee fails if someone else holds it** (`--force` overrides) |
+| `edit <id>` | Change title, status, priority, assignee, labels, description (`--duplicate-of <id>` with the duplicate status). **Changing the status or assignee fails if someone else holds it** (`--force` overrides) |
 | `comment` / `c <id> [body]` | Add a comment (argument, `--body-file`, or stdin) |
 | `claim <id>` | Assign to yourself and set the active status. **Fails if someone else holds it**. `--renew` renews your own claim (a heartbeat) |
 | `unclaim` / `release <id>` | Give an issue back, even a claim held in another worktree. `--stale <duration>` releases someone else's claim if it is stale |
 | `review <id>` | Hand a claimed issue off for review (needs `reviewStatus`). It stays claimed until closed or unclaimed |
-| `close <id>` / `reopen <id>` | Close (moves to `closed/`; `--cancelled`, `-s`) or reopen it. Exit 3 if someone else holds the issue (here or in another worktree / branch); `--force` overrides |
+| `close <id>` / `reopen <id>` | Close (moves to `closed/`; `--cancelled`, `-s`, `--duplicate-of <id>` to close as a duplicate of another issue) or reopen it. Exit 3 if someone else holds the issue (here or in another worktree / branch); `--force` overrides |
 | `commit <id> [-- <git commit args>]` | Close the issue (same options as `close`) and run `git commit` with the args after `--`, so your staged changes and the close are one commit. Exit 2 if nothing else is staged (unless `-- -a`) or git gets pathspecs; exit 7 if git fails or makes no commit, and the close is undone |
 | `link` / `unlink <id>` | `--blocked-by <ids>`, `--parent <id>`. Cycles are rejected |
 | `ready` | Open, unassigned (or yours), unblocked issues, sorted by priority. `--stale <duration>` also lists stale claims |
@@ -421,7 +421,8 @@ statuses:                 # workflow order; plain names or definitions
     label: In Review
     color: '#aa66ff'
   - done
-  - cancelled             # done / cancelled are closed; mark others with `closed: true`
+  - cancelled             # done / cancelled / duplicate are closed; mark others with `closed: true`
+  - duplicate
 priorities: [urgent, high, medium, low, none]
 defaultStatus: backlog
 defaultPriority: medium
@@ -431,6 +432,7 @@ defaultPriority: medium
 # reviewStatus: review        # what `review` sets (still claimed); unset = no review step
 # closeStatus: done           # what `close` sets
 # cancelStatus: cancelled     # what `close --cancelled` sets
+# duplicateStatus: duplicate  # what `close --duplicate-of` sets
 labels:                   # name -> color; new labels get a color automatically
   bug: '#e05d5d'
   feature: '#58a6e0'

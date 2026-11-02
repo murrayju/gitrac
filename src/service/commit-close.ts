@@ -56,6 +56,7 @@ export async function closeWithCommit(
   options: {
     cancelled?: boolean;
     status?: unknown;
+    duplicateOf?: unknown;
     comment?: string;
     force?: boolean;
     /** Arguments for `git commit`. */

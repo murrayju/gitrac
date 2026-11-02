@@ -58,6 +58,7 @@ function referenceTags(r: RenumberReference, oldId: number): string {
   return [
     r.blockedBy && 'blockedBy',
     r.parent && 'parent',
+    r.duplicateOf && 'duplicateOf',
     r.mentions && `mentions #${oldId}`,
   ]
     .filter(Boolean)
@@ -103,9 +104,11 @@ export function formatRenumbering(
         );
       }
       if (kept.length > 0) {
-        const anyLinks = kept.some((ref) => ref.blockedBy || ref.parent);
+        const anyLinks = kept.some(
+          (ref) => ref.blockedBy || ref.parent || ref.duplicateOf,
+        );
         lines.push(
-          `Not changed — these reference #${r.oldId}, which may mean either issue; check them${anyLinks ? ' (--update-refs points blockedBy/parent links at the new ID)' : ''}:`,
+          `Not changed — these reference #${r.oldId}, which may mean either issue; check them${anyLinks ? ' (--update-refs points blockedBy/parent/duplicateOf links at the new ID)' : ''}:`,
           ...kept.map(line),
         );
       }
@@ -194,7 +197,7 @@ export function registerRenumberCommand(program: Command): void {
     .option('--force', 'Renumber even if the ID is not duplicated')
     .option(
       '--update-refs',
-      "Point other issues' blockedBy/parent links at the new ID",
+      "Point other issues' blockedBy/parent/duplicateOf links at the new ID",
     )
     .action(async (idStr: string, options: RenumberCliOptions) => {
       const globalOpts = await resolveProjectOptions(program);

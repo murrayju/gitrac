@@ -327,6 +327,7 @@ describe('createDefaultConfig', () => {
       'in_progress',
       'done',
       'cancelled',
+      'duplicate',
     ]);
     expect(Object.keys(config.labels)).toEqual([
       'bug',
@@ -862,6 +863,10 @@ ${extra}`;
       [
         base('  - open\n  - done', 'cancelStatus: cancelled\n'),
         'cancelStatus "cancelled" is not a configured status',
+      ],
+      [
+        base('  - open\n  - done', 'duplicateStatus: open\n'),
+        'duplicateStatus "open" must be a closed status',
       ],
       [
         base('  - open\n  - done').replace('  - low\n', ''),

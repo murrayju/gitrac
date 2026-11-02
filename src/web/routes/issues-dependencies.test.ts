@@ -105,6 +105,8 @@ describe('GET /api/issues/:id/dependencies', () => {
     expect(await res.json()).toEqual({
       parent: { id: 1, title: 'Epic', status: 'todo', resolved: false },
       children: [],
+      duplicateOf: null,
+      duplicates: [],
       blockedBy: [{ id: 2, title: 'Blocker', status: 'done', resolved: true }],
       blocks: [{ id: 4, title: 'Later', status: 'todo', resolved: false }],
       blocked: false,

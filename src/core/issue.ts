@@ -48,6 +48,7 @@ const KNOWN_KEYS: ReadonlySet<string> = new Set([
   'labels',
   'parent',
   'blockedBy',
+  'duplicateOf',
   'created',
   'createdBy',
   'updated',
@@ -261,17 +262,18 @@ export function normalizeIdList(ids: readonly number[]): number[] {
 
 /**
  * The optional dependency fields, in frontmatter order, present only when
- * set (`parent`) / non-empty (`blockedBy`, normalized) so files without them
- * round-trip unchanged.
+ * set (`parent`, `duplicateOf`) / non-empty (`blockedBy`, normalized) so
+ * files without them round-trip unchanged.
  */
 export function dependencyFields(
-  issue: Pick<Issue, 'parent' | 'blockedBy'>,
-): Pick<Issue, 'parent' | 'blockedBy'> {
-  const fields: Pick<Issue, 'parent' | 'blockedBy'> = {};
+  issue: Pick<Issue, 'parent' | 'blockedBy' | 'duplicateOf'>,
+): Pick<Issue, 'parent' | 'blockedBy' | 'duplicateOf'> {
+  const fields: Pick<Issue, 'parent' | 'blockedBy' | 'duplicateOf'> = {};
   if (issue.parent !== undefined) fields.parent = issue.parent;
   if (issue.blockedBy && issue.blockedBy.length > 0) {
     fields.blockedBy = normalizeIdList(issue.blockedBy);
   }
+  if (issue.duplicateOf !== undefined) fields.duplicateOf = issue.duplicateOf;
   return fields;
 }
 
@@ -315,6 +317,7 @@ export function parseIssue(markdown: string): Issue {
     ...dependencyFields({
       parent: toOptionalIdField(fm.parent),
       blockedBy: toIdListField(fm.blockedBy),
+      duplicateOf: toOptionalIdField(fm.duplicateOf),
     }),
     created: toStringField(fm.created),
     createdBy: toStringField(fm.createdBy),

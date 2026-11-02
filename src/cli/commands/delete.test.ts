@@ -193,6 +193,7 @@ describe('gitrac delete with links to the issue (#68)', () => {
         title: 'Keep',
         blockedBy: true,
         parent: false,
+        duplicateOf: false,
         paths: [join('.issues', '2-keep.md')],
       },
       {
@@ -200,6 +201,7 @@ describe('gitrac delete with links to the issue (#68)', () => {
         title: 'Child',
         blockedBy: false,
         parent: true,
+        duplicateOf: false,
         paths: [join('.issues', '3-child.md')],
       },
     ]);

@@ -98,6 +98,11 @@ export interface UpdateIssueInput {
   author?: string;
   /** Change the status or assignee even if someone else holds the issue. */
   force?: boolean;
+  /**
+   * The issue this one duplicates. Needs the duplicate status (in this
+   * update, or already).
+   */
+  duplicateOf?: number;
 }
 
 /** Non-2xx API response. */
@@ -379,6 +384,7 @@ export interface IssueDeletion {
     title: string;
     blockedBy: boolean;
     parent: boolean;
+    duplicateOf: boolean;
     paths: string[];
   }[];
 }
@@ -442,6 +448,7 @@ export interface RenumberReference {
   title: string;
   blockedBy: boolean;
   parent: boolean;
+  duplicateOf: boolean;
   mentions: boolean;
 }
 

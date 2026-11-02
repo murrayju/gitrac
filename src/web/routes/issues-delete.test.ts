@@ -177,6 +177,7 @@ describe('DELETE /api/issues/:id', () => {
         title: 'Blocked',
         blockedBy: true,
         parent: false,
+        duplicateOf: false,
         paths: [join('.issues', `${blocked.id}-blocked.md`)],
       },
       {
@@ -184,6 +185,7 @@ describe('DELETE /api/issues/:id', () => {
         title: 'Child',
         blockedBy: false,
         parent: true,
+        duplicateOf: false,
         paths: [join('.issues', `${child.id}-child.md`)],
       },
     ]);
@@ -234,6 +236,7 @@ describe('DELETE /api/issues/:id?dryRun=1', () => {
           title: 'Blocked',
           blockedBy: true,
           parent: false,
+          duplicateOf: false,
           paths: [join('.issues', `${blocked.id}-blocked.md`)],
         },
         {
@@ -241,6 +244,7 @@ describe('DELETE /api/issues/:id?dryRun=1', () => {
           title: 'Child',
           blockedBy: false,
           parent: true,
+          duplicateOf: false,
           paths: [join('.issues', `${child.id}-child.md`)],
         },
       ],

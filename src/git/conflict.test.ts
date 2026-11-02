@@ -536,6 +536,18 @@ describe('merging dependency fields', () => {
     expect('blockedBy' in merged).toBe(false);
   });
 
+  test('duplicateOf is per-field (#127)', () => {
+    const base = makeFrontmatter();
+    const ours = makeFrontmatter({ priority: 'high' });
+    const theirs = makeFrontmatter({ status: 'duplicate', duplicateOf: 7 });
+    const merged = mergeIssueFrontmatter(ours, theirs, base);
+    expect(merged.status).toBe('duplicate');
+    expect(merged.duplicateOf).toBe(7);
+    expect('duplicateOf' in mergeIssueFrontmatter(ours, base, base)).toBe(
+      false,
+    );
+  });
+
   test('parent is per-field (one side wins, both: newer side)', () => {
     const base = makeFrontmatter();
     const ours = makeFrontmatter({ priority: 'high' });

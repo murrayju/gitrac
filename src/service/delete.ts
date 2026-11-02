@@ -37,6 +37,8 @@ export interface UnlinkedIssue {
   blockedBy: boolean;
   /** Its `parent` (the deleted issue) is cleared. */
   parent: boolean;
+  /** Its `duplicateOf` (the deleted issue) is cleared. */
+  duplicateOf: boolean;
   /**
    * Repo-relative paths of its rewritten file: the path it is written to,
    * then the old one if its filename was stale (see `relocateIssue`).
@@ -58,7 +60,7 @@ export interface IssueDeletion {
   assets: string[];
   /**
    * Other issues (open or closed) that referenced the deleted one in
-   * `blockedBy` or `parent`, by ID; those links are removed in the same
+   * `blockedBy`, `parent` or `duplicateOf`, by ID; those links are removed in the same
    * commit so none dangles.
    */
   unlinked: UnlinkedIssue[];
@@ -155,7 +157,7 @@ interface Relink {
 }
 
 /**
- * Every other issue (open or closed) whose `blockedBy` or `parent` points at
+ * Every other issue (open or closed) whose `blockedBy`, `parent` or `duplicateOf` points at
  * `id`, loaded fresh (callers hold the lock) with those links removed in
  * memory (see {@link linkingIssues}).
  */
@@ -165,7 +167,10 @@ async function referencingIssues(
   config: StatusConfig,
 ): Promise<Relink[]> {
   const relinks: Relink[] = [];
-  for (const { stored, blockedBy, parent } of await linkingIssues(dir, id)) {
+  for (const { stored, blockedBy, parent, duplicateOf } of await linkingIssues(
+    dir,
+    id,
+  )) {
     const { issue } = stored;
     if (blockedBy) {
       const kept = blockersOf(issue).filter((b) => b !== id);
@@ -173,6 +178,7 @@ async function referencingIssues(
       else delete issue.blockedBy;
     }
     if (parent) delete issue.parent;
+    if (duplicateOf) delete issue.duplicateOf;
     relinks.push({
       stored,
       unlinked: {
@@ -180,6 +186,7 @@ async function referencingIssues(
         title: issue.title,
         blockedBy,
         parent,
+        duplicateOf,
         paths: rewritePaths(stored, config),
       },
     });
@@ -190,7 +197,7 @@ async function referencingIssues(
 /**
  * Delete an issue: remove its file (from `.issues/` or `.issues/closed/`)
  * plus any `.issues/assets/` files that only it referenced, remove it from
- * every other issue's `blockedBy` and clear `parent` where it was the parent
+ * every other issue's `blockedBy` and clear `parent` / `duplicateOf` where it was the parent
  * (bumping their `updated`), and commit it all at once
  * (`issue: delete #N <title>`) per the context's commit options. With
  * `dryRun`, only reports what would be removed and unlinked. The issue ID is

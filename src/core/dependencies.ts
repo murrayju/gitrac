@@ -12,6 +12,8 @@ import { isClosedStatus, type StatusConfig } from './workflow.ts';
  * - `parent: id` — this issue is a sub-issue of that one (the inverse,
  *   "children", is derived the same way). It is informational: it doesn't
  *   affect readiness.
+ * - `duplicateOf: id` — this issue was closed as a duplicate of that one
+ *   (the inverse, "duplicates", is derived the same way). Informational too.
  *
  * A blocker counts as resolved when it is in any closed status — e.g. `done`
  * **or** `cancelled` (a cancelled blocker will never be done, so treating it
@@ -50,6 +52,15 @@ export function childrenOf(id: number, issues: Iterable<Issue>): number[] {
   const ids: number[] = [];
   for (const issue of issues) {
     if (issue.parent === id) ids.push(issue.id);
+  }
+  return ids.sort((a, b) => a - b);
+}
+
+/** IDs of the issues closed as duplicates of `id` (`duplicateOf: id`), ascending. */
+export function duplicatesOf(id: number, issues: Iterable<Issue>): number[] {
+  const ids: number[] = [];
+  for (const issue of issues) {
+    if (issue.duplicateOf === id) ids.push(issue.id);
   }
   return ids.sort((a, b) => a - b);
 }
@@ -131,6 +142,45 @@ function parentPath(
 
 const chain = (ids: number[]): string => ids.map((i) => `#${i}`).join(' → ');
 
+/** The `duplicateOf` chain from `from` to `to` (`[from, ..., to]`), or null. */
+function duplicatePath(
+  from: number,
+  to: number,
+  byId: ReadonlyMap<number, Issue>,
+): number[] | null {
+  const path: number[] = [];
+  const seen = new Set<number>();
+  let id: number | undefined = from;
+  while (id !== undefined && !seen.has(id)) {
+    path.push(id);
+    if (id === to) return path;
+    seen.add(id);
+    id = byId.get(id)?.duplicateOf;
+  }
+  return null;
+}
+
+/**
+ * Check that issue `id` can be closed as a duplicate of `original` (`byId`
+ * must contain every issue, open and closed). Returns an error message, or
+ * null if valid: the original must be another issue that exists, and must
+ * not itself be (transitively) a duplicate of `id`.
+ */
+export function duplicateOfError(
+  id: number,
+  original: number,
+  byId: ReadonlyMap<number, Issue>,
+): string | null {
+  if (original === id) return `Issue #${id} can't be a duplicate of itself`;
+  if (!byId.has(original)) {
+    return `Issue #${original} not found (duplicate-of of #${id})`;
+  }
+  const path = duplicatePath(original, id, byId);
+  return path
+    ? `#${id} duplicate of #${original} would create a cycle (${chain([id, ...path])})`
+    : null;
+}
+
 /** Links to add to an issue. */
 export interface LinkChanges {
   /** Issues to add to `blockedBy`. */
@@ -197,7 +247,7 @@ export interface UnlinkChanges {
 }
 
 /** One issue ID (number or `"#7"`/`"7"` string), or undefined if invalid. */
-function idValue(value: unknown): number | undefined {
+export function idValue(value: unknown): number | undefined {
   if (typeof value === 'number') {
     return Number.isInteger(value) && value > 0 ? value : undefined;
   }
@@ -319,6 +369,10 @@ export interface IssueDependencies {
   blockedBy: IssueRef[];
   /** Issues listing this one in `blockedBy`. */
   blocks: IssueRef[];
+  /** The issue this one is a duplicate of (`duplicateOf`). */
+  duplicateOf: IssueRef | null;
+  /** Issues closed as duplicates of this one. */
+  duplicates: IssueRef[];
   /** True if any blocker is still open. */
   blocked: boolean;
 }
@@ -377,6 +431,9 @@ export function describeDependencies(
     children: childrenOf(issue.id, all).map(ref),
     blockedBy,
     blocks: blocksOf(issue.id, all).map(ref),
+    duplicateOf:
+      issue.duplicateOf === undefined ? null : ref(issue.duplicateOf),
+    duplicates: duplicatesOf(issue.id, all).map(ref),
     blocked: blockedBy.some((ref) => !ref.resolved),
   };
 }

@@ -39,9 +39,13 @@ type DeletionSummary = Pick<
   'issue' | 'paths' | 'assets' | 'unlinked'
 >;
 
-/** Which links of an unlinked issue go: `blockedBy`, `parent`, or both. */
+/** Which links of an unlinked issue go: `blockedBy`, `parent`, `duplicateOf`. */
 function removedLinks(u: UnlinkedIssue): string {
-  return [u.blockedBy && 'blockedBy', u.parent && 'parent']
+  return [
+    u.blockedBy && 'blockedBy',
+    u.parent && 'parent',
+    u.duplicateOf && 'duplicateOf',
+  ]
     .filter(Boolean)
     .join(', ');
 }

@@ -4,6 +4,7 @@ import {
   cancelStatus,
   closedStatuses,
   closeStatus,
+  duplicateStatus,
   isClosedStatus,
   openStatuses,
   type StatusConfig,
@@ -80,16 +81,25 @@ export function reopenStatus(
 /**
  * The status a closed issue gets: `options.status` if given (it must be one
  * of the configured closed statuses), else with `options.cancelled` the
- * configured cancel status (`invalid_input` if there is none), else the
- * configured close status (see `src/core/workflow.ts`).
+ * configured cancel status, with `options.duplicate` the configured
+ * duplicate status (`invalid_input` if there is none), else the configured
+ * close status (see `src/core/workflow.ts`). At most one of the three
+ * options can be given.
  */
 export function closingStatus(
   config: WorkflowConfig,
-  options: { status?: unknown; cancelled?: boolean } = {},
+  options: { status?: unknown; cancelled?: boolean; duplicate?: boolean } = {},
 ): Status {
   const closed = closedStatuses(config);
-  if (options.status !== undefined && options.cancelled) {
-    throw invalidInput('Give either a status or cancelled, not both');
+  const given = [
+    options.status !== undefined,
+    Boolean(options.cancelled),
+    Boolean(options.duplicate),
+  ].filter(Boolean).length;
+  if (given > 1) {
+    throw invalidInput(
+      'Give only one of a status, cancelled and a duplicate-of issue',
+    );
   }
   if (options.status !== undefined) {
     if (
@@ -111,5 +121,31 @@ export function closingStatus(
     }
     return status;
   }
+  if (options.duplicate) {
+    const status = duplicateStatus(config);
+    if (status === undefined) {
+      throw invalidInput(
+        `No duplicate status is configured: add a closed "duplicate" status or set duplicateStatus in .issues/config.yaml (closed statuses: ${closed.join(', ')})`,
+      );
+    }
+    return status;
+  }
   return closeStatus(config);
+}
+
+/**
+ * Drop `issue.duplicateOf` unless the issue is in the duplicate status: the
+ * link only holds while the issue is closed as a duplicate. Call it after
+ * every status change.
+ */
+export function dropDuplicateLink(
+  issue: Pick<Issue, 'status' | 'duplicateOf'>,
+  config: WorkflowConfig,
+): void {
+  if (
+    issue.duplicateOf !== undefined &&
+    issue.status !== duplicateStatus(config)
+  ) {
+    delete issue.duplicateOf;
+  }
 }

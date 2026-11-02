@@ -742,6 +742,18 @@ Body
     expect(serializeIssue(issue)).toBe(raw);
   });
 
+  test('duplicateOf round-trips after blockedBy, and is absent unless set (#127)', () => {
+    const raw = BASE.replace('status: todo\n', 'status: duplicate\n').replace(
+      'labels: []\n',
+      'labels: []\nblockedBy:\n  - 1\nduplicateOf: 4\n',
+    );
+    const issue = parseIssue(raw);
+    expect(issue.duplicateOf).toBe(4);
+    expect(serializeIssue(issue)).toBe(raw);
+    expect('duplicateOf' in parseIssue(BASE)).toBe(false);
+    expect(issue.extra).toBeUndefined();
+  });
+
   test('are coerced: scalars, numeric strings, duplicates, junk', () => {
     const raw = BASE.replace(
       'labels: []\n',

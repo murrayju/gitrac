@@ -160,6 +160,8 @@ describe('detail with resolved dependencies (#102)', () => {
       { id: 9, title: '', status: null, resolved: true },
     ],
     blocks: [{ id: 8, title: 'Later', status: 'todo', resolved: false }],
+    duplicateOf: null,
+    duplicates: [],
     blocked: false,
   };
   const mark = {
@@ -220,6 +222,8 @@ describe('dependencies only elsewhere (#120)', () => {
         },
       ],
       blocks: [],
+      duplicateOf: null,
+      duplicates: [],
       blocked: true,
     };
     const out = formatIssueDetail(SAMPLE_ISSUE_2, 'human', deps);

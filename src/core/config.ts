@@ -185,6 +185,7 @@ const WORKFLOW_KEYS = [
   ['reviewStatus', false],
   ['closeStatus', true],
   ['cancelStatus', true],
+  ['duplicateStatus', true],
 ] as const;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -372,7 +373,7 @@ function checkWorkflow(
  * if set, are configured open statuses (and differ); `reviewStatus`, if set,
  * is a configured open status other than the (resolved) active and unclaim
  * statuses; `closeStatus` /
- * `cancelStatus`, if set, are configured closed statuses; `staleAfter`, if
+ * `cancelStatus` / `duplicateStatus`, if set, are configured closed statuses; `staleAfter`, if
  * set, is a duration (`parseDuration`).
  */
 export function configErrors(value: unknown): string[] {
@@ -556,8 +557,8 @@ export function parseConfig(yamlStr: string): Config {
   const errors = configErrors(raw);
   if (errors.length > 0) throw new Error(errors.join('; '));
 
-  // Plain-name entries (the legacy format) become definitions: `done` /
-  // `cancelled` are closed, any other name is open.
+  // Plain-name entries (the legacy format) become definitions: `done`,
+  // `cancelled` and `duplicate` are closed, any other name is open.
   raw.statuses = (raw.statuses as unknown[]).map(toStatusDefinition);
   raw.priorities = (raw.priorities as unknown[]).map(toPriorityDefinition);
   return raw as unknown as Config;
@@ -608,7 +609,8 @@ export function serializeConfig(config: Config): string {
 /**
  * A status as written to `config.yaml`: its plain name when that says
  * everything (no label/color, and `closed` is the default for the name: true
- * only for `done` / `cancelled`), else `{ name, label?, color?, closed }`. So
+ * only for `done` / `cancelled` / `duplicate`), else
+ * `{ name, label?, color?, closed }`. So
  * a plain-list config is written back unchanged (and stays readable by older
  * gitrac versions) until a status needs more than a name.
  */

@@ -27,6 +27,7 @@ export const DEFAULT_STATUSES = [
   'in_progress',
   'done',
   'cancelled',
+  'duplicate',
 ] as const;
 
 /** Built-in priority names (the default config's priorities, most urgent first). */
@@ -49,6 +50,8 @@ export const DEFAULT_UNCLAIM_STATUS: Status = 'todo';
 export const DEFAULT_CLOSE_STATUS: Status = 'done';
 /** Built-in `cancelStatus`: the status `close --cancelled` sets. */
 export const DEFAULT_CANCEL_STATUS: Status = 'cancelled';
+/** Built-in `duplicateStatus`: the status `close --duplicate-of` sets. */
+export const DEFAULT_DUPLICATE_STATUS: Status = 'duplicate';
 
 /**
  * Statuses that are closed when nothing says otherwise: plain-name entries
@@ -56,7 +59,11 @@ export const DEFAULT_CANCEL_STATUS: Status = 'cancelled';
  * get `closed: true` for these names and `false` for any other; a status
  * that isn't configured at all is judged the same way.
  */
-export const LEGACY_CLOSED_STATUSES: readonly Status[] = ['done', 'cancelled'];
+export const LEGACY_CLOSED_STATUSES: readonly Status[] = [
+  'done',
+  'cancelled',
+  'duplicate',
+];
 
 /** Whether `name` is closed by default (see {@link LEGACY_CLOSED_STATUSES}). */
 export function isLegacyClosed(name: Status): boolean {
@@ -99,6 +106,7 @@ export type WorkflowConfig = Pick<
   | 'reviewStatus'
   | 'closeStatus'
   | 'cancelStatus'
+  | 'duplicateStatus'
 >;
 
 /** Configured status names, in workflow order. */
@@ -127,7 +135,7 @@ export function findPriority(
 
 /**
  * Whether `status` is closed: its configured `closed` flag, or — for a
- * status not in the config — whether it is `done` / `cancelled`.
+ * status not in the config — whether it is `done` / `cancelled` / `duplicate`.
  */
 export function isClosedStatus(config: StatusConfig, status: Status): boolean {
   const def = findStatus(config, status);
@@ -227,6 +235,17 @@ export function cancelStatus(config: WorkflowConfig): Status | undefined {
   if (config.cancelStatus !== undefined) return config.cancelStatus;
   return isClosedConfigured(config, DEFAULT_CANCEL_STATUS)
     ? DEFAULT_CANCEL_STATUS
+    : undefined;
+}
+
+/**
+ * The status `close --duplicate-of` sets: `config.duplicateStatus`; unset,
+ * `duplicate` if it is a configured closed status, else none.
+ */
+export function duplicateStatus(config: WorkflowConfig): Status | undefined {
+  if (config.duplicateStatus !== undefined) return config.duplicateStatus;
+  return isClosedConfigured(config, DEFAULT_DUPLICATE_STATUS)
+    ? DEFAULT_DUPLICATE_STATUS
     : undefined;
 }
 

@@ -6,6 +6,7 @@ import {
   cancelStatus,
   closedStatuses,
   closeStatus,
+  duplicateStatus,
   heldStatuses,
   humanize,
   isClosedStatus,
@@ -33,9 +34,9 @@ function withStatuses(names: string[], extra: Partial<Config> = {}): Config {
 describe('built-in workflow', () => {
   const config = createDefaultConfig();
 
-  test('done/cancelled are closed, the rest open', () => {
+  test('done/cancelled/duplicate are closed, the rest open', () => {
     expect(openStatuses(config)).toEqual(['backlog', 'todo', 'in_progress']);
-    expect(closedStatuses(config)).toEqual(['done', 'cancelled']);
+    expect(closedStatuses(config)).toEqual(['done', 'cancelled', 'duplicate']);
     expect(isClosedStatus(config, 'done')).toBe(true);
     expect(isClosedStatus(config, 'todo')).toBe(false);
   });
@@ -45,15 +46,17 @@ describe('built-in workflow', () => {
     expect(unclaimStatus(config)).toBe('todo');
     expect(closeStatus(config)).toBe('done');
     expect(cancelStatus(config)).toBe('cancelled');
+    expect(duplicateStatus(config)).toBe('duplicate');
   });
 
-  test('status sort order is unchanged: in_progress, todo, backlog, done, cancelled', () => {
+  test('status sort order: in_progress, todo, backlog, done, cancelled, duplicate', () => {
     expect(statusSortOrder(config)).toEqual([
       'in_progress',
       'todo',
       'backlog',
       'done',
       'cancelled',
+      'duplicate',
     ]);
   });
 
@@ -154,6 +157,24 @@ describe('fallbacks when the workflow keys are unset', () => {
       'cancelled',
     );
     expect(cancelStatus(withStatuses(['open', 'done']))).toBeUndefined();
+  });
+
+  test('duplicate: duplicate only if it is a configured closed status (#127)', () => {
+    expect(duplicateStatus(withStatuses(['open', 'done', 'duplicate']))).toBe(
+      'duplicate',
+    );
+    expect(duplicateStatus(withStatuses(['open', 'done']))).toBeUndefined();
+    const custom = withStatuses(['open'], {
+      statuses: [
+        { name: 'open', closed: false },
+        { name: 'duplicate', closed: false },
+        { name: 'dupe', closed: true },
+      ],
+    });
+    expect(duplicateStatus(custom)).toBeUndefined();
+    expect(duplicateStatus({ ...custom, duplicateStatus: 'dupe' })).toBe(
+      'dupe',
+    );
   });
 });
 

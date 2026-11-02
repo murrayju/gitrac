@@ -26,6 +26,10 @@ export function registerEditCommand(program: Command): void {
       '--description-file <path>',
       'Read the new description from a file (`-` for stdin)',
     )
+    .option(
+      '--duplicate-of <id>',
+      'Link to the issue this one duplicates (needs the duplicate status, e.g. with -s duplicate)',
+    )
     .option('-c, --comment <text>', 'Add a comment with this edit')
     .option(
       '-f, --force',
@@ -43,6 +47,7 @@ export function registerEditCommand(program: Command): void {
           comment?: string;
           description?: string;
           descriptionFile?: string;
+          duplicateOf?: string;
           force?: boolean;
         },
       ) => {
@@ -57,11 +62,12 @@ export function registerEditCommand(program: Command): void {
           options.labels,
           options.description,
           options.descriptionFile,
+          options.duplicateOf,
           options.comment,
         ];
         if (given.every((value) => value === undefined)) {
           throw invalidInput(
-            'Nothing to edit: give at least one of --title, --status, --priority, --assignee, --labels, --description, --description-file, --comment',
+            'Nothing to edit: give at least one of --title, --status, --priority, --assignee, --labels, --description, --description-file, --duplicate-of, --comment',
           );
         }
 
@@ -82,6 +88,7 @@ export function registerEditCommand(program: Command): void {
             priority: options.priority,
             assignee: options.assignee,
             description: newDescription,
+            duplicateOf: options.duplicateOf,
             labels:
               options.labels !== undefined
                 ? parseLabelList(options.labels)

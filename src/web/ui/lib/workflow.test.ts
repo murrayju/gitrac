@@ -43,6 +43,7 @@ describe('workflowView', () => {
       'in_progress',
       'done',
       'cancelled',
+      'duplicate',
     ]);
     expect(view.statusLabels.in_progress).toBe('In Progress');
     expect(view.priorities).toEqual([

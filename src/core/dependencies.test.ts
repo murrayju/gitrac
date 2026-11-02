@@ -4,6 +4,8 @@ import {
   blocksOf,
   childrenOf,
   describeDependencies,
+  duplicateOfError,
+  duplicatesOf,
   indexIssues,
   openBlockers,
   parseLinkChanges,
@@ -76,6 +78,8 @@ describe('derived relations', () => {
         { id: 2, title: 'Issue 2', status: 'todo', resolved: false },
       ],
       blocks: [{ id: 5, title: 'Issue 5', status: 'todo', resolved: false }],
+      duplicateOf: null,
+      duplicates: [],
       blocked: true,
     });
     const five = describeDependencies(byId.get(5) as Issue, byId, CONFIG);
@@ -159,6 +163,8 @@ describe('links to issues only elsewhere (#120)', () => {
           foundElsewhere: wt,
         },
       ],
+      duplicateOf: null,
+      duplicates: [],
       blocked: true,
     });
   });
@@ -260,5 +266,44 @@ describe('parseLinkChanges / parseUnlinkChanges', () => {
     });
     expect(parseUnlinkChanges({ parent: 3 }).valid).toBe(false);
     expect(parseUnlinkChanges({ parent: false }).valid).toBe(false);
+  });
+});
+
+describe('duplicateOf (#127)', () => {
+  const byId = indexIssues([
+    issue(1),
+    issue(2, { status: 'duplicate', duplicateOf: 1 }),
+    issue(3, { status: 'duplicate', duplicateOf: 2 }),
+    issue(4),
+  ]);
+
+  test('duplicatesOf derives the inverse', () => {
+    expect(duplicatesOf(1, byId.values())).toEqual([2]);
+    expect(duplicatesOf(4, byId.values())).toEqual([]);
+  });
+
+  test('describeDependencies resolves both directions', () => {
+    const two = describeDependencies(byId.get(2) as Issue, byId, CONFIG);
+    expect(two.duplicateOf).toEqual({
+      id: 1,
+      title: 'Issue 1',
+      status: 'todo',
+      resolved: false,
+    });
+    expect(two.duplicates.map((r) => r.id)).toEqual([3]);
+  });
+
+  test('duplicateOfError rejects itself, a missing issue and a cycle', () => {
+    expect(duplicateOfError(4, 1, byId)).toBeNull();
+    expect(duplicateOfError(4, 3, byId)).toBeNull();
+    expect(duplicateOfError(4, 4, byId)).toBe(
+      "Issue #4 can't be a duplicate of itself",
+    );
+    expect(duplicateOfError(4, 9, byId)).toBe(
+      'Issue #9 not found (duplicate-of of #4)',
+    );
+    expect(duplicateOfError(1, 3, byId)).toBe(
+      '#1 duplicate of #3 would create a cycle (#1 → #3 → #2 → #1)',
+    );
   });
 });

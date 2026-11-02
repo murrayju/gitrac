@@ -163,8 +163,8 @@ function formatRef(ref: IssueRef): string {
 
 /**
  * The dependency lines of the detail view: from the resolved `deps` when
- * given (titles, statuses, derived "blocks" / sub-issues), else just the
- * issue's own `parent` / `blockedBy` IDs. Lines without links are omitted.
+ * given (titles, statuses, derived "blocks" / sub-issues / duplicates), else
+ * just the issue's own `parent` / `blockedBy` / `duplicateOf` IDs. Lines without links are omitted.
  */
 function dependencyLines(issue: Issue, deps?: IssueDependencies): string[] {
   const lines: string[] = [];
@@ -176,11 +176,18 @@ function dependencyLines(issue: Issue, deps?: IssueDependencies): string[] {
     add('Sub-issues:', deps.children.map(formatRef));
     add('Blocked by:', deps.blockedBy.map(formatRef));
     add('Blocks:', deps.blocks.map(formatRef));
+    // `Original:` on a duplicate, `Duplicates:` on the issue it duplicates.
+    add('Original:', deps.duplicateOf ? [formatRef(deps.duplicateOf)] : []);
+    add('Duplicates:', deps.duplicates.map(formatRef));
   } else {
     add('Parent:', issue.parent === undefined ? [] : [`#${issue.parent}`]);
     add(
       'Blocked by:',
       (issue.blockedBy ?? []).map((id) => `#${id}`),
+    );
+    add(
+      'Original:',
+      issue.duplicateOf === undefined ? [] : [`#${issue.duplicateOf}`],
     );
   }
   return lines;
@@ -261,7 +268,8 @@ export function formatIssueList(
  * closed on another branch or worktree, or `foundElsewhere` when it is only
  * there. `deps` (resolved links) adds the
  * linked issues to the human output and, in json/yaml, a `dependencies`
- * field (`{ parent, children, blockedBy, blocks, blocked }`).
+ * field (`{ parent, children, blockedBy, blocks, duplicateOf, duplicates,
+ * blocked }`).
  */
 export function formatIssueDetail(
   issue: Issue,

@@ -55,6 +55,13 @@ export interface Issue {
    * blocked; only present in the file when non-empty.
    */
   blockedBy?: number[];
+  /**
+   * The ID of the issue this one duplicates. Set only while the issue is in
+   * the duplicate status (see `duplicateStatus()` in `src/core/workflow.ts`).
+   * The inverse ("duplicates") is derived, never stored. Absent = not a
+   * duplicate; only present in the file when set.
+   */
+  duplicateOf?: number;
   created: string; // ISO 8601
   createdBy: string;
   updated: string; // ISO 8601
@@ -82,6 +89,7 @@ export interface IssueFrontmatter {
   labels: string[]; // empty array if none
   parent?: number;
   blockedBy?: number[];
+  duplicateOf?: number;
   created: string;
   createdBy: string;
   updated: string;
@@ -133,6 +141,8 @@ export interface Config {
   closeStatus?: Status;
   /** The status `close --cancelled` sets; closed. Unset: `cancelled`. */
   cancelStatus?: Status;
+  /** The status `close --duplicate-of` sets; closed. Unset: `duplicate`. */
+  duplicateStatus?: Status;
   /**
    * The web UI's stale-claim threshold: a duration such as `2h` (see
    * `parseDuration` in `src/core/stale.ts`). When set, the web API marks

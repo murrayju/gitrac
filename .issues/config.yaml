@@ -6,6 +6,7 @@ statuses:
   - in_progress
   - done
   - cancelled
+  - duplicate
 labels:
   bug: '#e05d5d'
   feature: '#58a6e0'

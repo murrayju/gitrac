@@ -581,6 +581,37 @@ describe('PATCH /api/issues/:id/close', () => {
     expect(data.status).toBe('done');
   });
 
+  test('closes as a duplicate with { duplicateOf } (#127)', async () => {
+    await writeIssue(dir, makeIssue({ id: 1, title: 'Original' }));
+    await writeIssue(dir, makeIssue({ id: 2, title: 'Copy' }));
+    const json = { 'Content-Type': 'application/json' };
+
+    const bad = await req('/issues/2/close', {
+      method: 'PATCH',
+      headers: json,
+      body: JSON.stringify({ duplicateOf: 2 }),
+    });
+    expect(bad.status).toBe(400);
+    expect(await bad.json()).toMatchObject({
+      errors: ["Issue #2 can't be a duplicate of itself"],
+    });
+
+    const res = await req('/issues/2/close', {
+      method: 'PATCH',
+      headers: json,
+      body: JSON.stringify({ duplicateOf: 1 }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      status: 'duplicate',
+      duplicateOf: 1,
+    });
+    const deps = await (await req('/issues/1/dependencies')).json();
+    expect(deps.duplicates).toEqual([
+      { id: 2, title: 'Copy', status: 'duplicate', resolved: true },
+    ]);
+  });
+
   test('returns 404 for non-existent issue', async () => {
     const res = await req('/issues/999/close', { method: 'PATCH' });
     expect(res.status).toBe(404);

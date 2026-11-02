@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { resolveAssigneeName } from '../../../core/config.ts';
 import type { Issue, Priority, Status } from '../../../core/types.ts';
+import { duplicateStatus } from '../../../core/workflow.ts';
 import {
   type ApiIssue,
   type UpdateIssueInput,
@@ -11,6 +12,7 @@ import {
 import { useConfig, useServerIdentity, useWorkflow } from '../hooks.ts';
 import { type ForceSave, saveField } from '../lib/claim-edit.ts';
 import { effectiveAuthor } from '../lib/identity.ts';
+import { parseSingleIssueId } from '../lib/issue-id-input.ts';
 import {
   addLabel,
   createLabelUpdater,
@@ -23,6 +25,7 @@ import { AssigneePicker } from './AssigneePicker.tsx';
 import { ClaimControls } from './ClaimControls.tsx';
 import { ClaimedElsewhereBadge } from './ClaimedElsewhereBadge.tsx';
 import { ClosedElsewhereBadge } from './ClosedElsewhereBadge.tsx';
+import { AddLinkForm } from './DependenciesPanel.tsx';
 import { Dropdown } from './Dropdown.tsx';
 import { LabelBadge } from './LabelBadge.tsx';
 import { LabelPicker } from './LabelPicker.tsx';
@@ -73,11 +76,15 @@ export function MetadataPanel({
   // holds the issue: "Change anyway" sends it again with force.
   const [forceSave, setForceSave] = useState<ForceSave | null>(null);
   // An error is about the issue it was made on: drop it on another issue
+  // Picking the duplicate status first asks which issue this duplicates.
+  const [askDuplicateOf, setAskDuplicateOf] = useState(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset on issue change
   useEffect(() => {
     setFieldError(null);
     setForceSave(null);
+    setAskDuplicateOf(false);
   }, [issue.id]);
+  const duplicate = config ? duplicateStatus(config) : undefined;
   // Status and assignee changes are made as the "Acting as" user, so the
   // server can tell if they would overwrite someone else's claim.
   const { identity } = useServerIdentity();
@@ -100,7 +107,18 @@ export function MetadataPanel({
   }
 
   function handleStatusChange(status: Status) {
+    if (status === duplicate && status !== issue.status) {
+      setAskDuplicateOf(true);
+      return;
+    }
+    setAskDuplicateOf(false);
     save('status', { status });
+  }
+
+  async function handleDuplicateOf([original]: number[]): Promise<boolean> {
+    setAskDuplicateOf(false);
+    save('status', { status: duplicate, duplicateOf: original });
+    return true;
   }
 
   function handlePriorityChange(priority: Priority) {
@@ -158,6 +176,26 @@ export function MetadataPanel({
         >
           <StatusBadge status={issue.status} onClick={() => {}} />
         </Dropdown>
+        {askDuplicateOf && (
+          <div className="mt-2" data-testid="duplicate-of-prompt">
+            <div className="text-xs text-gray-500">Duplicate of</div>
+            <AddLinkForm
+              placeholder="#12"
+              buttonLabel="Close"
+              ariaLabel="Original issue number"
+              parse={parseSingleIssueId}
+              busy={fieldSaving}
+              onSubmit={handleDuplicateOf}
+            />
+            <button
+              type="button"
+              className="mt-1 text-xs text-gray-500 hover:underline cursor-pointer bg-transparent border-none p-0"
+              onClick={() => setAskDuplicateOf(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
 
       <div>

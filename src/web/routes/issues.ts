@@ -565,7 +565,9 @@ export function issueRoutes(ctx: ServerContext): Hono {
 
   // PATCH /issues/:id/close — close an issue. Optional JSON body
   // `{ status }` (a configured closed status) or `{ cancelled: true }` (the
-  // configured cancel status); default: the configured close status (done).
+  // configured cancel status) or `{ duplicateOf: id }` (the configured
+  // duplicate status, linked to that issue); default: the configured close
+  // status (done).
   // `author` (optional, the "Acting as" choice) is who closes it; `force:
   // true` closes an issue someone else holds (else 409 `already_claimed`).
   app.patch('/issues/:id/close', locked, async (c) => {
@@ -580,11 +582,12 @@ export function issueRoutes(ctx: ServerContext): Hono {
     } catch (err) {
       return errorResponse(c, ctx, err);
     }
-    const { status, cancelled, author } = body;
+    const { status, cancelled, duplicateOf, author } = body;
     return mutateIssue(c, (precondition) =>
       closeIssue(webServiceContext(ctx, { author: author ?? undefined }), id, {
         status: status ?? undefined,
         cancelled: cancelled === true,
+        duplicateOf: duplicateOf ?? undefined,
         force,
         precondition,
       }),

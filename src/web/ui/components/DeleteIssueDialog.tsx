@@ -3,9 +3,13 @@ import type { IssueDeletion } from '../api.ts';
 
 type UnlinkedIssue = IssueDeletion['unlinked'][number];
 
-/** Which links of an unlinked issue go: `blockedBy`, `parent`, or both. */
+/** Which links of an unlinked issue go: blocked by, parent, duplicate of. */
 function removedLinks(u: UnlinkedIssue): string {
-  return [u.blockedBy && 'blocked by', u.parent && 'parent']
+  return [
+    u.blockedBy && 'blocked by',
+    u.parent && 'parent',
+    u.duplicateOf && 'duplicate of',
+  ]
     .filter(Boolean)
     .join(', ');
 }

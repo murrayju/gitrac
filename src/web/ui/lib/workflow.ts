@@ -72,6 +72,7 @@ const BUILTIN_STATUS_CLASSES: Record<string, string> = {
   in_progress: 'bg-amber-900 text-amber-300',
   done: 'bg-green-900 text-green-300',
   cancelled: 'bg-red-900 text-red-300',
+  duplicate: 'bg-purple-900 text-purple-300',
 };
 const DEFAULT_STATUS_CLASS = 'bg-gray-700 text-gray-300';
 
@@ -94,7 +95,8 @@ export function expandHex(color: string): string {
 /**
  * The status badge look: a configured `color` tints the badge (translucent
  * background, colored text); otherwise the built-in colors by name
- * (backlog gray, todo blue, in_progress amber, done green, cancelled red),
+ * (backlog gray, todo blue, in_progress amber, done green, cancelled red,
+ * duplicate purple),
  * gray for anything else.
  */
 export function statusBadgeStyle(

@@ -102,6 +102,8 @@ describe('link / unlink', () => {
         { id: 2, title: 'Second', status: 'todo', resolved: false },
       ],
       blocks: [],
+      duplicateOf: null,
+      duplicates: [],
       blocked: true,
     });
 
@@ -114,6 +116,8 @@ describe('link / unlink', () => {
       children: [{ id: 3, title: 'Third', status: 'todo', resolved: false }],
       blockedBy: [],
       blocks: [{ id: 3, title: 'Third', status: 'todo', resolved: false }],
+      duplicateOf: null,
+      duplicates: [],
       blocked: false,
     });
   });

@@ -5,6 +5,7 @@ import {
   assertCanClose,
   assertCanReopen,
   closingStatus,
+  dropDuplicateLink,
   reopenStatus,
 } from './lifecycle.ts';
 
@@ -147,5 +148,47 @@ describe('closingStatus (#57)', () => {
       codeOf(() => assertCanClose({ id: 1, status: 'shipped' }, true, config)),
     ).toBe('invalid_state');
     expect(reopenStatus(config, 'done')).toBe('done');
+  });
+});
+
+describe('closing as a duplicate (#127)', () => {
+  test('duplicate picks the duplicate status', () => {
+    expect(closingStatus(CONFIG, { duplicate: true })).toBe('duplicate');
+    expect(
+      closingStatus(
+        { ...CONFIG, duplicateStatus: 'cancelled' },
+        {
+          duplicate: true,
+        },
+      ),
+    ).toBe('cancelled');
+  });
+
+  test('is invalid_input with a status or cancelled, or without a duplicate status', () => {
+    expect(
+      codeOf(() => closingStatus(CONFIG, { duplicate: true, cancelled: true })),
+    ).toBe('invalid_input');
+    expect(
+      codeOf(() => closingStatus(CONFIG, { duplicate: true, status: 'done' })),
+    ).toBe('invalid_input');
+    const noDuplicate = {
+      ...CONFIG,
+      statuses: CONFIG.statuses.filter((s) => s.name !== 'duplicate'),
+    };
+    expect(() => closingStatus(noDuplicate, { duplicate: true })).toThrow(
+      'No duplicate status is configured',
+    );
+  });
+
+  test('dropDuplicateLink keeps the link only in the duplicate status', () => {
+    const duplicate = { status: 'duplicate', duplicateOf: 3 };
+    dropDuplicateLink(duplicate, CONFIG);
+    expect(duplicate.duplicateOf).toBe(3);
+    const reopened: { status: string; duplicateOf?: number } = {
+      status: 'todo',
+      duplicateOf: 3,
+    };
+    dropDuplicateLink(reopened, CONFIG);
+    expect('duplicateOf' in reopened).toBe(false);
   });
 });

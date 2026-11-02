@@ -155,8 +155,8 @@ function mergeExtra(
  *   was updated last (`updated`; ties and unparsable dates: ours) — per-field
  *   last-writer-wins.
  * - `labels` and `blockedBy` are merged as sets: items added on either side
- *   are kept, items removed on either side are dropped. `parent` is an
- *   ordinary field.
+ *   are kept, items removed on either side are dropped. `parent` and
+ *   `duplicateOf` are ordinary fields.
  * - `updated` is the later of the two.
  * - Unknown keys (`extra`) merge per key, the same way ({@link mergeExtra}).
  *
@@ -190,6 +190,7 @@ export function mergeIssueFrontmatter(
         ours.blockedBy ?? [],
         theirs.blockedBy ?? [],
       ),
+      duplicateOf: field('duplicateOf'),
     }),
     created: field('created'),
     createdBy: field('createdBy'),

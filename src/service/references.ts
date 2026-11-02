@@ -13,22 +13,31 @@ export interface LinkingIssue {
   blockedBy: boolean;
   /** Its `parent` is the ID. */
   parent: boolean;
+  /** Its `duplicateOf` is the ID. */
+  duplicateOf: boolean;
 }
 
-/** Whether `issue` links to `id` via `blockedBy` / `parent`. */
+/** Whether `issue` links to `id` via `blockedBy` / `parent` / `duplicateOf`. */
 export function linksTo(
   issue: Issue,
   id: number,
-): { blockedBy: boolean; parent: boolean } {
+): { blockedBy: boolean; parent: boolean; duplicateOf: boolean } {
   return {
     blockedBy: blockersOf(issue).includes(id),
     parent: issue.parent === id,
+    duplicateOf: issue.duplicateOf === id,
   };
+}
+
+/** Whether any of the {@link linksTo} links is set. */
+export function hasLink(links: ReturnType<typeof linksTo>): boolean {
+  return links.blockedBy || links.parent || links.duplicateOf;
 }
 
 /**
  * Every other issue (open or closed; any issue whose own ID is `id` is
- * skipped) whose `blockedBy` or `parent` points at `id`, by ascending ID,
+ * skipped) whose `blockedBy`, `parent` or `duplicateOf` points at `id`, by
+ * ascending ID,
  * each loaded fresh with {@link loadStoredIssue} (callers hold the lock) so
  * it can be rewritten. Unreadable files are skipped (they can't be fixed
  * anyway); a duplicate or malformed file for a linking issue throws, before
@@ -43,13 +52,13 @@ export async function linkingIssues(
   for (const other of issues) {
     if (other.id === id) continue;
     const links = linksTo(other, id);
-    if (links.blockedBy || links.parent) ids.add(other.id);
+    if (hasLink(links)) ids.add(other.id);
   }
   const result: LinkingIssue[] = [];
   for (const otherId of [...ids].sort((a, b) => a - b)) {
     const stored = await loadStoredIssue(dir, otherId);
     const links = linksTo(stored.issue, id);
-    if (!links.blockedBy && !links.parent) continue;
+    if (!hasLink(links)) continue;
     result.push({ stored, ...links });
   }
   return result;

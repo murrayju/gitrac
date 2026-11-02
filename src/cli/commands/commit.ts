@@ -59,6 +59,10 @@ export function registerCommitCommand(program: Command): void {
       '-s, --status <status>',
       'Closed status to set (default: config closeStatus, i.e. done)',
     )
+    .option(
+      '--duplicate-of <id>',
+      'Close as a duplicate of issue <id>, with the configured duplicate status (default: duplicate)',
+    )
     .option('-c, --comment <text>', 'Add a comment when closing')
     .option('-f, --force', 'Close even if someone else has claimed the issue')
     .action(
@@ -68,6 +72,7 @@ export function registerCommitCommand(program: Command): void {
         options: {
           cancelled?: boolean;
           status?: string;
+          duplicateOf?: string;
           comment?: string;
           force?: boolean;
         },
@@ -85,6 +90,7 @@ export function registerCommitCommand(program: Command): void {
         await closeWithCommit(cliServiceContext(globalOpts), id, {
           cancelled: options.cancelled,
           status: options.status,
+          duplicateOf: options.duplicateOf,
           comment: options.comment,
           force: options.force,
           gitArgs,

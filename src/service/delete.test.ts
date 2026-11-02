@@ -247,6 +247,7 @@ describe('deleteIssue', () => {
           title: 'Blocked',
           blockedBy: true,
           parent: false,
+          duplicateOf: false,
           paths: [join('.issues', '2-blocked.md')],
         },
         {
@@ -254,6 +255,7 @@ describe('deleteIssue', () => {
           title: 'Child',
           blockedBy: true,
           parent: true,
+          duplicateOf: false,
           paths: [join('.issues', 'closed', '3-child.md')],
         },
       ]);

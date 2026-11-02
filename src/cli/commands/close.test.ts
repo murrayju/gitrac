@@ -189,6 +189,36 @@ describe('close with configured statuses (#57)', () => {
   });
 });
 
+describe('close --duplicate-of (#127)', () => {
+  test('closes as a duplicate; show lists both directions', async () => {
+    expect((await cli('create', '-t', 'Original')).code).toBe(0);
+    const res = await cli('close', '1', '--duplicate-of', '2');
+    expect(res.code).toBe(0);
+    const issue = await readIssue(dir, 1);
+    expect(issue.status).toBe('duplicate');
+    expect(issue.duplicateOf).toBe(2);
+    expect(await listClosedIssueFiles(dir)).toEqual(['1-some-work.md']);
+
+    const copy = await cli('show', '1');
+    expect(copy.stdout).toContain('Original:   #2 Original (backlog)');
+    const original = await cli('show', '2', '-o', 'json');
+    expect(JSON.parse(original.stdout).dependencies.duplicates).toEqual([
+      { id: 1, title: 'Some work', status: 'duplicate', resolved: true },
+    ]);
+    expect((await cli('show', '2')).stdout).toContain(
+      'Duplicates: #1 Some work (duplicate)',
+    );
+  });
+
+  test('a missing original is exit 2, nothing written', async () => {
+    const before = await issueText();
+    const res = await cli('close', '1', '--duplicate-of', '9');
+    expect(res.code).toBe(EXIT_INVALID_INPUT);
+    expect(res.stderr).toContain('Issue #9 not found (duplicate-of of #1)');
+    expect(await issueText()).toBe(before);
+  });
+});
+
 describe('reopen', () => {
   test('uses config.defaultStatus instead of hard-coded backlog', async () => {
     const config = await readConfig(dir);
