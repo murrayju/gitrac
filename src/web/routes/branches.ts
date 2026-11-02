@@ -2,6 +2,7 @@ import { type Context, Hono } from 'hono';
 import { GitracError } from '../../core/errors.ts';
 import { readBranchState } from '../../git/branches.ts';
 import { switchBranch } from '../../service/branches.ts';
+import { migrateProject } from '../../service/migrate.ts';
 import { reloadConfig } from '../live-config.ts';
 import { mutationLock } from '../lock.ts';
 import { asRecord, readJsonBody } from '../request-body.ts';
@@ -47,6 +48,8 @@ export function branchRoutes(ctx: ServerContext): Hono {
         // belong to the branch checked out before.
         ctx.amendTracker.clear();
         ctx.elsewhere?.invalidate();
+        // A branch of an older gitrac: bring its .issues/ up to date.
+        await migrateProject(webServiceContext(ctx));
         await reloadConfig(ctx);
       }
       return c.json(result);

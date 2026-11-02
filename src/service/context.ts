@@ -27,7 +27,8 @@ export type Operation =
   | 'unlink'
   | 'label-colors'
   | 'assignees'
-  | 'merge-driver';
+  | 'merge-driver'
+  | 'migrate';
 
 /** What a mutation wrote, passed to {@link ServiceContext.onWritten}. */
 export interface WrittenChange {

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Hono } from 'hono';
 import { createDefaultConfig } from '../../core/config.ts';
+import { issueLinks } from '../../core/links.fixture.ts';
 import type { Issue } from '../../core/types.ts';
 import {
   initIssuesDir,
@@ -103,42 +104,43 @@ async function stored(id: number): Promise<Issue> {
 
 describe('linkIssue / unlinkIssue', () => {
   test('add and remove blockers', async () => {
-    const linked = await linkIssue(3, { blockedBy: [1, 2] });
-    expect(linked.blockedBy).toEqual([1, 2]);
+    const links = issueLinks({ blockedBy: [1, 2] });
+    const linked = await linkIssue(3, links);
+    expect(linked.links).toEqual(links);
     expect(requests.at(-1)).toEqual({
       url: '/api/issues/3/link',
       method: 'POST',
-      body: { blockedBy: [1, 2] },
+      body: { links },
     });
-    expect((await stored(3)).blockedBy).toEqual([1, 2]);
+    expect((await stored(3)).links).toEqual(links);
 
-    const unlinked = await unlinkIssue(3, { blockedBy: [1] });
-    expect(unlinked.blockedBy).toEqual([2]);
+    const unlinked = await unlinkIssue(3, issueLinks({ blockedBy: 1 }));
+    expect(unlinked.links).toEqual(issueLinks({ blockedBy: 2 }));
     expect(requests.at(-1)?.url).toBe('/api/issues/3/unlink');
-    expect((await stored(3)).blockedBy).toEqual([2]);
+    expect((await stored(3)).links).toEqual(issueLinks({ blockedBy: 2 }));
   });
 
-  test('set and clear the parent', async () => {
-    expect((await linkIssue(3, { parent: 1 })).parent).toBe(1);
-    expect((await stored(3)).parent).toBe(1);
-    const cleared = await unlinkIssue(3, { parent: true });
-    expect(cleared.parent).toBeUndefined();
-    expect((await stored(3)).parent).toBeUndefined();
+  test('add and remove a URL', async () => {
+    const pr = { type: 'github-pr', repo: 'o/r', number: 4 } as const;
+    expect((await linkIssue(3, [pr])).links).toEqual([pr]);
+    expect((await unlinkIssue(3, [pr])).links).toBeUndefined();
   });
 
   test('a cycle is a 400 with the server message', async () => {
-    await linkIssue(2, { blockedBy: [3] });
-    const err = await linkIssue(3, { blockedBy: [2] }).catch((e) => e);
+    await linkIssue(2, issueLinks({ blockedBy: 3 }));
+    const err = await linkIssue(3, issueLinks({ blockedBy: 2 })).catch(
+      (e) => e,
+    );
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).status).toBe(400);
     expect(requestErrorReason(err)).toBe(
-      '#3 blocked by #2 would create a dependency cycle (#3 → #2 → #3)',
+      '#3 blocked by #2 would create a cycle (#2 blocks #3 blocks #2)',
     );
-    expect((await stored(3)).blockedBy).toBeUndefined();
+    expect((await stored(3)).links).toBeUndefined();
   });
 
   test('a missing target is a 400 with the server message', async () => {
-    const err = await linkIssue(3, { parent: 99 }).catch((e) => e);
+    const err = await linkIssue(3, issueLinks({ parent: 99 })).catch((e) => e);
     expect(requestErrorReason(err)).toBe('Issue #99 not found (parent of #3)');
   });
 });

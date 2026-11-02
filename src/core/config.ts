@@ -143,6 +143,40 @@ export function chooseDefaultBranch(hints: BranchHints): string {
 }
 
 /**
+ * The `.issues/` format version this gitrac writes (`config.yaml`
+ * `version`). Version 2: issue links are a `links` list (they were the
+ * `parent` / `blockedBy` / `duplicateOf` fields in version 1). An older
+ * project is migrated (see `migrateProject` in `src/service/migrate.ts`).
+ */
+export const CONFIG_VERSION = 2;
+
+/**
+ * The `version` of a raw `config.yaml`, or undefined if it can't be read
+ * (no YAML object, no numeric version). It does not validate the rest, so
+ * it works for a config of a newer gitrac too.
+ */
+export function rawConfigVersion(yamlStr: string): number | undefined {
+  try {
+    const raw = yaml.load(yamlStr, { schema: yaml.CORE_SCHEMA });
+    const version = isPlainObject(raw) ? raw.version : undefined;
+    return typeof version === 'number' ? version : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * A warning if a config `version` is newer than this gitrac knows
+ * ({@link CONFIG_VERSION}), else null.
+ */
+export function configVersionWarning(
+  version: number | undefined,
+): string | null {
+  if (version === undefined || version <= CONFIG_VERSION) return null;
+  return `.issues/config.yaml is version ${version}, but this gitrac only knows version ${CONFIG_VERSION}. Update gitrac: this version can misread the issues or lose data when it writes them.`;
+}
+
+/**
  * Create a default Config with sensible defaults (`defaultBranch` overrides
  * `git.defaultBranch`, which is otherwise `main`).
  */
@@ -151,7 +185,7 @@ export function createDefaultConfig(
 ): Config {
   const defaultLabelNames = ['bug', 'feature', 'enhancement', 'docs', 'chore'];
   return {
-    version: 1,
+    version: CONFIG_VERSION,
     statuses: defaultStatusDefinitions(),
     labels: ensureLabelColors(defaultLabelNames, {}),
     assignees: [],

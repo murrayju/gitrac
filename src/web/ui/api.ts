@@ -1,5 +1,6 @@
 import type { IssueDependencies } from '../../core/dependencies.ts';
 import type { ElsewhereMarks } from '../../core/elsewhere.ts';
+import type { IssueRelationship, Link } from '../../core/links.ts';
 import type { StaleClaim } from '../../core/stale.ts';
 import type {
   Assignee,
@@ -98,11 +99,6 @@ export interface UpdateIssueInput {
   author?: string;
   /** Change the status or assignee even if someone else holds the issue. */
   force?: boolean;
-  /**
-   * The issue this one duplicates. Needs the duplicate status (in this
-   * update, or already).
-   */
-  duplicateOf?: number;
 }
 
 /** Non-2xx API response. */
@@ -211,48 +207,35 @@ export async function fetchIssueVersioned(
   return requestVersioned<ApiIssue>(`/api/issues/${id}`);
 }
 
-/** An issue's parent, sub-issues, blockers and the issues it blocks. */
+/**
+ * An issue's relations (parent, sub-issues, blockers, blocked, duplicates,
+ * related), including the links that other issues store.
+ */
 export async function fetchIssueDependencies(
   id: number,
 ): Promise<IssueDependencies> {
   return request<IssueDependencies>(`/api/issues/${id}/dependencies`);
 }
 
-/** Links to add with {@link linkIssue}. */
-export interface LinkInput {
-  /** Add these issues to `blockedBy`. */
-  blockedBy?: number[];
-  /** Set (replace) the parent. */
-  parent?: number;
-}
-
-/** Links to remove with {@link unlinkIssue}. */
-export interface UnlinkInput {
-  /** Remove these issues from `blockedBy`. */
-  blockedBy?: number[];
-  /** Clear the parent. */
-  parent?: true;
-}
-
 /**
- * Add blockers to issue `id` or set its parent. Rejects with an `ApiError`
- * (400) if a target is missing, is the issue itself, or would make a cycle.
+ * Add links to issue `id`. Rejects with an `ApiError` (400) if an issue link
+ * points at a missing issue or the issue itself, or would make a cycle.
  */
-export async function linkIssue(id: number, input: LinkInput): Promise<Issue> {
+export async function linkIssue(id: number, links: Link[]): Promise<Issue> {
   return request<Issue>(`/api/issues/${id}/link`, {
     method: 'POST',
-    body: JSON.stringify(input),
+    body: JSON.stringify({ links }),
   });
 }
 
-/** Remove blockers from issue `id` or clear its parent. */
-export async function unlinkIssue(
-  id: number,
-  input: UnlinkInput,
-): Promise<Issue> {
+/**
+ * Remove links from issue `id`. A link to another issue is removed whichever
+ * issue stores it.
+ */
+export async function unlinkIssue(id: number, links: Link[]): Promise<Issue> {
   return request<Issue>(`/api/issues/${id}/unlink`, {
     method: 'POST',
-    body: JSON.stringify(input),
+    body: JSON.stringify({ links }),
   });
 }
 
@@ -378,13 +361,11 @@ export interface IssueDeletion {
   /** Repo-relative paths removed: the issue file, then orphaned assets. */
   paths: string[];
   assets: string[];
-  /** Other issues whose `blockedBy` / `parent` links to it were removed. */
+  /** Other issues whose links to it were removed. */
   unlinked: {
     id: number;
     title: string;
-    blockedBy: boolean;
-    parent: boolean;
-    duplicateOf: boolean;
+    relationships: IssueRelationship[];
     paths: string[];
   }[];
 }
@@ -446,9 +427,7 @@ export interface DuplicateIssueId {
 export interface RenumberReference {
   id: number;
   title: string;
-  blockedBy: boolean;
-  parent: boolean;
-  duplicateOf: boolean;
+  relationships: IssueRelationship[];
   mentions: boolean;
 }
 

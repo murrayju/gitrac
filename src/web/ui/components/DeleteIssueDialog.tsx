@@ -1,17 +1,12 @@
 import { useEffect, useRef } from 'react';
+import { relationshipPhrase } from '../../../core/links.ts';
 import type { IssueDeletion } from '../api.ts';
 
 type UnlinkedIssue = IssueDeletion['unlinked'][number];
 
-/** Which links of an unlinked issue go: blocked by, parent, duplicate of. */
+/** Which links of an unlinked issue go (`blocked by, with parent`). */
 function removedLinks(u: UnlinkedIssue): string {
-  return [
-    u.blockedBy && 'blocked by',
-    u.parent && 'parent',
-    u.duplicateOf && 'duplicate of',
-  ]
-    .filter(Boolean)
-    .join(', ');
+  return u.relationships.map(relationshipPhrase).join(', ');
 }
 
 /**

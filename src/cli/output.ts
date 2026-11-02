@@ -1,5 +1,9 @@
 import yaml from 'js-yaml';
-import type { IssueDependencies, IssueRef } from '../core/dependencies.ts';
+import {
+  type IssueDependencies,
+  type IssueRef,
+  refsByRelationship,
+} from '../core/dependencies.ts';
 import {
   type ClaimedElsewhere,
   type ClosedElsewhere,
@@ -7,6 +11,13 @@ import {
   type ElsewhereMarks,
   type FoundElsewhere,
 } from '../core/elsewhere.ts';
+import {
+  type IssueRelationship,
+  isIssueLink,
+  issueLinksOf,
+  linkLabel,
+  linkUrl,
+} from '../core/links.ts';
 import type { StaleClaim } from '../core/stale.ts';
 import type { Comment, Issue, OutputFormat } from '../core/types.ts';
 
@@ -161,35 +172,47 @@ function formatRef(ref: IssueRef): string {
   return `#${ref.id} ${ref.title} (${ref.status}${where})`;
 }
 
+/** Detail-view labels of the relations, in display order. */
+const RELATION_LABELS: [IssueRelationship, string][] = [
+  ['parent', 'Parent:'],
+  ['child', 'Sub-issues:'],
+  ['blockedBy', 'Blocked by:'],
+  ['blocks', 'Blocks:'],
+  // `Original:` on a duplicate, `Duplicates:` on the issue it duplicates.
+  ['duplicateOf', 'Original:'],
+  ['duplicatedBy', 'Duplicates:'],
+  ['related', 'Related:'],
+];
+
 /**
- * The dependency lines of the detail view: from the resolved `deps` when
- * given (titles, statuses, derived "blocks" / sub-issues / duplicates), else
- * just the issue's own `parent` / `blockedBy` / `duplicateOf` IDs. Lines without links are omitted.
+ * The link lines of the detail view: the relations from the resolved `deps`
+ * when given (titles, statuses, and the links other issues store), else the
+ * issue's own issue links by ID; then its other links (URLs, pull
+ * requests). Lines without links are omitted.
  */
 function dependencyLines(issue: Issue, deps?: IssueDependencies): string[] {
   const lines: string[] = [];
   const add = (label: string, refs: string[]) => {
     if (refs.length > 0) lines.push(`${label.padEnd(12)}${refs.join(', ')}`);
   };
-  if (deps) {
-    add('Parent:', deps.parent ? [formatRef(deps.parent)] : []);
-    add('Sub-issues:', deps.children.map(formatRef));
-    add('Blocked by:', deps.blockedBy.map(formatRef));
-    add('Blocks:', deps.blocks.map(formatRef));
-    // `Original:` on a duplicate, `Duplicates:` on the issue it duplicates.
-    add('Original:', deps.duplicateOf ? [formatRef(deps.duplicateOf)] : []);
-    add('Duplicates:', deps.duplicates.map(formatRef));
-  } else {
-    add('Parent:', issue.parent === undefined ? [] : [`#${issue.parent}`]);
+  const own = issueLinksOf(issue.links);
+  const refs = deps ? refsByRelationship(deps) : undefined;
+  for (const [relationship, label] of RELATION_LABELS) {
     add(
-      'Blocked by:',
-      (issue.blockedBy ?? []).map((id) => `#${id}`),
-    );
-    add(
-      'Original:',
-      issue.duplicateOf === undefined ? [] : [`#${issue.duplicateOf}`],
+      label,
+      refs
+        ? refs[relationship].map(formatRef)
+        : own
+            .filter((link) => link.relationship === relationship)
+            .map((link) => `#${link.id}`),
     );
   }
+  add(
+    'Links:',
+    (issue.links ?? [])
+      .filter((link) => !isIssueLink(link))
+      .map((link) => linkUrl(link) ?? linkLabel(link)),
+  );
   return lines;
 }
 
@@ -263,13 +286,13 @@ export function formatIssueList(
 
 /**
  * Format a single issue detail in the specified output format. json/yaml are
- * the issue itself (`parent` / `blockedBy` included when set), plus
+ * the issue itself (`links` included when set), plus
  * `claimedElsewhere` or `closedElsewhere` when `mark` says it is claimed or
  * closed on another branch or worktree, or `foundElsewhere` when it is only
  * there. `deps` (resolved links) adds the
  * linked issues to the human output and, in json/yaml, a `dependencies`
  * field (`{ parent, children, blockedBy, blocks, duplicateOf, duplicates,
- * blocked }`).
+ * related, blocked }`).
  */
 export function formatIssueDetail(
   issue: Issue,

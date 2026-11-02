@@ -5,7 +5,6 @@ import {
   assertCanClose,
   assertCanReopen,
   closingStatus,
-  dropDuplicateLink,
   reopenStatus,
 } from './lifecycle.ts';
 
@@ -178,17 +177,5 @@ describe('closing as a duplicate (#127)', () => {
     expect(() => closingStatus(noDuplicate, { duplicate: true })).toThrow(
       'No duplicate status is configured',
     );
-  });
-
-  test('dropDuplicateLink keeps the link only in the duplicate status', () => {
-    const duplicate = { status: 'duplicate', duplicateOf: 3 };
-    dropDuplicateLink(duplicate, CONFIG);
-    expect(duplicate.duplicateOf).toBe(3);
-    const reopened: { status: string; duplicateOf?: number } = {
-      status: 'todo',
-      duplicateOf: 3,
-    };
-    dropDuplicateLink(reopened, CONFIG);
-    expect('duplicateOf' in reopened).toBe(false);
   });
 });

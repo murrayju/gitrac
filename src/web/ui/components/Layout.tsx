@@ -11,6 +11,7 @@ import type { Draft } from '../api.ts';
 import { useDrafts, useGitStatus } from '../hooks.ts';
 import { BranchSwitcher } from './BranchSwitcher.tsx';
 import { BranchWarning } from './BranchWarning.tsx';
+import { ConfigVersionBanner } from './ConfigVersionBanner.tsx';
 import type { CreateIssueModalProps } from './CreateIssueModal.tsx';
 import { CreateIssueModal } from './CreateIssueModal.tsx';
 import { DuplicateIdsBanner } from './DuplicateIds.tsx';
@@ -213,6 +214,7 @@ export function Layout({ children }: { children: ReactNode }) {
             />
           )}
           <SyncBanner />
+          <ConfigVersionBanner />
           <DuplicateIdsBanner />
           <div className="flex-1 overflow-auto">{children}</div>
         </main>

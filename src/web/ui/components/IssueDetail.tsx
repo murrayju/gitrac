@@ -268,7 +268,7 @@ export function IssueDetail() {
             version={version}
             onSaved={handleIssueSaved}
           />
-          <DependenciesPanel issueId={issue.id} />
+          <DependenciesPanel issueId={issue.id} links={issue.links ?? []} />
           <div className="mt-8 pt-4 border-t border-gray-200 dark:border-gray-800">
             <button
               type="button"

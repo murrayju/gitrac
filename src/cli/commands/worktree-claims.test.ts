@@ -502,7 +502,10 @@ describe('dependencies only elsewhere (#120)', () => {
     );
     await ok(wt1, 'Bob', 'link', '3', '--parent', '1', '--no-commit');
     // #2 here is blocked by it (e.g. a hand edit, or a partial merge).
-    await writeIssue(main, { ...(await readIssue(main, 2)), blockedBy: [3] });
+    await writeIssue(main, {
+      ...(await readIssue(main, 2)),
+      links: [{ type: 'issue', relationship: 'blockedBy', id: 3 }],
+    });
     const inWt1 = `only in worktree ${wt1} (branch agent-1)`;
     const found = { ref: 'agent-1', worktree: wt1 };
 

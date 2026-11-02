@@ -1,6 +1,7 @@
 import { type ClaimUser, isAssignedTo } from './claim.ts';
 import { openBlockers } from './dependencies.ts';
 import { effectiveState, type IssueStateElsewhere } from './elsewhere.ts';
+import { LinkGraph } from './links.ts';
 import {
   filterIssues,
   type IssueQuery,
@@ -58,19 +59,24 @@ export function isAvailableTo(
   return !assignee.trim() || isAssignedTo(assignee, user);
 }
 
-/** Whether `issue` is ready for `user` (available and unblocked). */
-export function isReady(
+/**
+ * Whether `issue` is ready for `user` (available and unblocked). `graph`:
+ * the relations between the issues in `byId`.
+ */
+function isReady(
   issue: Issue,
   user: ClaimUser,
+  graph: LinkGraph,
   byId: ReadonlyMap<number, Issue>,
   config: StatusConfig,
-  elsewhere: StatesElsewhere = new Map(),
-  options: ReadyOptions = {},
+  elsewhere: StatesElsewhere,
+  options: ReadyOptions,
 ): boolean {
   return (
     (options.stale?.has(issue.id) ||
       isAvailableTo(issue, user, config, elsewhere.get(issue.id))) &&
-    openBlockers(issue, byId, config, options.onlyElsewhere).length === 0
+    openBlockers(issue.id, graph, byId, config, options.onlyElsewhere)
+      .length === 0
   );
 }
 
@@ -93,8 +99,9 @@ export interface ReadyOptions {
 /**
  * The issues ready for `user`, filtered by `query` (status, priority, label,
  * mine, search; without a status filter: every open status) and sorted by
- * `query.sort` (ties by ID). `issues` must include the closed issues, so
- * blockers can be looked up; `byId` indexes them. `elsewhere`: the issues'
+ * `query.sort` (ties by ID). `byId` indexes every issue, open and closed:
+ * their links give the blockers (see `LinkGraph`), whichever issue stores
+ * the link. `elsewhere`: the issues'
  * versions on other branches and worktrees. `options.stale`: issues whose
  * claim is stale, which are ready too (if not blocked).
  */
@@ -107,8 +114,9 @@ export function readyIssues(
   elsewhere: StatesElsewhere = new Map(),
   options: ReadyOptions = {},
 ): Issue[] {
+  const graph = new LinkGraph(byId.values());
   const candidates = filterIssues(issues, query, config).filter((issue) =>
-    isReady(issue, user, byId, config, elsewhere, options),
+    isReady(issue, user, graph, byId, config, elsewhere, options),
   );
   return sortIssues(candidates, query.sort, config);
 }

@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import yaml from 'js-yaml';
 import simpleGit from 'simple-git';
+import { issueLinks } from '../../core/links.fixture.ts';
 import type { Issue } from '../../core/types.ts';
 import { readIssue } from '../../fs/issue-store.ts';
 
@@ -67,12 +68,11 @@ afterEach(async () => {
 });
 
 describe('link / unlink', () => {
-  test('link writes blockedBy/parent and show lists both directions', async () => {
+  test('link writes links and show lists both directions', async () => {
     await ok('link', '3', '--blocked-by', '1,2', '--parent', '1');
-    expect(await readIssue(dir, 3)).toMatchObject({
-      blockedBy: [1, 2],
-      parent: 1,
-    });
+    expect((await readIssue(dir, 3)).links).toEqual(
+      issueLinks({ blockedBy: [1, 2], parent: 1 }),
+    );
     const log = await simpleGit(dir).log();
     expect(log.latest?.message).toBe('issue: link #3 Third');
 
@@ -84,8 +84,40 @@ describe('link / unlink', () => {
     expect(first).toContain('Blocks:     #3 Third (todo)');
 
     await ok('unlink', '3', '-b', '1', '--parent');
-    expect(await readIssue(dir, 3)).toMatchObject({ blockedBy: [2] });
-    expect((await readIssue(dir, 3)).parent).toBeUndefined();
+    expect((await readIssue(dir, 3)).links).toEqual(
+      issueLinks({ blockedBy: 2 }),
+    );
+  });
+
+  test('links of every kind, from either side, and URLs (#127)', async () => {
+    await ok('link', '1', '--blocks', '3', '--child', '2', '--related', '3');
+    await ok(
+      'link',
+      '2',
+      '--url',
+      'https://github.com/o/r/pull/7',
+      '--url',
+      'https://x.dev/spec',
+    );
+    const third = await ok('show', '3');
+    expect(third).toContain('Blocked by: #1 First (todo)');
+    expect(third).toContain('Related:    #1 First (todo)');
+    const second = await ok('show', '2');
+    expect(second).toContain('Parent:     #1 First (todo)');
+    expect(second).toContain(
+      'Links:      https://github.com/o/r/pull/7, https://x.dev/spec',
+    );
+    expect((await readIssue(dir, 2)).links).toEqual([
+      { type: 'github-pr', repo: 'o/r', number: 7 },
+      { type: 'url', url: 'https://x.dev/spec' },
+    ]);
+    // Removed from #1's file, where it is stored.
+    await ok('unlink', '3', '--blocked-by', '1', '--related', '1');
+    await ok('unlink', '2', '--parent', '--url', 'https://x.dev/spec');
+    expect((await readIssue(dir, 1)).links).toBeUndefined();
+    expect((await readIssue(dir, 2)).links).toEqual([
+      { type: 'github-pr', repo: 'o/r', number: 7 },
+    ]);
   });
 
   test('show -o json / yaml include resolved dependencies (#102)', async () => {
@@ -93,7 +125,7 @@ describe('link / unlink', () => {
     await ok('close', '1');
     const closed = (await readIssue(dir, 1)).status;
     const third = JSON.parse(await ok('show', '3', '-o', 'json'));
-    expect(third).toMatchObject({ parent: 1, blockedBy: [1, 2] });
+    expect(third.links).toEqual(issueLinks({ blockedBy: [1, 2], parent: 1 }));
     expect(third.dependencies).toEqual({
       parent: { id: 1, title: 'First', status: closed, resolved: true },
       children: [],
@@ -104,6 +136,7 @@ describe('link / unlink', () => {
       blocks: [],
       duplicateOf: null,
       duplicates: [],
+      related: [],
       blocked: true,
     });
 
@@ -118,6 +151,7 @@ describe('link / unlink', () => {
       blocks: [{ id: 3, title: 'Third', status: 'todo', resolved: false }],
       duplicateOf: null,
       duplicates: [],
+      related: [],
       blocked: false,
     });
   });
@@ -134,7 +168,7 @@ describe('link / unlink', () => {
       expect({ args, code: result.code }).toEqual({ args, code: 2 });
       expect(result.stderr).toContain('"code":"invalid_input"');
     }
-    expect((await readIssue(dir, 1)).blockedBy).toBeUndefined();
+    expect((await readIssue(dir, 1)).links).toBeUndefined();
   });
 });
 

@@ -1,3 +1,5 @@
+import type { Link } from './links.ts';
+
 /**
  * A status name. Statuses are configured in `config.yaml` (`statuses`); the
  * built-in defaults are in `src/core/workflow.ts` (`DEFAULT_STATUSES`).
@@ -45,23 +47,12 @@ export interface Issue {
   assignee: string; // empty string if unassigned
   labels: string[]; // empty array if none
   /**
-   * The parent issue's ID (sub-issue of). Absent = no parent; only present
-   * in the file when set.
+   * Links to other issues, URLs, pull requests... (see `src/core/links.ts`),
+   * without duplicates, in file order. An issue stores only its own side of
+   * a link to another issue; the other side is derived. Absent when there
+   * are none; only present in the file when non-empty.
    */
-  parent?: number;
-  /**
-   * IDs of the issues this one is blocked by (ascending, no duplicates). The
-   * inverse ("blocks") is derived, never stored. Absent or empty = not
-   * blocked; only present in the file when non-empty.
-   */
-  blockedBy?: number[];
-  /**
-   * The ID of the issue this one duplicates. Set only while the issue is in
-   * the duplicate status (see `duplicateStatus()` in `src/core/workflow.ts`).
-   * The inverse ("duplicates") is derived, never stored. Absent = not a
-   * duplicate; only present in the file when set.
-   */
-  duplicateOf?: number;
+  links?: Link[];
   created: string; // ISO 8601
   createdBy: string;
   updated: string; // ISO 8601
@@ -87,9 +78,7 @@ export interface IssueFrontmatter {
   priority: Priority;
   assignee: string; // empty string if unassigned
   labels: string[]; // empty array if none
-  parent?: number;
-  blockedBy?: number[];
-  duplicateOf?: number;
+  links?: Link[];
   created: string;
   createdBy: string;
   updated: string;

@@ -5,12 +5,13 @@ import {
   validateConfig,
 } from '../core/config.ts';
 import {
-  dependencyFields,
+  linkFields,
   parseIssue,
   pickExtraFields,
   serializeIssue,
   storedDescription,
 } from '../core/issue.ts';
+import { type Link, linkKey } from '../core/links.ts';
 import type {
   Assignee,
   Comment,
@@ -87,7 +88,7 @@ function compareTimestamps(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-/** Three-way merge of a set (labels, blockedBy): additions and removals from both sides. */
+/** Three-way merge of a set (labels, link keys): additions and removals from both sides. */
 function mergeSet<T extends string | number>(
   base: T[] | null,
   ours: T[],
@@ -106,6 +107,29 @@ function mergeSet<T extends string | number>(
     result.push(item);
   }
   return result;
+}
+
+/**
+ * Three-way merge of `links`, as a set keyed by {@link linkKey}: links added
+ * on either side are kept, links removed on either side are dropped. Ours'
+ * order first, then the links only theirs has.
+ */
+function mergeLinks(
+  base: readonly Link[] | null,
+  ours: readonly Link[],
+  theirs: readonly Link[],
+): Link[] {
+  const byKey = new Map<string, Link>();
+  for (const link of [...ours, ...theirs]) {
+    const key = linkKey(link);
+    if (!byKey.has(key)) byKey.set(key, link);
+  }
+  const keys = mergeSet(
+    base ? base.map(linkKey) : null,
+    ours.map(linkKey),
+    theirs.map(linkKey),
+  );
+  return keys.map((key) => byKey.get(key) as Link);
 }
 
 /**
@@ -154,9 +178,8 @@ function mergeExtra(
  * - A field both sides changed differently takes the value of the side that
  *   was updated last (`updated`; ties and unparsable dates: ours) — per-field
  *   last-writer-wins.
- * - `labels` and `blockedBy` are merged as sets: items added on either side
- *   are kept, items removed on either side are dropped. `parent` and
- *   `duplicateOf` are ordinary fields.
+ * - `labels` and `links` are merged as sets: items added on either side are
+ *   kept, items removed on either side are dropped (links by `linkKey`).
  * - `updated` is the later of the two.
  * - Unknown keys (`extra`) merge per key, the same way ({@link mergeExtra}).
  *
@@ -183,14 +206,12 @@ export function mergeIssueFrontmatter(
     assignee: field('assignee'),
     labels: mergeSet(base?.labels ?? null, ours.labels, theirs.labels),
     // Only present when set, like in parsed issues (so it round-trips).
-    ...dependencyFields({
-      parent: field('parent'),
-      blockedBy: mergeSet(
-        base ? (base.blockedBy ?? []) : null,
-        ours.blockedBy ?? [],
-        theirs.blockedBy ?? [],
+    ...linkFields({
+      links: mergeLinks(
+        base ? (base.links ?? []) : null,
+        ours.links ?? [],
+        theirs.links ?? [],
       ),
-      duplicateOf: field('duplicateOf'),
     }),
     created: field('created'),
     createdBy: field('createdBy'),
@@ -287,7 +308,7 @@ function frontmatterOf(issue: Issue): IssueFrontmatter {
     priority: issue.priority,
     assignee: issue.assignee,
     labels: issue.labels,
-    ...dependencyFields(issue),
+    ...linkFields(issue),
     created: issue.created,
     createdBy: issue.createdBy,
     updated: issue.updated,

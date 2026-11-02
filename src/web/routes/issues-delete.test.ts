@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Hono } from 'hono';
 import simpleGit from 'simple-git';
+import { issueLinks } from '../../core/links.fixture.ts';
 import type { Issue } from '../../core/types.ts';
 import {
   findIssueFile,
@@ -161,8 +162,8 @@ describe('DELETE /api/issues/:id', () => {
     const blocked = await create({ title: 'Blocked' });
     const child = await create({ title: 'Child' });
     for (const [id, body] of [
-      [blocked.id, { blockedBy: gone.id }],
-      [child.id, { parent: gone.id }],
+      [blocked.id, { links: issueLinks({ blockedBy: gone.id }) }],
+      [child.id, { links: issueLinks({ parent: gone.id }) }],
     ] as const) {
       expect((await send('POST', `/issues/${id}/link`, body)).status).toBe(200);
     }
@@ -175,22 +176,18 @@ describe('DELETE /api/issues/:id', () => {
       {
         id: blocked.id,
         title: 'Blocked',
-        blockedBy: true,
-        parent: false,
-        duplicateOf: false,
+        relationships: ['blockedBy'],
         paths: [join('.issues', `${blocked.id}-blocked.md`)],
       },
       {
         id: child.id,
         title: 'Child',
-        blockedBy: false,
-        parent: true,
-        duplicateOf: false,
+        relationships: ['parent'],
         paths: [join('.issues', `${child.id}-child.md`)],
       },
     ]);
-    expect((await readIssue(dir, blocked.id)).blockedBy).toBeUndefined();
-    expect((await readIssue(dir, child.id)).parent).toBeUndefined();
+    expect((await readIssue(dir, blocked.id)).links).toBeUndefined();
+    expect((await readIssue(dir, child.id)).links).toBeUndefined();
     expect((await subjects())[0]).toBe(`issue: delete #${gone.id} Gone`);
     expect((await simpleGit(dir).status()).isClean()).toBe(true);
   });
@@ -208,8 +205,8 @@ describe('DELETE /api/issues/:id?dryRun=1', () => {
     const blocked = await create({ title: 'Blocked' });
     const child = await create({ title: 'Child' });
     for (const [id, body] of [
-      [blocked.id, { blockedBy: gone.id }],
-      [child.id, { parent: gone.id }],
+      [blocked.id, { links: issueLinks({ blockedBy: gone.id }) }],
+      [child.id, { links: issueLinks({ parent: gone.id }) }],
     ] as const) {
       expect((await send('POST', `/issues/${id}/link`, body)).status).toBe(200);
     }
@@ -234,17 +231,13 @@ describe('DELETE /api/issues/:id?dryRun=1', () => {
         {
           id: blocked.id,
           title: 'Blocked',
-          blockedBy: true,
-          parent: false,
-          duplicateOf: false,
+          relationships: ['blockedBy'],
           paths: [join('.issues', `${blocked.id}-blocked.md`)],
         },
         {
           id: child.id,
           title: 'Child',
-          blockedBy: false,
-          parent: true,
-          duplicateOf: false,
+          relationships: ['parent'],
           paths: [join('.issues', `${child.id}-child.md`)],
         },
       ],
@@ -253,8 +246,12 @@ describe('DELETE /api/issues/:id?dryRun=1', () => {
     expect(await tracked()).toEqual(filesBefore);
     expect((await simpleGit(dir).status()).isClean()).toBe(true);
     expect(await findIssueFile(dir, gone.id)).not.toBeNull();
-    expect((await readIssue(dir, blocked.id)).blockedBy).toEqual([gone.id]);
-    expect((await readIssue(dir, child.id)).parent).toBe(gone.id);
+    expect((await readIssue(dir, blocked.id)).links).toEqual(
+      issueLinks({ blockedBy: gone.id }),
+    );
+    expect((await readIssue(dir, child.id)).links).toEqual(
+      issueLinks({ parent: gone.id }),
+    );
   });
 
   test('accepts dryRun=true; dryRun=0 really deletes', async () => {

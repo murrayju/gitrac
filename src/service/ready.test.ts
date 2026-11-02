@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createDefaultConfig } from '../core/config.ts';
 import type { GitracError } from '../core/errors.ts';
+import { issueLinks } from '../core/links.fixture.ts';
 import { parseIssueQuery } from '../core/query.ts';
 import { readIssue, writeIssue } from '../fs/issue-store.ts';
 import { claimNextIssue, findNextIssue, listReadyIssues } from './ready.ts';
@@ -23,10 +24,18 @@ beforeEach(async () => {
   await writeIssue(fx.dir, makeIssue({ id: 1, status: 'done' }), {
     closed: true,
   });
-  await writeIssue(fx.dir, makeIssue({ id: 2, title: 'Two', blockedBy: [1] }));
   await writeIssue(
     fx.dir,
-    makeIssue({ id: 3, title: 'Three', priority: 'urgent', blockedBy: [4] }),
+    makeIssue({ id: 2, title: 'Two', links: issueLinks({ blockedBy: 1 }) }),
+  );
+  await writeIssue(
+    fx.dir,
+    makeIssue({
+      id: 3,
+      title: 'Three',
+      priority: 'urgent',
+      links: issueLinks({ blockedBy: 4 }),
+    }),
   );
   await writeIssue(
     fx.dir,

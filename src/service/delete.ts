@@ -1,7 +1,7 @@
 import { readdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { extractAssetRefs, isAssetFilename } from '../core/assets.ts';
-import { blockersOf } from '../core/dependencies.ts';
+import type { IssueRelationship } from '../core/links.ts';
 import { nextTimestamp } from '../core/timestamp.ts';
 import type { Config, Issue } from '../core/types.ts';
 import { isClosedStatus, type StatusConfig } from '../core/workflow.ts';
@@ -24,7 +24,7 @@ import {
   type Precondition,
   type StoredIssue,
 } from './load.ts';
-import { linkingIssues, rewritePaths } from './references.ts';
+import { linkingIssues, rewriteLinksTo, rewritePaths } from './references.ts';
 
 /**
  * Another issue whose links to the deleted issue are removed (or would be)
@@ -33,12 +33,8 @@ import { linkingIssues, rewritePaths } from './references.ts';
 export interface UnlinkedIssue {
   id: number;
   title: string;
-  /** The deleted issue is removed from its `blockedBy`. */
-  blockedBy: boolean;
-  /** Its `parent` (the deleted issue) is cleared. */
-  parent: boolean;
-  /** Its `duplicateOf` (the deleted issue) is cleared. */
-  duplicateOf: boolean;
+  /** The relationships of its links to the deleted issue (removed). */
+  relationships: IssueRelationship[];
   /**
    * Repo-relative paths of its rewritten file: the path it is written to,
    * then the old one if its filename was stale (see `relocateIssue`).
@@ -60,7 +56,7 @@ export interface IssueDeletion {
   assets: string[];
   /**
    * Other issues (open or closed) that referenced the deleted one in
-   * `blockedBy`, `parent` or `duplicateOf`, by ID; those links are removed in the same
+   * its `links`, by ID; those links are removed in the same
    * commit so none dangles.
    */
   unlinked: UnlinkedIssue[];
@@ -157,9 +153,9 @@ interface Relink {
 }
 
 /**
- * Every other issue (open or closed) whose `blockedBy`, `parent` or `duplicateOf` points at
- * `id`, loaded fresh (callers hold the lock) with those links removed in
- * memory (see {@link linkingIssues}).
+ * Every other issue (open or closed) that stores a link to `id`, loaded
+ * fresh (callers hold the lock) with those links removed in memory (see
+ * {@link linkingIssues}).
  */
 async function referencingIssues(
   dir: string,
@@ -167,26 +163,17 @@ async function referencingIssues(
   config: StatusConfig,
 ): Promise<Relink[]> {
   const relinks: Relink[] = [];
-  for (const { stored, blockedBy, parent, duplicateOf } of await linkingIssues(
-    dir,
-    id,
-  )) {
+  for (const { stored, relationships } of await linkingIssues(dir, id)) {
     const { issue } = stored;
-    if (blockedBy) {
-      const kept = blockersOf(issue).filter((b) => b !== id);
-      if (kept.length > 0) issue.blockedBy = kept;
-      else delete issue.blockedBy;
-    }
-    if (parent) delete issue.parent;
-    if (duplicateOf) delete issue.duplicateOf;
+    const links = rewriteLinksTo(issue.links, id, () => null);
+    if (links.length > 0) issue.links = links;
+    else delete issue.links;
     relinks.push({
       stored,
       unlinked: {
         id: issue.id,
         title: issue.title,
-        blockedBy,
-        parent,
-        duplicateOf,
+        relationships,
         paths: rewritePaths(stored, config),
       },
     });
@@ -196,9 +183,9 @@ async function referencingIssues(
 
 /**
  * Delete an issue: remove its file (from `.issues/` or `.issues/closed/`)
- * plus any `.issues/assets/` files that only it referenced, remove it from
- * every other issue's `blockedBy` and clear `parent` / `duplicateOf` where it was the parent
- * (bumping their `updated`), and commit it all at once
+ * plus any `.issues/assets/` files that only it referenced, remove the
+ * links to it from every other issue (bumping their `updated`), and commit
+ * it all at once
  * (`issue: delete #N <title>`) per the context's commit options. With
  * `dryRun`, only reports what would be removed and unlinked. The issue ID is
  * not reused: the shared high-water mark already counted it.

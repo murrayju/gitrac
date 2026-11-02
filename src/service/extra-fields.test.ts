@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { serializeIssue } from '../core/issue.ts';
+import { issueLinks } from '../core/links.fixture.ts';
 import { findIssueFiles, readIssue, writeIssue } from '../fs/issue-store.ts';
 import { claimIssue, unclaimIssue } from './claim.ts';
 import { deleteIssue } from './delete.ts';
@@ -83,8 +84,14 @@ describe('unknown frontmatter keys through the service layer', () => {
       ['delete comment', () => deleteComment(ctx, 1, 0)],
       ['claim', () => claimIssue(ctx, 1)],
       ['unclaim', () => unclaimIssue(ctx, 1)],
-      ['link', () => linkIssue(ctx, 1, { blockedBy: [2] })],
-      ['unlink', () => unlinkIssue(ctx, 1, { blockedBy: [2] })],
+      [
+        'link',
+        () => linkIssue(ctx, 1, { links: issueLinks({ blockedBy: 2 }) }),
+      ],
+      [
+        'unlink',
+        () => unlinkIssue(ctx, 1, { links: issueLinks({ blockedBy: 2 }) }),
+      ],
       ['close', () => closeIssue(ctx, 1)],
       ['reopen', () => reopenIssue(ctx, 1)],
       [
@@ -117,10 +124,10 @@ describe('unknown frontmatter keys through the service layer', () => {
   });
 
   test('survive renumbering and being unlinked by a deleted blocker', async () => {
-    await linkIssue(fx.context(), 1, { blockedBy: [2] });
+    await linkIssue(fx.context(), 1, { links: issueLinks({ blockedBy: 2 }) });
     await deleteIssue(fx.context(), 2);
     expect(await extraBlock()).toBe(EXTRA);
-    expect((await readIssue(fx.dir, 1))?.blockedBy).toBeUndefined();
+    expect((await readIssue(fx.dir, 1))?.links).toBeUndefined();
 
     const { issue } = await renumberIssue(fx.context(), 1, { force: true });
     expect(issue.id).not.toBe(1);

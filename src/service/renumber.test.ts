@@ -3,6 +3,7 @@ import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { GitracError } from '../core/errors.ts';
 import { serializeIssue } from '../core/issue.ts';
+import { issueLinks } from '../core/links.fixture.ts';
 import { findIssueFiles, readIssue, writeIssue } from '../fs/issue-store.ts';
 import {
   duplicateIssueIds,
@@ -231,7 +232,11 @@ describe('renumberIssue', () => {
     beforeEach(async () => {
       await writeIssue(
         fx.dir,
-        makeIssue({ id: 2, title: 'Other', blockedBy: [1] }),
+        makeIssue({
+          id: 2,
+          title: 'Other',
+          links: issueLinks({ blockedBy: 1 }),
+        }),
       );
       await mkdir(join(fx.dir, '.issues', 'closed'), { recursive: true });
       await writeIssue(
@@ -240,7 +245,7 @@ describe('renumberIssue', () => {
           id: 4,
           title: 'Child',
           status: 'done',
-          parent: 1,
+          links: issueLinks({ parent: 1 }),
           description: 'Part of #1.',
         }),
         { closed: true },
@@ -269,9 +274,7 @@ describe('renumberIssue', () => {
         {
           id: 2,
           title: 'Other',
-          blockedBy: true,
-          parent: false,
-          duplicateOf: false,
+          relationships: ['blockedBy'],
           mentions: false,
           updated: false,
           paths: [],
@@ -279,9 +282,7 @@ describe('renumberIssue', () => {
         {
           id: 4,
           title: 'Child',
-          blockedBy: false,
-          parent: true,
-          duplicateOf: false,
+          relationships: ['parent'],
           mentions: true,
           updated: false,
           paths: [],
@@ -289,9 +290,7 @@ describe('renumberIssue', () => {
         {
           id: 5,
           title: 'Mention',
-          blockedBy: false,
-          parent: false,
-          duplicateOf: false,
+          relationships: [],
           mentions: true,
           updated: false,
           paths: [],
@@ -306,7 +305,7 @@ describe('renumberIssue', () => {
       ]);
     });
 
-    test('updateRefs rewrites blockedBy/parent links (not mentions) in the same commit', async () => {
+    test('updateRefs rewrites links (not mentions) in the same commit', async () => {
       const result = await renumberIssue(fx.context(), 1, {
         file: BETA,
         updateRefs: true,
@@ -317,10 +316,10 @@ describe('renumberIssue', () => {
         [5, false, []],
       ]);
       const other = await readIssue(fx.dir, 2);
-      expect(other.blockedBy).toEqual([7]);
+      expect(other.links).toEqual(issueLinks({ blockedBy: 7 }));
       expect(other.updated).not.toBe('2025-01-01T00:00:00Z');
       const child = await readIssue(fx.dir, 4);
-      expect(child.parent).toBe(7);
+      expect(child.links).toEqual(issueLinks({ parent: 7 }));
       expect(child.description).toBe('Part of #1.');
       expect((await readIssue(fx.dir, 5)).description).toContain('See #1,');
       expect(fx.commits).toHaveLength(1);
@@ -335,7 +334,13 @@ describe('renumberIssue', () => {
     test('updateRefs fails before writing if a linking issue is duplicated', async () => {
       await writeFile(
         join(fx.dir, '.issues', '2-copy.md'),
-        serializeIssue(makeIssue({ id: 2, title: 'Copy', blockedBy: [1] })),
+        serializeIssue(
+          makeIssue({
+            id: 2,
+            title: 'Copy',
+            links: issueLinks({ blockedBy: 1 }),
+          }),
+        ),
       );
       const before = await snapshot();
       const err = await rejection(

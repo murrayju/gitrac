@@ -6,9 +6,13 @@ priority: medium
 assignee: justin@tigerdata.com
 labels:
   - feature
-blockedBy:
-  - 93
-  - 94
+links:
+  - type: issue
+    relationship: blockedBy
+    id: 93
+  - type: issue
+    relationship: blockedBy
+    id: 94
 created: '2026-10-16T12:13:29.051Z'
 createdBy: Justin Murray
 updated: '2026-10-16T21:02:59.842Z'

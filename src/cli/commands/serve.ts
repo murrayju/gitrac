@@ -2,7 +2,11 @@ import type { Command } from 'commander';
 import { GitracError, invalidInput } from '../../core/errors.ts';
 import { authorError } from '../../core/validate.ts';
 import { readConfig } from '../../fs/issue-store.ts';
-import { getGlobalOptions, resolveProjectRoot } from '../global-options.ts';
+import {
+  type GlobalOptions,
+  getGlobalOptions,
+  resolveProjectRoot,
+} from '../global-options.ts';
 import { openBrowser, shouldOpenBrowser } from '../open-browser.ts';
 
 export interface ServeOptions {
@@ -19,6 +23,11 @@ export interface ServeOptions {
   host: string;
   /** Default author for web changes (`--author`); '' = git config. */
   author?: string;
+  /**
+   * The global options, to prepare the project before it is served
+   * (`prepareProject`: version warning, migration). Unset: not prepared.
+   */
+  global?: GlobalOptions;
 }
 
 /**
@@ -50,6 +59,7 @@ export function resolveServeOptions(
     open: global.open !== false,
     host: local.host ?? globalOpts.host,
     author: globalOpts.author,
+    global: globalOpts,
   };
 }
 
@@ -90,6 +100,10 @@ export async function runServe(options: ServeOptions): Promise<void> {
   const error = author ? authorError(author) : null;
   if (error) throw invalidInput(error);
   const dir = await resolveProjectRoot(options.dir);
+  if (options.global) {
+    const { prepareProject } = await import('../project-setup.ts');
+    await prepareProject({ ...options.global, dir });
+  }
   const config = await readConfig(dir);
   // Load the web server only here. Other CLI commands then do not load Hono
   // and the web routes at startup.

@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import simpleGit from 'simple-git';
 import { EXIT_CONFLICT, EXIT_INVALID_INPUT } from '../../core/errors.ts';
+import { issueLinks } from '../../core/links.fixture.ts';
 import type { Config } from '../../core/types.ts';
 import {
   findIssueFile,
@@ -196,7 +197,7 @@ describe('close --duplicate-of (#127)', () => {
     expect(res.code).toBe(0);
     const issue = await readIssue(dir, 1);
     expect(issue.status).toBe('duplicate');
-    expect(issue.duplicateOf).toBe(2);
+    expect(issue.links).toEqual(issueLinks({ duplicateOf: 2 }));
     expect(await listClosedIssueFiles(dir)).toEqual(['1-some-work.md']);
 
     const copy = await cli('show', '1');
@@ -214,7 +215,7 @@ describe('close --duplicate-of (#127)', () => {
     const before = await issueText();
     const res = await cli('close', '1', '--duplicate-of', '9');
     expect(res.code).toBe(EXIT_INVALID_INPUT);
-    expect(res.stderr).toContain('Issue #9 not found (duplicate-of of #1)');
+    expect(res.stderr).toContain('Issue #9 not found (duplicateOf of #1)');
     expect(await issueText()).toBe(before);
   });
 });

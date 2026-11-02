@@ -10,6 +10,7 @@ import { readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { GitracError } from '../core/errors.ts';
 import { serializeIssue } from '../core/issue.ts';
+import { issueLinks } from '../core/links.fixture.ts';
 import { statusDefinitions } from '../core/workflow.ts';
 import {
   findIssueFile,
@@ -856,8 +857,8 @@ describe('`updated` always increases (#94)', () => {
       () => addComment(ctx, 1, 'hello'),
       () => editComment(ctx, 1, 0, 'edited'),
       () => deleteComment(ctx, 1, 0),
-      () => linkIssue(ctx, 1, { blockedBy: [2] }),
-      () => unlinkIssue(ctx, 1, { blockedBy: [2] }),
+      () => linkIssue(ctx, 1, { links: issueLinks({ blockedBy: 2 }) }),
+      () => unlinkIssue(ctx, 1, { links: issueLinks({ blockedBy: 2 }) }),
       () => closeIssue(ctx, 1),
       () => reopenIssue(ctx, 1),
     ];

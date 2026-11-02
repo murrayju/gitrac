@@ -131,11 +131,24 @@ export async function resolveProjectRoot(
  * project root (see {@link resolveProjectRoot}). Every command should use
  * this. On failure, throws a {@link ProjectRootError}, which the top-level
  * handler prints as a friendly error.
+ *
+ * With `requireInit` (the default) it also prepares the project
+ * (`prepareProject`): it warns if `config.yaml` is newer than this gitrac,
+ * and migrates an older `.issues/` (unless `migrate: false`).
  */
 export async function resolveProjectOptions(
   program: Command,
-  options: { requireInit?: boolean } = {},
+  options: { requireInit?: boolean; migrate?: boolean } = {},
 ): Promise<GlobalOptions> {
   const opts = getGlobalOptions(program);
-  return { ...opts, dir: await resolveProjectRoot(opts.dir, options) };
+  const resolved = {
+    ...opts,
+    dir: await resolveProjectRoot(opts.dir, options),
+  };
+  if (options.requireInit !== false) {
+    // Loaded here only: the migration pulls in the service layer.
+    const { prepareProject } = await import('./project-setup.ts');
+    await prepareProject(resolved, { migrate: options.migrate });
+  }
+  return resolved;
 }

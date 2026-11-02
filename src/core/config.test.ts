@@ -1,13 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 import { fileURLToPath } from 'node:url';
 import {
+  CONFIG_VERSION,
   chooseDefaultBranch,
+  configVersionWarning,
   createDefaultConfig,
   ensureLabelColors,
   findAssigneeByEmail,
   generateLabelColor,
   hslToHex,
   parseConfig,
+  rawConfigVersion,
   resolveAssigneeName,
   serializeConfig,
   validateConfig,
@@ -307,7 +310,7 @@ describe('serializeConfig', () => {
   test('serializes Config to YAML', () => {
     const config = createDefaultConfig();
     const yaml = serializeConfig(config);
-    expect(yaml).toContain('version: 1');
+    expect(yaml).toContain('version: 2');
     expect(yaml).not.toContain('nextId');
     expect(yaml).toContain('defaultStatus: backlog');
     expect(yaml).toContain('defaultPriority: medium');
@@ -319,7 +322,7 @@ describe('serializeConfig', () => {
 describe('createDefaultConfig', () => {
   test('returns a valid config with default values', () => {
     const config = createDefaultConfig();
-    expect(config.version).toBe(1);
+    expect(config.version).toBe(CONFIG_VERSION);
     expect(config.nextId).toBeUndefined();
     expect(statusNames(config)).toEqual([
       'backlog',
@@ -895,5 +898,22 @@ ${extra}`;
   test('implicit defaults (in_progress, todo, done, cancelled) need not exist', () => {
     // Older configs could list any subset of the built-in statuses.
     expect(errorOf(base('  - open\n  - done'))).toBe('');
+  });
+});
+
+describe('config version (#127)', () => {
+  test('rawConfigVersion reads only the version', () => {
+    expect(rawConfigVersion('version: 3\nstatuses: weird\n')).toBe(3);
+    expect(rawConfigVersion('statuses: []\n')).toBeUndefined();
+    expect(rawConfigVersion(': not yaml : [')).toBeUndefined();
+  });
+
+  test('configVersionWarning only for a newer version', () => {
+    expect(configVersionWarning(CONFIG_VERSION)).toBeNull();
+    expect(configVersionWarning(1)).toBeNull();
+    expect(configVersionWarning(undefined)).toBeNull();
+    expect(configVersionWarning(CONFIG_VERSION + 1)).toBe(
+      `.issues/config.yaml is version ${CONFIG_VERSION + 1}, but this gitrac only knows version ${CONFIG_VERSION}. Update gitrac: this version can misread the issues or lose data when it writes them.`,
+    );
   });
 });

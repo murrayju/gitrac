@@ -8,6 +8,7 @@ import type {
   ClaimedElsewhere,
   ClosedElsewhere,
 } from '../../core/elsewhere.ts';
+import { issueLinks } from '../../core/links.fixture.ts';
 import type { Issue } from '../../core/types.ts';
 import {
   initIssuesDir,
@@ -442,8 +443,7 @@ describe('GET /api/issues/:id for an issue only elsewhere', () => {
         id: 3,
         title: 'Found a bug',
         description: 'Details.',
-        blockedBy: [1],
-        parent: 2,
+        links: issueLinks({ blockedBy: 1, parent: 2 }),
         updated: WHERE.updated,
       }),
     );
@@ -518,8 +518,11 @@ describe('GET /api/issues/:id for an issue only elsewhere', () => {
       ['/issues/3/reopen', json('PATCH')],
       ['/issues/3/claim', json('POST')],
       ['/issues/3/unclaim', json('POST')],
-      ['/issues/3/link', json('POST', { blockedBy: 1 })],
-      ['/issues/3/unlink', json('POST', { parent: true })],
+      ['/issues/3/link', json('POST', { links: issueLinks({ blockedBy: 1 }) })],
+      [
+        '/issues/3/unlink',
+        json('POST', { links: [{ type: 'issue', relationship: 'parent' }] }),
+      ],
     ];
     for (const [path, init] of mutations) {
       const res = await request(path, init);
@@ -546,13 +549,17 @@ describe('dependencies only elsewhere in the web API', () => {
       makeIssue({
         id: 3,
         title: 'Sub task',
-        parent: 1,
+        links: issueLinks({ parent: 1 }),
         updated: WHERE.updated,
       }),
     );
     await writeIssue(
       main,
-      makeIssue({ id: 2, title: 'Second', blockedBy: [3] }),
+      makeIssue({
+        id: 2,
+        title: 'Second',
+        links: issueLinks({ blockedBy: 3 }),
+      }),
     );
     const ref = {
       id: 3,

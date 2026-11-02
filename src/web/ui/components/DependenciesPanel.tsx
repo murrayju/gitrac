@@ -1,6 +1,19 @@
 import { type FormEvent, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { IssueRef } from '../../../core/dependencies.ts';
+import {
+  type IssueRef,
+  refsByRelationship,
+} from '../../../core/dependencies.ts';
+import {
+  type IssueRelationship,
+  isIssueLink,
+  isSafeUrl,
+  type Link as LinkData,
+  linkFromUrl,
+  linkKey,
+  linkLabel,
+  linkUrl,
+} from '../../../core/links.ts';
 import { linkIssue, unlinkIssue } from '../api.ts';
 import { useIssueDependencies } from '../hooks.ts';
 import { blockedNotice, refHoverText } from '../lib/claimed-elsewhere.ts';
@@ -9,6 +22,7 @@ import {
   parseIssueIds,
   parseSingleIssueId,
 } from '../lib/issue-id-input.ts';
+import { RELATIONS, SINGLE_RELATIONSHIPS } from '../lib/relations.ts';
 import { requestErrorReason } from '../lib/upload-error.ts';
 import { FoundElsewhereBadge } from './FoundElsewhereBadge.tsx';
 import { StatusBadge } from './StatusBadge.tsx';
@@ -154,25 +168,123 @@ export function AddLinkForm({
   );
 }
 
+/** One of the issue's own links that is not to another issue. */
+function OtherLinkItem({
+  link,
+  busy,
+  onRemove,
+}: {
+  link: LinkData;
+  busy: boolean;
+  onRemove: () => void;
+}) {
+  const url = linkUrl(link);
+  const label = linkLabel(link);
+  return (
+    <li className="group flex items-center gap-x-1.5 min-w-0">
+      {url && isSafeUrl(url) ? (
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={url}
+          className="min-w-0 flex-1 truncate text-blue-600 hover:underline dark:text-blue-400"
+        >
+          {label}
+        </a>
+      ) : (
+        <span
+          className="min-w-0 flex-1 truncate text-gray-500"
+          title={url ?? JSON.stringify(link)}
+        >
+          {label}
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={onRemove}
+        disabled={busy}
+        aria-label={`Remove link ${label}`}
+        title={`Remove link ${label}`}
+        className="ml-auto shrink-0 text-gray-400 hover:text-red-500 disabled:opacity-50 cursor-pointer bg-transparent border-none px-1"
+      >
+        ×
+      </button>
+    </li>
+  );
+}
+
+const INPUT =
+  'min-w-0 flex-1 bg-white border border-gray-300 rounded px-1.5 py-0.5 text-xs text-gray-700 placeholder-gray-400 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-300 dark:placeholder-gray-600';
+const BUTTON =
+  'shrink-0 px-2 py-0.5 text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-50 cursor-pointer dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800';
+
+/** Add a URL link (a GitHub pull request URL becomes a `github-pr` link). */
+function AddUrlForm({
+  busy,
+  onSubmit,
+}: {
+  busy: boolean;
+  /** Resolves true if the link was saved (the input is then cleared). */
+  onSubmit: (link: LinkData) => Promise<boolean>;
+}) {
+  const [text, setText] = useState('');
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (await onSubmit(linkFromUrl(text))) setText('');
+  }
+  return (
+    <form onSubmit={handleSubmit} className="mt-1 flex gap-1">
+      <input
+        type="url"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="https://..."
+        aria-label="URL to link"
+        disabled={busy}
+        className={INPUT}
+      />
+      <button
+        type="submit"
+        disabled={busy || text.trim() === ''}
+        className={BUTTON}
+      >
+        Add
+      </button>
+    </form>
+  );
+}
+
 /**
- * An issue's links: parent, sub-issues, blockers and the issues it blocks.
+ * An issue's links. The relations to other issues (parent, sub-issues,
+ * blockers, blocked, duplicates, related) come from every issue's links, so
+ * they include the ones other issues store; each can be removed here
+ * (`POST /api/issues/:id/unlink` removes it whichever issue stores it).
  * Resolved (closed or missing) issues are struck through. An issue that
  * exists only in another worktree or on another branch shows where it is,
- * and links to its read-only view; as a blocker it blocks in any status
- * (its work is not here yet). The parent and the
- * blockers are stored on this issue, so they can be set and removed here
- * (via `POST /api/issues/:id/link` / `unlink`). Sub-issues and "blocks" are
- * derived from other issues and are read-only. "Duplicate of" is set with
- * the status (see `MetadataPanel`); "duplicates" is derived.
+ * and links to its read-only view; as a blocker it blocks in any status (its
+ * work is not here yet). Below: the issue's other links (URLs, pull
+ * requests). New links are added to this issue.
  */
-export function DependenciesPanel({ issueId }: { issueId: number }) {
+export function DependenciesPanel({
+  issueId,
+  links,
+}: {
+  issueId: number;
+  /** The issue's own links (for its URL / pull request links). */
+  links: readonly LinkData[];
+}) {
   const { dependencies: deps, refetch } = useIssueDependencies(issueId);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [relationship, setRelationship] =
+    useState<IssueRelationship>('blockedBy');
 
   if (!deps) return null;
-  const { parent, children, blockedBy, blocks, duplicateOf, duplicates } = deps;
-  const blocked = blockedNotice(blockedBy);
+  const refs = refsByRelationship(deps);
+  const blocked = blockedNotice(deps.blockedBy);
+  const others = links.filter((link) => !isIssueLink(link));
+  const single = SINGLE_RELATIONSHIPS.has(relationship);
 
   /** Run a link change; show the server's message if it fails. */
   async function change(action: () => Promise<unknown>): Promise<boolean> {
@@ -207,65 +319,80 @@ export function DependenciesPanel({ issueId }: { issueId: number }) {
           {error}
         </div>
       )}
+      {RELATIONS.map(({ relationship: rel, title }) =>
+        refs[rel].length === 0 ? null : (
+          <div key={rel}>
+            <SectionTitle>{title}</SectionTitle>
+            <ul className="space-y-1">
+              {refs[rel].map((ref) => (
+                <RefItem
+                  key={ref.id}
+                  issueRef={ref}
+                  busy={busy}
+                  removeLabel={`Remove ${title.toLowerCase()} #${ref.id}`}
+                  onRemove={() =>
+                    change(() =>
+                      unlinkIssue(issueId, [
+                        { type: 'issue', relationship: rel, id: ref.id },
+                      ]),
+                    )
+                  }
+                />
+              ))}
+            </ul>
+          </div>
+        ),
+      )}
       <div>
-        <SectionTitle>Parent</SectionTitle>
-        {parent ? (
-          <ul>
-            <RefItem
-              issueRef={parent}
-              busy={busy}
-              removeLabel={`Clear parent #${parent.id}`}
-              onRemove={() =>
-                change(() => unlinkIssue(issueId, { parent: true }))
-              }
-            />
-          </ul>
-        ) : (
-          <AddLinkForm
-            placeholder="#12"
-            buttonLabel="Set"
-            ariaLabel="Parent issue number"
-            parse={parseSingleIssueId}
-            busy={busy}
-            onSubmit={([id]) =>
-              change(() => linkIssue(issueId, { parent: id }))
-            }
-          />
-        )}
+        <SectionTitle>Link issue</SectionTitle>
+        <select
+          value={relationship}
+          onChange={(e) => setRelationship(e.target.value as IssueRelationship)}
+          aria-label="Relationship"
+          disabled={busy}
+          className="select-caret w-full bg-white border border-gray-300 rounded pl-1.5 py-0.5 text-xs text-gray-700 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-300"
+        >
+          {RELATIONS.map(({ relationship: rel, choice }) => (
+            <option key={rel} value={rel}>
+              {choice}
+            </option>
+          ))}
+        </select>
+        <AddLinkForm
+          placeholder={single ? '#12' : '#12, #13'}
+          buttonLabel="Add"
+          ariaLabel="Issue numbers to link"
+          parse={single ? parseSingleIssueId : parseIssueIds}
+          busy={busy}
+          onSubmit={(ids) =>
+            change(() =>
+              linkIssue(
+                issueId,
+                ids.map((id) => ({ type: 'issue', relationship, id })),
+              ),
+            )
+          }
+        />
       </div>
-      <RefList title="Sub-issues" refs={children} />
       <div>
-        <SectionTitle>Blocked by</SectionTitle>
-        {blockedBy.length > 0 && (
+        <SectionTitle>Links</SectionTitle>
+        {others.length > 0 && (
           <ul className="space-y-1">
-            {blockedBy.map((ref) => (
-              <RefItem
-                key={ref.id}
-                issueRef={ref}
+            {others.map((link) => (
+              <OtherLinkItem
+                key={linkKey(link)}
+                link={link}
                 busy={busy}
-                removeLabel={`Remove blocker #${ref.id}`}
-                onRemove={() =>
-                  change(() => unlinkIssue(issueId, { blockedBy: [ref.id] }))
-                }
+                onRemove={() => change(() => unlinkIssue(issueId, [link]))}
               />
             ))}
           </ul>
         )}
-        <AddLinkForm
-          placeholder="#12, #13"
-          buttonLabel="Add"
-          ariaLabel="Blocking issue numbers"
-          parse={parseIssueIds}
+        <AddUrlForm
           busy={busy}
-          onSubmit={(ids) =>
-            change(() => linkIssue(issueId, { blockedBy: ids }))
-          }
+          onSubmit={(link) => change(() => linkIssue(issueId, [link]))}
         />
       </div>
-      <RefList title="Blocks" refs={blocks} />
-      {/* Set with the status (the duplicate status asks for the issue). */}
-      <RefList title="Duplicate of" refs={duplicateOf ? [duplicateOf] : []} />
-      <RefList title="Duplicates" refs={duplicates} />
     </div>
   );
 }

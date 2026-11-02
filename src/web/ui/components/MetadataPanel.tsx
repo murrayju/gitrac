@@ -4,6 +4,7 @@ import type { Issue, Priority, Status } from '../../../core/types.ts';
 import { duplicateStatus } from '../../../core/workflow.ts';
 import {
   type ApiIssue,
+  linkIssue,
   type UpdateIssueInput,
   updateIssue,
   updateIssueVersioned,
@@ -117,7 +118,23 @@ export function MetadataPanel({
 
   async function handleDuplicateOf([original]: number[]): Promise<boolean> {
     setAskDuplicateOf(false);
-    save('status', { status: duplicate, duplicateOf: original });
+    const id = issue.id;
+    void saveField(
+      fieldSaves,
+      'status',
+      async (force) => {
+        // Link first: a bad issue number leaves the status as it is.
+        await linkIssue(id, [
+          { type: 'issue', relationship: 'duplicateOf', id: original },
+        ]);
+        await updateIssue(id, {
+          status: duplicate,
+          author,
+          force: force || undefined,
+        });
+      },
+      (retry) => setForceSave(() => retry),
+    );
     return true;
   }
 

@@ -1,22 +1,17 @@
 import { describe, expect, test } from 'bun:test';
 import { createDefaultConfig } from './config.ts';
 import {
-  blocksOf,
-  childrenOf,
   describeDependencies,
-  duplicateOfError,
-  duplicatesOf,
   indexIssues,
   openBlockers,
-  parseLinkChanges,
-  parseUnlinkChanges,
-  validateLinks,
 } from './dependencies.ts';
+import { issueLinks } from './links.fixture.ts';
+import { LinkGraph } from './links.ts';
 import type { Issue } from './types.ts';
 
 const CONFIG = createDefaultConfig();
 
-/** Regression tests for #55: issue dependencies (blockedBy / parent). */
+/** Regression tests for #55 / #127: issue relations from `links`. */
 
 function issue(id: number, overrides: Partial<Issue> = {}): Issue {
   return {
@@ -38,36 +33,26 @@ function issue(id: number, overrides: Partial<Issue> = {}): Issue {
 describe('derived relations', () => {
   const issues = [
     issue(1),
-    issue(2, { blockedBy: [1] }),
-    issue(3, { blockedBy: [1, 2], parent: 1 }),
-    issue(4, { parent: 1 }),
+    issue(2, { links: issueLinks({ blockedBy: 1 }) }),
+    issue(3, { links: issueLinks({ blockedBy: [1, 2], parent: 1 }) }),
+    issue(4, { links: issueLinks({ parent: 1 }) }),
   ];
-
-  test('blocksOf is the inverse of blockedBy', () => {
-    expect(blocksOf(1, issues)).toEqual([2, 3]);
-    expect(blocksOf(2, issues)).toEqual([3]);
-    expect(blocksOf(3, issues)).toEqual([]);
-  });
-
-  test('childrenOf is the inverse of parent', () => {
-    expect(childrenOf(1, issues)).toEqual([3, 4]);
-    expect(childrenOf(2, issues)).toEqual([]);
-  });
 
   test('a blocker is resolved when done, cancelled or missing', () => {
     const byId = indexIssues([
       issue(1, { status: 'done' }),
       issue(2, { status: 'cancelled' }),
       issue(3, { status: 'in_progress' }),
-      issue(9, { blockedBy: [1, 2, 3, 4] }),
+      issue(9, { links: issueLinks({ blockedBy: [1, 2, 3, 4] }) }),
     ]);
-    expect(openBlockers(byId.get(9) as Issue, byId, CONFIG)).toEqual([3]);
+    const graph = new LinkGraph(byId.values());
+    expect(openBlockers(9, graph, byId, CONFIG)).toEqual([3]);
   });
 
   test('describeDependencies resolves titles and statuses', () => {
     const byId = indexIssues([
       ...issues,
-      issue(5, { blockedBy: [3, 42], parent: 4 }),
+      issue(5, { links: issueLinks({ blockedBy: [3, 42], parent: 4 }) }),
     ]);
     const deps = describeDependencies(byId.get(3) as Issue, byId, CONFIG);
     expect(deps).toEqual({
@@ -80,6 +65,7 @@ describe('derived relations', () => {
       blocks: [{ id: 5, title: 'Issue 5', status: 'todo', resolved: false }],
       duplicateOf: null,
       duplicates: [],
+      related: [],
       blocked: true,
     });
     const five = describeDependencies(byId.get(5) as Issue, byId, CONFIG);
@@ -94,7 +80,7 @@ describe('derived relations', () => {
 
 describe('links to issues only elsewhere (#120)', () => {
   const here = indexIssues([
-    issue(1, { blockedBy: [5, 6, 42], parent: 7 }),
+    issue(1, { links: issueLinks({ blockedBy: [5, 6, 42], parent: 7 }) }),
     issue(2),
   ]);
   const wt = { ref: 'agent-1', worktree: '/w/wt-1' };
@@ -106,7 +92,10 @@ describe('links to issues only elsewhere (#120)', () => {
     },
     { issue: issue(7, { title: 'Epic there' }), foundElsewhere: wt },
     {
-      issue: issue(8, { title: 'Sub there', parent: 1, blockedBy: [1] }),
+      issue: issue(8, {
+        title: 'Sub there',
+        links: issueLinks({ parent: 1, blockedBy: 1 }),
+      }),
       foundElsewhere: wt,
     },
   ];
@@ -165,6 +154,7 @@ describe('links to issues only elsewhere (#120)', () => {
       ],
       duplicateOf: null,
       duplicates: [],
+      related: [],
       blocked: true,
     });
   });
@@ -172,7 +162,10 @@ describe('links to issues only elsewhere (#120)', () => {
   test('a local issue wins over a version elsewhere', () => {
     const deps = describeDependencies(here.get(1) as Issue, here, CONFIG, [
       {
-        issue: issue(2, { title: 'Stale copy', blockedBy: [1] }),
+        issue: issue(2, {
+          title: 'Stale copy',
+          links: issueLinks({ blockedBy: 1 }),
+        }),
         foundElsewhere: wt,
       },
     ]);
@@ -180,130 +173,34 @@ describe('links to issues only elsewhere (#120)', () => {
   });
 
   test('openBlockers counts blockers only elsewhere, in any status', () => {
-    const one = here.get(1) as Issue;
-    expect(openBlockers(one, here, CONFIG)).toEqual([]);
-    expect(openBlockers(one, here, CONFIG, new Set([5, 6]))).toEqual([5, 6]);
+    const graph = new LinkGraph(here.values());
+    expect(openBlockers(1, graph, here, CONFIG)).toEqual([]);
+    expect(openBlockers(1, graph, here, CONFIG, new Set([5, 6]))).toEqual([
+      5, 6,
+    ]);
   });
 });
 
-describe('validateLinks', () => {
+describe('links stored on either side (#127)', () => {
   const byId = indexIssues([
-    issue(1),
-    issue(2, { blockedBy: [1] }),
-    issue(3, { blockedBy: [2] }),
-    issue(4, { parent: 3 }),
-    issue(5, { status: 'done', blockedBy: [3] }),
+    // #1 blocks #2 (stored on #1), #3 is the parent of #2 (stored on #3).
+    issue(1, { links: issueLinks({ blocks: 2, related: 4 }) }),
+    issue(2),
+    issue(3, { links: issueLinks({ child: 2 }) }),
+    issue(4, { links: issueLinks({ duplicatedBy: 2 }) }),
   ]);
 
-  test('accepts new, valid links', () => {
-    expect(validateLinks(3, { blockedBy: [1], parent: 1 }, byId)).toEqual([]);
-  });
-
-  test('rejects self-references', () => {
-    expect(validateLinks(1, { blockedBy: [1] }, byId)).toEqual([
-      "Issue #1 can't be blocked by itself",
-    ]);
-    expect(validateLinks(1, { parent: 1 }, byId)).toEqual([
-      "Issue #1 can't be its own parent",
-    ]);
-  });
-
-  test('rejects targets that do not exist', () => {
-    expect(validateLinks(1, { blockedBy: [99], parent: 98 }, byId)).toEqual([
-      'Issue #99 not found (blocked-by of #1)',
-      'Issue #98 not found (parent of #1)',
-    ]);
-  });
-
-  test('rejects blockedBy cycles, direct and transitive', () => {
-    expect(validateLinks(1, { blockedBy: [2] }, byId)).toEqual([
-      '#1 blocked by #2 would create a dependency cycle (#1 → #2 → #1)',
-    ]);
-    expect(validateLinks(1, { blockedBy: [3] }, byId)).toEqual([
-      '#1 blocked by #3 would create a dependency cycle (#1 → #3 → #2 → #1)',
-    ]);
-    // Through a closed issue too: it's still a cycle in the graph.
-    expect(validateLinks(1, { blockedBy: [5] }, byId)).toHaveLength(1);
-  });
-
-  test('rejects parent cycles', () => {
-    expect(validateLinks(3, { parent: 4 }, byId)).toEqual([
-      'Parent #4 would create a parent cycle (#3 → #4 → #3)',
-    ]);
-  });
-});
-
-describe('parseLinkChanges / parseUnlinkChanges', () => {
-  test('accepts one ID or a list, numbers or "#N" strings', () => {
-    expect(parseLinkChanges({ blockedBy: 3 })).toEqual({
-      valid: true,
-      values: { blockedBy: [3] },
-      errors: [],
-    });
-    expect(parseLinkChanges({ blockedBy: ['#3', '4'], parent: '2' })).toEqual({
-      valid: true,
-      values: { blockedBy: [3, 4], parent: 2 },
-      errors: [],
-    });
-  });
-
-  test('rejects bad shapes and empty input', () => {
-    expect(parseLinkChanges(null).valid).toBe(false);
-    expect(parseLinkChanges({}).errors).toEqual([
-      'Nothing to link: give blockedBy and/or parent',
-    ]);
-    expect(parseLinkChanges({ blockedBy: [] }).valid).toBe(false);
-    expect(parseLinkChanges({ blockedBy: [1, 'x'] }).valid).toBe(false);
-    expect(parseLinkChanges({ blockedBy: 0 }).valid).toBe(false);
-    expect(parseLinkChanges({ parent: 1.5 }).valid).toBe(false);
-  });
-
-  test('unlink takes parent: true to clear the parent', () => {
-    expect(parseUnlinkChanges({ parent: true })).toEqual({
-      valid: true,
-      values: { parent: true },
-      errors: [],
-    });
-    expect(parseUnlinkChanges({ parent: 3 }).valid).toBe(false);
-    expect(parseUnlinkChanges({ parent: false }).valid).toBe(false);
-  });
-});
-
-describe('duplicateOf (#127)', () => {
-  const byId = indexIssues([
-    issue(1),
-    issue(2, { status: 'duplicate', duplicateOf: 1 }),
-    issue(3, { status: 'duplicate', duplicateOf: 2 }),
-    issue(4),
-  ]);
-
-  test('duplicatesOf derives the inverse', () => {
-    expect(duplicatesOf(1, byId.values())).toEqual([2]);
-    expect(duplicatesOf(4, byId.values())).toEqual([]);
-  });
-
-  test('describeDependencies resolves both directions', () => {
+  test('describeDependencies includes the links other issues store', () => {
     const two = describeDependencies(byId.get(2) as Issue, byId, CONFIG);
-    expect(two.duplicateOf).toEqual({
-      id: 1,
-      title: 'Issue 1',
-      status: 'todo',
-      resolved: false,
-    });
-    expect(two.duplicates.map((r) => r.id)).toEqual([3]);
-  });
-
-  test('duplicateOfError rejects itself, a missing issue and a cycle', () => {
-    expect(duplicateOfError(4, 1, byId)).toBeNull();
-    expect(duplicateOfError(4, 3, byId)).toBeNull();
-    expect(duplicateOfError(4, 4, byId)).toBe(
-      "Issue #4 can't be a duplicate of itself",
-    );
-    expect(duplicateOfError(4, 9, byId)).toBe(
-      'Issue #9 not found (duplicate-of of #4)',
-    );
-    expect(duplicateOfError(1, 3, byId)).toBe(
-      '#1 duplicate of #3 would create a cycle (#1 → #3 → #2 → #1)',
-    );
+    expect(two.blockedBy.map((r) => r.id)).toEqual([1]);
+    expect(two.parent?.id).toBe(3);
+    expect(two.duplicateOf?.id).toBe(4);
+    expect(two.blocked).toBe(true);
+    const one = describeDependencies(byId.get(1) as Issue, byId, CONFIG);
+    expect(one.blocks.map((r) => r.id)).toEqual([2]);
+    expect(one.related.map((r) => r.id)).toEqual([4]);
+    const four = describeDependencies(byId.get(4) as Issue, byId, CONFIG);
+    expect(four.related.map((r) => r.id)).toEqual([1]);
+    expect(four.duplicates.map((r) => r.id)).toEqual([2]);
   });
 });

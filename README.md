@@ -161,8 +161,13 @@ priority: urgent
 assignee: justin@example.com
 labels:
   - bug
-blockedBy:
-  - 2
+links:
+  - type: issue
+    relationship: blockedBy
+    id: 2
+  - type: github-pr
+    repo: murrayju/gitrac
+    number: 42
 created: '2026-03-28T12:00:00.000Z'
 createdBy: Justin Murray
 updated: '2026-03-28T14:30:00.000Z'
@@ -185,7 +190,7 @@ Reproduced locally with k6. Investigating the pool timeout.
 Root cause: `getSessionTimeout()` reads a renamed env var.
 ```
 
-- **Frontmatter** holds the metadata. `parent` and `blockedBy` are optional and only written when set.
+- **Frontmatter** holds the metadata. `links` is optional and only written when set: links to other issues (`relationship`: `blockedBy`, `blocks`, `parent`, `child`, `duplicateOf`, `duplicatedBy`, `related`), URLs (`type: url`) and GitHub pull requests (`type: github-pr`). A link between two issues is stored on one of them; the other side is derived.
 - **Description** is full markdown, headings and horizontal rules included.
 - **Comments** follow a `---` separator. Each one starts with `### author — timestamp`. Headings inside comment bodies are escaped (`\## ...`) so they can't be mistaken for a new comment.
 - Files gitrac writes round-trip exactly. Hand edits are fine, though the CLI is the safer path. Custom frontmatter keys (`estimate:`, `externalId:` and so on) are kept verbatim through every write and merge, and exposed read-only as `extra` in JSON output and the API. Known fields are normalized on write (for example, dates get quoted).
@@ -200,7 +205,7 @@ Root cause: `getSessionTimeout()` reads a renamed env var.
 - **Issue-aware merges.** `gitrac init` (or `gitrac install-merge-driver` in an existing clone) registers a git merge driver for `.issues/`:
   - frontmatter merges field by field;
   - comments are combined from both sides;
-  - labels and `blockedBy` merge as sets;
+  - labels and links merge as sets;
   - `config.yaml` merges labels and assignees.
 
   Conflict markers only remain for:
@@ -265,7 +270,7 @@ The server binds to `127.0.0.1` by default and rejects cross-origin and DNS-rebi
 | `review <id>` | Hand a claimed issue off for review (needs `reviewStatus`). It stays claimed until closed or unclaimed |
 | `close <id>` / `reopen <id>` | Close (moves to `closed/`; `--cancelled`, `-s`, `--duplicate-of <id>` to close as a duplicate of another issue) or reopen it. Exit 3 if someone else holds the issue (here or in another worktree / branch); `--force` overrides |
 | `commit <id> [-- <git commit args>]` | Close the issue (same options as `close`) and run `git commit` with the args after `--`, so your staged changes and the close are one commit. Exit 2 if nothing else is staged (unless `-- -a`) or git gets pathspecs; exit 7 if git fails or makes no commit, and the close is undone |
-| `link` / `unlink <id>` | `--blocked-by <ids>`, `--parent <id>`. Cycles are rejected |
+| `link` / `unlink <id>` | Link issues (`--blocked-by`, `--blocks`, `--parent`, `--child`, `--duplicate-of`, `--duplicated-by`, `--related`) and URLs (`--url`; GitHub PR URLs become PR links). Cycles are rejected. `unlink` removes a link whichever issue stores it |
 | `ready` | Open, unassigned (or yours), unblocked issues, sorted by priority. `--stale <duration>` also lists stale claims |
 | `next [--claim]` | The top ready issue; with `--claim`, picks and claims it in one locked step. `--stale <duration>` lets it take over a stale claim |
 | `delete` / `rm <id>` | Delete an issue, any assets only it uses, and links to it (`--yes`, `--dry-run`) |
@@ -343,6 +348,7 @@ Express ordering with dependencies so agents only see work that's actually ready
 ```bash
 gitrac link 3 --blocked-by 2       # #3 can't start until #2 is closed
 gitrac link 2 --parent 1           # #2 is a sub-issue of #1
+gitrac link 2 --url https://github.com/acme/app/pull/7   # a pull request
 gitrac ready                       # open, unassigned or yours, unblocked, sorted by priority
 ```
 
@@ -412,7 +418,7 @@ esac
 `gitrac init` writes a default `.issues/config.yaml` with the built-in statuses, priorities and a few labels. A customized one looks like this:
 
 ```yaml
-version: 1
+version: 2                # format of .issues/; an older one is migrated by the next command
 statuses:                 # workflow order; plain names or definitions
   - backlog
   - todo

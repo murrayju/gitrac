@@ -4,10 +4,12 @@ import { GitracError } from './errors.ts';
 import { scanFences } from './fences.ts';
 import {
   differsOnlyInUpdated,
+  migrateLegacyLinks,
   parseIssue,
   parseIssueFile,
   serializeIssue,
 } from './issue.ts';
+import { issueLinks } from './links.fixture.ts';
 import type { Comment, Issue } from './types.ts';
 
 const FULL_ISSUE = `---
@@ -528,11 +530,10 @@ describe('CRLF line endings', () => {
   });
 
   test('frontmatter, dependencies and unknown keys', () => {
-    const raw = `---\nid: 7\ntitle: T\nstatus: todo\npriority: low\nassignee: ''\nlabels:\n  - bug\nparent: 2\nblockedBy:\n  - 3\ncreated: x\ncreatedBy: bob\nupdated: z\nestimate: 3 # days\n---\n\nDesc\n\n---\n\n${HEADER('A')}\n\nhi\n`;
+    const raw = `---\nid: 7\ntitle: T\nstatus: todo\npriority: low\nassignee: ''\nlabels:\n  - bug\nlinks:\n  - type: issue\n    relationship: parent\n    id: 2\ncreated: x\ncreatedBy: bob\nupdated: z\nestimate: 3 # days\n---\n\nDesc\n\n---\n\n${HEADER('A')}\n\nhi\n`;
     const issue = expectSameAsLf(raw);
     expect(issue.labels).toEqual(['bug']);
-    expect(issue.parent).toBe(2);
-    expect(issue.blockedBy).toEqual([3]);
+    expect(issue.links).toEqual(issueLinks({ parent: 2 }));
     expect(issue.extra).toEqual({ estimate: 3 });
     expect(issue.comments).toHaveLength(1);
     // A rewrite produces LF output, the same as for the LF file.
@@ -707,8 +708,8 @@ describe('parseIssueFile', () => {
   });
 });
 
-/** Regression tests for #55: optional `parent` / `blockedBy` frontmatter. */
-describe('dependency fields', () => {
+/** Regression tests for #55 / #127: the optional `links` frontmatter. */
+describe('links', () => {
   const BASE = `---
 id: 7
 title: Sub task
@@ -723,61 +724,62 @@ updated: '2025-01-01T00:00:00Z'
 
 Body
 `;
+  const LINKS = `links:
+  - type: issue
+    relationship: blockedBy
+    id: 1
+  - type: url
+    url: 'https://x.dev/spec'
+    title: Spec
+  - type: github-pr
+    repo: o/r
+    number: 12
+  - type: jira
+    key: ABC-1
+`;
 
   test('are absent when not in the file, and not written', () => {
     const issue = parseIssue(BASE);
-    expect('parent' in issue).toBe(false);
-    expect('blockedBy' in issue).toBe(false);
+    expect('links' in issue).toBe(false);
     expect(serializeIssue(issue)).toBe(BASE);
+    expect(serializeIssue({ ...issue, links: [] })).toBe(BASE);
   });
 
-  test('round-trip byte-for-byte, after labels', () => {
-    const raw = BASE.replace(
-      'labels: []\n',
-      'labels: []\nparent: 3\nblockedBy:\n  - 1\n  - 2\n',
-    );
+  test('round-trip byte-for-byte, after labels (unknown types kept)', () => {
+    const raw = BASE.replace('labels: []\n', `labels: []\n${LINKS}`);
     const issue = parseIssue(raw);
-    expect(issue.parent).toBe(3);
-    expect(issue.blockedBy).toEqual([1, 2]);
-    expect(serializeIssue(issue)).toBe(raw);
-  });
-
-  test('duplicateOf round-trips after blockedBy, and is absent unless set (#127)', () => {
-    const raw = BASE.replace('status: todo\n', 'status: duplicate\n').replace(
-      'labels: []\n',
-      'labels: []\nblockedBy:\n  - 1\nduplicateOf: 4\n',
-    );
-    const issue = parseIssue(raw);
-    expect(issue.duplicateOf).toBe(4);
-    expect(serializeIssue(issue)).toBe(raw);
-    expect('duplicateOf' in parseIssue(BASE)).toBe(false);
+    expect(issue.links).toHaveLength(4);
     expect(issue.extra).toBeUndefined();
+    expect(serializeIssue(issue)).toBe(raw);
   });
 
-  test('are coerced: scalars, numeric strings, duplicates, junk', () => {
+  test('the fields of version 1 are read into links and never written', () => {
     const raw = BASE.replace(
       'labels: []\n',
-      "labels: []\nparent: '4'\nblockedBy: [5, '2', 5, x, 0, -1]\n",
+      "labels: []\nparent: '4'\nblockedBy: [5, '2', 5, x, 0, -1]\nduplicateOf: 9\n",
     );
     const issue = parseIssue(raw);
-    expect(issue.parent).toBe(4);
-    expect(issue.blockedBy).toEqual([2, 5]);
-    expect(
-      parseIssue(BASE.replace('labels: []\n', 'labels: []\nblockedBy: 9\n'))
-        .blockedBy,
-    ).toEqual([9]);
-    expect(
-      'parent' in
-        parseIssue(BASE.replace('labels: []\n', 'labels: []\nparent: nope\n')),
-    ).toBe(false);
+    expect(issue.links).toEqual(
+      issueLinks({ parent: 4, blockedBy: [2, 5], duplicateOf: 9 }),
+    );
+    expect(issue.extra).toBeUndefined();
+    const out = serializeIssue(issue);
+    expect(out).not.toContain('blockedBy:\n');
+    expect(out).toContain('relationship: blockedBy');
+    expect(parseIssue(out)).toEqual(issue);
   });
 
-  test('empty blockedBy is not written; blockedBy is written sorted', () => {
-    const issue = parseIssue(BASE);
-    expect(serializeIssue({ ...issue, blockedBy: [] })).toBe(BASE);
-    expect(serializeIssue({ ...issue, blockedBy: [3, 1, 3] })).toContain(
-      'blockedBy:\n  - 1\n  - 3\n',
+  test('migrateLegacyLinks rewrites only files with fields of version 1', () => {
+    expect(migrateLegacyLinks(BASE)).toBeNull();
+    const old = BASE.replace('labels: []\n', 'labels: []\nparent: 3\n');
+    const migrated = migrateLegacyLinks(old) as string;
+    expect(migrated).toBe(
+      BASE.replace(
+        'labels: []\n',
+        'labels: []\nlinks:\n  - type: issue\n    relationship: parent\n    id: 3\n',
+      ),
     );
+    expect(migrateLegacyLinks(migrated)).toBeNull();
   });
 });
 
@@ -855,7 +857,7 @@ notes: |
     const issue = parseIssue(RAW);
     issue.status = 'done';
     issue.labels = ['bug'];
-    issue.parent = 3;
+    issue.links = issueLinks({ parent: 3 });
     issue.comments.push({ author: 'a', timestamp: '2025-01-02', body: 'hi' });
     const out = serializeIssue({ ...issue, title: 'Renamed' });
     expect(out).toContain(`updated: '2025-01-01T00:00:00Z'\n${EXTRA}---\n`);
@@ -908,7 +910,7 @@ notes: |
 
   test('known keys never land in extra', () => {
     const issue = parseIssue(RAW.replace('id: 7', "id: '7'"));
-    for (const key of ['id', 'title', 'labels', 'updated', 'parent']) {
+    for (const key of ['id', 'title', 'labels', 'updated', 'links']) {
       expect(Object.hasOwn(issue.extra ?? {}, key)).toBe(false);
     }
   });

@@ -56,13 +56,9 @@ export function resolveFileArg(root: string, file: string): string {
 
 function referenceTags(r: RenumberReference, oldId: number): string {
   return [
-    r.blockedBy && 'blockedBy',
-    r.parent && 'parent',
-    r.duplicateOf && 'duplicateOf',
-    r.mentions && `mentions #${oldId}`,
-  ]
-    .filter(Boolean)
-    .join(', ');
+    ...r.relationships,
+    ...(r.mentions ? [`mentions #${oldId}`] : []),
+  ].join(', ');
 }
 
 /** Format a renumbering in the `-o` format. */
@@ -104,11 +100,9 @@ export function formatRenumbering(
         );
       }
       if (kept.length > 0) {
-        const anyLinks = kept.some(
-          (ref) => ref.blockedBy || ref.parent || ref.duplicateOf,
-        );
+        const anyLinks = kept.some((ref) => ref.relationships.length > 0);
         lines.push(
-          `Not changed — these reference #${r.oldId}, which may mean either issue; check them${anyLinks ? ' (--update-refs points blockedBy/parent/duplicateOf links at the new ID)' : ''}:`,
+          `Not changed — these reference #${r.oldId}, which may mean either issue; check them${anyLinks ? ' (--update-refs points their links at the new ID)' : ''}:`,
           ...kept.map(line),
         );
       }
@@ -197,7 +191,7 @@ export function registerRenumberCommand(program: Command): void {
     .option('--force', 'Renumber even if the ID is not duplicated')
     .option(
       '--update-refs',
-      "Point other issues' blockedBy/parent/duplicateOf links at the new ID",
+      "Point other issues' links to the old ID at the new ID",
     )
     .action(async (idStr: string, options: RenumberCliOptions) => {
       const globalOpts = await resolveProjectOptions(program);

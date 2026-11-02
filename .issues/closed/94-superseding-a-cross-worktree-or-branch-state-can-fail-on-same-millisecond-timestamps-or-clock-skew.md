@@ -8,8 +8,10 @@ priority: medium
 assignee: justin@tigerdata.com
 labels:
   - bug
-blockedBy:
-  - 93
+links:
+  - type: issue
+    relationship: blockedBy
+    id: 93
 created: '2026-10-16T12:12:40.589Z'
 createdBy: Justin Murray
 updated: '2026-10-16T20:15:47.129Z'

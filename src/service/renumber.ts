@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { join, normalize } from 'node:path';
-import { blockersOf } from '../core/dependencies.ts';
 import { GitracError, issueNotFound } from '../core/errors.ts';
-import { normalizeIdList, parseIssueFile } from '../core/issue.ts';
+import { parseIssueFile } from '../core/issue.ts';
+import { type IssueRelationship, uniqueLinks } from '../core/links.ts';
 import { parseIssueId } from '../core/slug.ts';
 import { nextTimestamp } from '../core/timestamp.ts';
 import type { Config, Issue } from '../core/types.ts';
@@ -24,7 +24,7 @@ import {
 } from './context.ts';
 import { IssueUnreadableError } from './errors.ts';
 import { loadAllIssues } from './list.ts';
-import { hasLink, linkingIssues, linksTo } from './references.ts';
+import { linkingIssues, linksTo, rewriteLinksTo } from './references.ts';
 
 /** One of the files that have an issue ID. */
 export interface RenumberCandidate {
@@ -43,15 +43,11 @@ export interface RenumberCandidate {
 export interface RenumberReference {
   id: number;
   title: string;
-  /** The old ID is (was) in its `blockedBy`. */
-  blockedBy: boolean;
-  /** Its `parent` is (was) the old ID. */
-  parent: boolean;
-  /** Its `duplicateOf` is (was) the old ID. */
-  duplicateOf: boolean;
+  /** The relationships of its links to the old ID (empty if none). */
+  relationships: IssueRelationship[];
   /** Its description or a comment mentions `#<old ID>` (never rewritten). */
   mentions: boolean;
-  /** Its `blockedBy` / `parent` / `duplicateOf` links were rewritten to the new ID. */
+  /** Its links were rewritten to the new ID. */
   updated: boolean;
   /** Repo-relative paths of its rewritten file (empty unless `updated`). */
   paths: string[];
@@ -68,8 +64,8 @@ export interface IssueRenumbering {
   /** Repo-relative path it was moved to. */
   to: string;
   /**
-   * Other issues (open or closed) that link to the old ID (`blockedBy` /
-   * `parent` / `duplicateOf`) or mention `#<old ID>`, by ID. Since the old ID was ambiguous,
+   * Other issues (open or closed) that link to the old ID (`links`) or
+   * mention `#<old ID>`, by ID. Since the old ID was ambiguous,
    * they are only rewritten with `updateRefs` (links only, never mentions).
    */
   references: RenumberReference[];
@@ -89,7 +85,7 @@ export interface RenumberOptions {
   file?: string;
   /** Renumber even though only one file has the ID. */
   force?: boolean;
-  /** Rewrite other issues' `blockedBy` / `parent` / `duplicateOf` links to the new ID. */
+  /** Rewrite other issues' links to the old ID to the new ID. */
   updateRefs?: boolean;
   /**
    * Called once the files are written, before committing (with
@@ -188,8 +184,8 @@ export function renumberedComment(oldId: number, duplicated: boolean): string {
  * listing them with their titles in `candidates`). If only one file has the
  * ID it is refused (`invalid_state`) unless `options.force`.
  *
- * References to the old ID — `blockedBy` / `parent` / `duplicateOf` links and `#<id>`
- * mentions in other issues — are ambiguous, so they are only reported
+ * References to the old ID (links and `#<id>`
+ * mentions in other issues) are ambiguous, so they are only reported
  * (`references`); with `options.updateRefs` the links (not the mentions) are
  * rewritten to the new ID, bumping those issues' `updated`, in the same
  * commit.
@@ -238,8 +234,11 @@ export async function renumberIssue(
     const { issues } = await loadAllIssues(ctx.dir);
     const referencing = issues
       .filter((other) => other.id !== id)
-      .map((other) => ({ other, links: linksTo(other, id) }))
-      .filter(({ other, links }) => hasLink(links) || mentionsIn(other, id))
+      .map((other) => ({ other, relationships: linksTo(other, id) }))
+      .filter(
+        ({ other, relationships }) =>
+          relationships.length > 0 || mentionsIn(other, id),
+      )
       .sort((a, b) => a.other.id - b.other.id);
     // Loaded fresh (a duplicate/malformed linking issue fails here, before
     // anything is written or an ID allocated).
@@ -265,15 +264,15 @@ export async function renumberIssue(
     const committed = new Set<string>(moved);
 
     const rewritten = new Map<number, string[]>();
-    for (const { stored, blockedBy, parent, duplicateOf } of relinks) {
+    for (const { stored } of relinks) {
       const other = stored.issue;
-      if (blockedBy) {
-        other.blockedBy = normalizeIdList(
-          blockersOf(other).map((b) => (b === id ? newId : b)),
-        );
-      }
-      if (parent) other.parent = newId;
-      if (duplicateOf) other.duplicateOf = newId;
+      other.links = uniqueLinks(
+        rewriteLinksTo(other.links, id, (relationship) => ({
+          type: 'issue',
+          relationship,
+          id: newId,
+        })),
+      );
       other.updated = nextTimestamp([other.updated], clock);
       const paths = await relocateIssue(ctx.dir, other, stored, {
         closed: isClosedStatus(config, other.status),
@@ -284,14 +283,12 @@ export async function renumberIssue(
     for (const p of assetPaths(issue)) committed.add(p);
 
     const references: RenumberReference[] = referencing.map(
-      ({ other, links }) => {
+      ({ other, relationships }) => {
         const paths = rewritten.get(other.id) ?? [];
         return {
           id: other.id,
           title: other.title,
-          blockedBy: links.blockedBy,
-          parent: links.parent,
-          duplicateOf: links.duplicateOf,
+          relationships,
           mentions: mentionsIn(other, id),
           updated: paths.length > 0,
           paths,

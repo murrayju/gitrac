@@ -1,10 +1,12 @@
 import { Link } from 'react-router-dom';
 import { resolveAssigneeName } from '../../../core/config.ts';
+import { refsByRelationship } from '../../../core/dependencies.ts';
 import type { FoundElsewhere } from '../../../core/elsewhere.ts';
 import type { ApiIssue } from '../api.ts';
 import { useConfig, useIssueDependencies } from '../hooks.ts';
 import { foundElsewhereNotice } from '../lib/claimed-elsewhere.ts';
 import { commentKeys } from '../lib/comment-write.ts';
+import { RELATIONS } from '../lib/relations.ts';
 import { relativeTime } from '../lib/time.ts';
 import { RefList } from './DependenciesPanel.tsx';
 import { FoundElsewhereBadge } from './FoundElsewhereBadge.tsx';
@@ -152,6 +154,7 @@ function Field({
 function ReadOnlyDependencies({ issueId }: { issueId: number }) {
   const { dependencies: deps } = useIssueDependencies(issueId);
   if (!deps) return null;
+  const refs = refsByRelationship(deps);
   return (
     <div className="space-y-4" data-testid="dependencies">
       {deps.blocked && (
@@ -159,10 +162,9 @@ function ReadOnlyDependencies({ issueId }: { issueId: number }) {
           Blocked by an open issue
         </div>
       )}
-      <RefList title="Parent" refs={deps.parent ? [deps.parent] : []} />
-      <RefList title="Sub-issues" refs={deps.children} />
-      <RefList title="Blocked by" refs={deps.blockedBy} />
-      <RefList title="Blocks" refs={deps.blocks} />
+      {RELATIONS.map(({ relationship, title }) => (
+        <RefList key={relationship} title={title} refs={refs[relationship]} />
+      ))}
     </div>
   );
 }

@@ -1,19 +1,20 @@
 import type { FoundElsewhere, IssueOnlyElsewhere } from './elsewhere.ts';
+import { type IssueRelationship, LinkGraph } from './links.ts';
 import type { Issue } from './types.ts';
 import { isClosedStatus, type StatusConfig } from './workflow.ts';
 
 /**
- * Issue dependencies (pure; no I/O). Two relations live in the frontmatter of
- * the dependent issue only:
+ * Issue dependencies (pure; no I/O). Relations between issues are `links`
+ * of type `issue` (see `src/core/links.ts`). An issue stores only its own
+ * side of a relation (e.g. `blockedBy: 3` on #5, or `blocks: 5` on #3: both
+ * mean that #3 blocks #5); the other side is derived from every issue's
+ * links ({@link LinkGraph}), so a link is one edit to one file.
  *
- * - `blockedBy: [ids]` — this issue can't start until those are closed. The
- *   inverse ("blocks") is derived by scanning, never stored, so a link is one
- *   edit to one file and can't go out of sync.
- * - `parent: id` — this issue is a sub-issue of that one (the inverse,
- *   "children", is derived the same way). It is informational: it doesn't
- *   affect readiness.
- * - `duplicateOf: id` — this issue was closed as a duplicate of that one
- *   (the inverse, "duplicates", is derived the same way). Informational too.
+ * - blocks / blockedBy: the blocked issue can't start until the blocker is
+ *   closed.
+ * - parent / child: sub-issues. Informational: it doesn't affect readiness.
+ * - duplicateOf / duplicatedBy: closed as a duplicate. Informational.
+ * - related: informational.
  *
  * A blocker counts as resolved when it is in any closed status — e.g. `done`
  * **or** `cancelled` (a cancelled blocker will never be done, so treating it
@@ -26,43 +27,11 @@ import { isClosedStatus, type StatusConfig } from './workflow.ts';
  * pass these issues (or their IDs) in as data.
  */
 
-/** The IDs an issue is blocked by (`[]` if none). */
-export function blockersOf(issue: Pick<Issue, 'blockedBy'>): number[] {
-  return issue.blockedBy ?? [];
-}
-
 /** Index issues by ID. */
 export function indexIssues(issues: Iterable<Issue>): Map<number, Issue> {
   const byId = new Map<number, Issue>();
   for (const issue of issues) byId.set(issue.id, issue);
   return byId;
-}
-
-/** IDs of the issues `id` blocks (those listing it in `blockedBy`), ascending. */
-export function blocksOf(id: number, issues: Iterable<Issue>): number[] {
-  const ids: number[] = [];
-  for (const issue of issues) {
-    if (blockersOf(issue).includes(id)) ids.push(issue.id);
-  }
-  return ids.sort((a, b) => a - b);
-}
-
-/** IDs of the sub-issues of `id` (those with `parent: id`), ascending. */
-export function childrenOf(id: number, issues: Iterable<Issue>): number[] {
-  const ids: number[] = [];
-  for (const issue of issues) {
-    if (issue.parent === id) ids.push(issue.id);
-  }
-  return ids.sort((a, b) => a - b);
-}
-
-/** IDs of the issues closed as duplicates of `id` (`duplicateOf: id`), ascending. */
-export function duplicatesOf(id: number, issues: Iterable<Issue>): number[] {
-  const ids: number[] = [];
-  for (const issue of issues) {
-    if (issue.duplicateOf === id) ids.push(issue.id);
-  }
-  return ids.sort((a, b) => a - b);
 }
 
 /**
@@ -82,262 +51,19 @@ export function isBlockerResolved(
 }
 
 /**
- * The blockers of `issue` that are still open: existing here and not
- * closed, or only elsewhere (`onlyElsewhere`, in any status).
+ * The blockers of issue `id` (from `graph`) that are still open: existing
+ * here and not closed, or only elsewhere (`onlyElsewhere`, in any status).
  */
 export function openBlockers(
-  issue: Pick<Issue, 'blockedBy'>,
+  id: number,
+  graph: LinkGraph,
   byId: ReadonlyMap<number, Issue>,
   config: StatusConfig,
   onlyElsewhere: ReadonlySet<number> = new Set(),
 ): number[] {
-  return blockersOf(issue).filter(
-    (id) => !isBlockerResolved(id, byId, config, onlyElsewhere),
-  );
-}
-
-/**
- * The `blockedBy` chain from `from` to `to` (`[from, ..., to]`), following
- * blockers transitively, or null if `to` isn't reachable. Missing issues end
- * a path.
- */
-function blockerPath(
-  from: number,
-  to: number,
-  byId: ReadonlyMap<number, Issue>,
-): number[] | null {
-  const seen = new Set<number>();
-  const walk = (id: number): number[] | null => {
-    if (id === to) return [id];
-    if (seen.has(id)) return null;
-    seen.add(id);
-    const issue = byId.get(id);
-    if (!issue) return null;
-    for (const next of blockersOf(issue)) {
-      const rest = walk(next);
-      if (rest) return [id, ...rest];
-    }
-    return null;
-  };
-  return walk(from);
-}
-
-/** The parent chain from `from` up to `to` (`[from, ..., to]`), or null. */
-function parentPath(
-  from: number,
-  to: number,
-  byId: ReadonlyMap<number, Issue>,
-): number[] | null {
-  const path: number[] = [];
-  const seen = new Set<number>();
-  let id: number | undefined = from;
-  while (id !== undefined && !seen.has(id)) {
-    path.push(id);
-    if (id === to) return path;
-    seen.add(id);
-    id = byId.get(id)?.parent;
-  }
-  return null;
-}
-
-const chain = (ids: number[]): string => ids.map((i) => `#${i}`).join(' → ');
-
-/** The `duplicateOf` chain from `from` to `to` (`[from, ..., to]`), or null. */
-function duplicatePath(
-  from: number,
-  to: number,
-  byId: ReadonlyMap<number, Issue>,
-): number[] | null {
-  const path: number[] = [];
-  const seen = new Set<number>();
-  let id: number | undefined = from;
-  while (id !== undefined && !seen.has(id)) {
-    path.push(id);
-    if (id === to) return path;
-    seen.add(id);
-    id = byId.get(id)?.duplicateOf;
-  }
-  return null;
-}
-
-/**
- * Check that issue `id` can be closed as a duplicate of `original` (`byId`
- * must contain every issue, open and closed). Returns an error message, or
- * null if valid: the original must be another issue that exists, and must
- * not itself be (transitively) a duplicate of `id`.
- */
-export function duplicateOfError(
-  id: number,
-  original: number,
-  byId: ReadonlyMap<number, Issue>,
-): string | null {
-  if (original === id) return `Issue #${id} can't be a duplicate of itself`;
-  if (!byId.has(original)) {
-    return `Issue #${original} not found (duplicate-of of #${id})`;
-  }
-  const path = duplicatePath(original, id, byId);
-  return path
-    ? `#${id} duplicate of #${original} would create a cycle (${chain([id, ...path])})`
-    : null;
-}
-
-/** Links to add to an issue. */
-export interface LinkChanges {
-  /** Issues to add to `blockedBy`. */
-  blockedBy?: number[];
-  /** The new parent. */
-  parent?: number;
-}
-
-/**
- * Check links to add to issue `id` against the other issues (`byId` must
- * contain every issue, open and closed). Returns error messages (empty =
- * valid):
- *
- * - an issue can't block itself or be its own parent;
- * - every target must exist;
- * - a new `blockedBy` edge must not close a cycle (`#a` blocked by `#b`
- *   while `#b` is, transitively, blocked by `#a`);
- * - a new parent must not make the issue its own ancestor.
- */
-export function validateLinks(
-  id: number,
-  changes: LinkChanges,
-  byId: ReadonlyMap<number, Issue>,
-): string[] {
-  const errors: string[] = [];
-  for (const blocker of changes.blockedBy ?? []) {
-    if (blocker === id) {
-      errors.push(`Issue #${id} can't be blocked by itself`);
-    } else if (!byId.has(blocker)) {
-      errors.push(`Issue #${blocker} not found (blocked-by of #${id})`);
-    } else {
-      const path = blockerPath(blocker, id, byId);
-      if (path) {
-        errors.push(
-          `#${id} blocked by #${blocker} would create a dependency cycle (${chain([id, ...path])})`,
-        );
-      }
-    }
-  }
-  const { parent } = changes;
-  if (parent !== undefined) {
-    if (parent === id) {
-      errors.push(`Issue #${id} can't be its own parent`);
-    } else if (!byId.has(parent)) {
-      errors.push(`Issue #${parent} not found (parent of #${id})`);
-    } else {
-      const path = parentPath(parent, id, byId);
-      if (path) {
-        errors.push(
-          `Parent #${parent} would create a parent cycle (${chain([id, ...path])})`,
-        );
-      }
-    }
-  }
-  return errors;
-}
-
-/** Links to remove from an issue. */
-export interface UnlinkChanges {
-  /** Issues to remove from `blockedBy`. */
-  blockedBy?: number[];
-  /** Clear the parent. */
-  parent?: boolean;
-}
-
-/** One issue ID (number or `"#7"`/`"7"` string), or undefined if invalid. */
-export function idValue(value: unknown): number | undefined {
-  if (typeof value === 'number') {
-    return Number.isInteger(value) && value > 0 ? value : undefined;
-  }
-  if (typeof value === 'string' && /^\s*#?\d+\s*$/.test(value)) {
-    const id = Number.parseInt(value.trim().replace(/^#/, ''), 10);
-    return id > 0 ? id : undefined;
-  }
-  return undefined;
-}
-
-/**
- * Parse an untrusted `blockedBy` value: one ID or an array of IDs (numbers,
- * or strings like `"7"` / `"#7"`). Returns the IDs, or an error message.
- */
-function idList(value: unknown, field: string): number[] | string {
-  const items = Array.isArray(value) ? value : [value];
-  const ids = items.map(idValue);
-  if (items.length === 0 || ids.some((id) => id === undefined)) {
-    return `Invalid ${field}: must be an issue ID or a non-empty list of issue IDs`;
-  }
-  return ids as number[];
-}
-
-export type ParsedLinks<T> =
-  | { valid: true; values: T; errors: [] }
-  | { valid: false; errors: string[] };
-
-function asObject(input: unknown): Record<string, unknown> | null {
-  return typeof input === 'object' && input !== null && !Array.isArray(input)
-    ? (input as Record<string, unknown>)
-    : null;
-}
-
-/**
- * Validate the shape of link input from the CLI or a JSON body
- * (`{ blockedBy?: id | id[], parent?: id }`); at least one is required.
- * Whether the targets exist / form cycles is {@link validateLinks}' job.
- */
-export function parseLinkChanges(input: unknown): ParsedLinks<LinkChanges> {
-  const raw = asObject(input);
-  if (!raw)
-    return { valid: false, errors: ['Request body must be a JSON object'] };
-  const errors: string[] = [];
-  const values: LinkChanges = {};
-  if (raw.blockedBy !== undefined) {
-    const ids = idList(raw.blockedBy, 'blockedBy');
-    if (typeof ids === 'string') errors.push(ids);
-    else values.blockedBy = ids;
-  }
-  if (raw.parent !== undefined) {
-    const id = idValue(raw.parent);
-    if (id === undefined) errors.push('Invalid parent: must be an issue ID');
-    else values.parent = id;
-  }
-  if (errors.length === 0 && !values.blockedBy && values.parent === undefined) {
-    errors.push('Nothing to link: give blockedBy and/or parent');
-  }
-  return errors.length > 0
-    ? { valid: false, errors }
-    : { valid: true, values, errors: [] };
-}
-
-/**
- * Validate the shape of unlink input (`{ blockedBy?: id | id[], parent?:
- * true }`); at least one is required.
- */
-export function parseUnlinkChanges(input: unknown): ParsedLinks<UnlinkChanges> {
-  const raw = asObject(input);
-  if (!raw)
-    return { valid: false, errors: ['Request body must be a JSON object'] };
-  const errors: string[] = [];
-  const values: UnlinkChanges = {};
-  if (raw.blockedBy !== undefined) {
-    const ids = idList(raw.blockedBy, 'blockedBy');
-    if (typeof ids === 'string') errors.push(ids);
-    else values.blockedBy = ids;
-  }
-  if (raw.parent !== undefined) {
-    if (typeof raw.parent !== 'boolean') {
-      errors.push('Invalid parent: must be true (to clear the parent)');
-    } else if (raw.parent) {
-      values.parent = true;
-    }
-  }
-  if (errors.length === 0 && !values.blockedBy && !values.parent) {
-    errors.push('Nothing to unlink: give blockedBy and/or parent');
-  }
-  return errors.length > 0
-    ? { valid: false, errors }
-    : { valid: true, values, errors: [] };
+  return graph
+    .blockers(id)
+    .filter((b) => !isBlockerResolved(b, byId, config, onlyElsewhere));
 }
 
 /** A linked issue, as shown on the detail view / `show`. */
@@ -363,16 +89,18 @@ export interface IssueRef {
 
 /** Every relation of one issue, with the linked issues' titles/statuses. */
 export interface IssueDependencies {
+  /** The parent (the first one, if a merge left several). */
   parent: IssueRef | null;
-  /** Sub-issues (`parent: <this>`). */
+  /** Sub-issues. */
   children: IssueRef[];
   blockedBy: IssueRef[];
-  /** Issues listing this one in `blockedBy`. */
+  /** Issues this one blocks. */
   blocks: IssueRef[];
-  /** The issue this one is a duplicate of (`duplicateOf`). */
+  /** The issue this one duplicates (the first one, if several). */
   duplicateOf: IssueRef | null;
-  /** Issues closed as duplicates of this one. */
+  /** Issues that are duplicates of this one. */
   duplicates: IssueRef[];
+  related: IssueRef[];
   /** True if any blocker is still open. */
   blocked: boolean;
 }
@@ -406,11 +134,11 @@ function issueRef(
 }
 
 /**
- * Resolve an issue's links (and derived inverses) against all issues: the
- * local ones (`byId`), then the ones only elsewhere (`elsewhere`, see
- * `issuesOnlyElsewhere`). Sub-issues and "blocks" include the issues only
- * elsewhere that link to `issue` (e.g. a sub-issue an agent filed in its
- * worktree). `elsewhere` must not contain IDs in `byId`.
+ * Resolve an issue's relations against all issues: the local ones (`byId`),
+ * then the ones only elsewhere (`elsewhere`, see `issuesOnlyElsewhere`). The
+ * relations come from the links of all of them, so they include the links
+ * that other issues store (e.g. a sub-issue an agent filed in its worktree
+ * with `parent: <this>`). `elsewhere` must not contain IDs in `byId`.
  */
 export function describeDependencies(
   issue: Issue,
@@ -423,17 +151,42 @@ export function describeDependencies(
       .filter((f) => !byId.has(f.issue.id))
       .map((f) => [f.issue.id, f] as const),
   );
-  const all = [...byId.values(), ...[...others.values()].map((f) => f.issue)];
+  const graph = new LinkGraph([
+    ...[...byId.values()].filter((i) => i.id !== issue.id),
+    issue,
+    ...[...others.values()].map((f) => f.issue),
+  ]);
   const ref = (id: number) => issueRef(id, byId, others, config);
-  const blockedBy = blockersOf(issue).map(ref);
+  const { id } = issue;
+  const parent = graph.parents(id)[0];
+  const original = graph.originals(id)[0];
+  const blockedBy = graph.blockers(id).map(ref);
   return {
-    parent: issue.parent === undefined ? null : ref(issue.parent),
-    children: childrenOf(issue.id, all).map(ref),
+    parent: parent === undefined ? null : ref(parent),
+    children: graph.children(id).map(ref),
     blockedBy,
-    blocks: blocksOf(issue.id, all).map(ref),
-    duplicateOf:
-      issue.duplicateOf === undefined ? null : ref(issue.duplicateOf),
-    duplicates: duplicatesOf(issue.id, all).map(ref),
-    blocked: blockedBy.some((ref) => !ref.resolved),
+    blocks: graph.blocked(id).map(ref),
+    duplicateOf: original === undefined ? null : ref(original),
+    duplicates: graph.duplicates(id).map(ref),
+    related: graph.related(id).map(ref),
+    blocked: blockedBy.some((r) => !r.resolved),
+  };
+}
+
+/**
+ * The resolved issues of `deps` per relationship, as this issue sees them
+ * (`parent`: its parent, `child`: its sub-issues, ...).
+ */
+export function refsByRelationship(
+  deps: IssueDependencies,
+): Record<IssueRelationship, IssueRef[]> {
+  return {
+    parent: deps.parent ? [deps.parent] : [],
+    child: deps.children,
+    blockedBy: deps.blockedBy,
+    blocks: deps.blocks,
+    duplicateOf: deps.duplicateOf ? [deps.duplicateOf] : [],
+    duplicatedBy: deps.duplicates,
+    related: deps.related,
   };
 }

@@ -3,6 +3,7 @@ import type { ClaimUser } from './claim.ts';
 import { createDefaultConfig } from './config.ts';
 import { indexIssues } from './dependencies.ts';
 import type { IssueStateElsewhere } from './elsewhere.ts';
+import { issueLinks } from './links.fixture.ts';
 import { parseIssueQuery } from './query.ts';
 import { isAvailableTo, nextIssue, readyIssues } from './ready.ts';
 import type { Issue } from './types.ts';
@@ -86,12 +87,12 @@ describe('readyIssues', () => {
   test('skips blocked, closed and other people’s issues', () => {
     const issues = [
       issue(1),
-      issue(2, { blockedBy: [1] }),
+      issue(2, { links: issueLinks({ blockedBy: 1 }) }),
       issue(3, { status: 'done' }),
-      issue(4, { blockedBy: [3] }),
+      issue(4, { links: issueLinks({ blockedBy: 3 }) }),
       issue(5, { assignee: 'bob@example.com' }),
       issue(6, { status: 'in_progress', assignee: ME.email }),
-      issue(7, { blockedBy: [5] }),
+      issue(7, { links: issueLinks({ blockedBy: 5 }) }),
     ];
     expect(ready(issues)).toEqual([1, 4, 6]);
   });
@@ -99,8 +100,8 @@ describe('readyIssues', () => {
   test('cancelled and deleted blockers unblock', () => {
     const issues = [
       issue(1, { status: 'cancelled' }),
-      issue(2, { blockedBy: [1] }),
-      issue(3, { blockedBy: [99] }),
+      issue(2, { links: issueLinks({ blockedBy: 1 }) }),
+      issue(3, { links: issueLinks({ blockedBy: 99 }) }),
     ];
     expect(ready(issues)).toEqual([2, 3]);
   });
@@ -108,7 +109,7 @@ describe('readyIssues', () => {
   test('a blocker that is in progress still blocks', () => {
     const issues = [
       issue(1, { status: 'in_progress', assignee: ME.email }),
-      issue(2, { blockedBy: [1] }),
+      issue(2, { links: issueLinks({ blockedBy: 1 }) }),
     ];
     expect(ready(issues)).toEqual([1]);
   });
@@ -130,9 +131,9 @@ describe('readyIssues', () => {
 
 describe('blockers only elsewhere (#120)', () => {
   const issues = [
-    issue(1, { blockedBy: [5] }),
-    issue(2, { blockedBy: [6] }),
-    issue(3, { blockedBy: [99] }),
+    issue(1, { links: issueLinks({ blockedBy: 5 }) }),
+    issue(2, { links: issueLinks({ blockedBy: 6 }) }),
+    issue(3, { links: issueLinks({ blockedBy: 99 }) }),
   ];
   const query = parseIssueQuery({ sort: 'id' }, config);
   // #5 is open and #6 is closed in another worktree; #99 is nowhere.
@@ -286,7 +287,7 @@ describe('stale claims (#106)', () => {
       issue(3, {
         status: 'in_progress',
         assignee: 'bob@example.com',
-        blockedBy: [2],
+        links: issueLinks({ blockedBy: 2 }),
       }),
     ];
     const query = parseIssueQuery({ sort: 'priority' }, config);

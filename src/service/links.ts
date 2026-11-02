@@ -1,13 +1,18 @@
 import {
-  blockersOf,
-  indexIssues,
-  type LinkChanges,
-  parseLinkChanges,
-  parseUnlinkChanges,
-  type UnlinkChanges,
-  validateLinks,
-} from '../core/dependencies.ts';
-import { dependencyFields, normalizeIdList } from '../core/issue.ts';
+  edgeKey,
+  edgeOf,
+  type IssueEdge,
+  isIssueLink,
+  issueLinkError,
+  type Link,
+  LinkGraph,
+  type LinkSelector,
+  linkKey,
+  parseLinkRequest,
+  replacedEdges,
+  selects,
+  uniqueLinks,
+} from '../core/links.ts';
 import { nextTimestamp } from '../core/timestamp.ts';
 import type { Config, Issue } from '../core/types.ts';
 import { isClosedStatus } from '../core/workflow.ts';
@@ -27,8 +32,10 @@ import { loadAllIssues } from './list.ts';
 import { loadStoredIssue, type StoredIssue } from './load.ts';
 
 /**
- * Link / unlink issues (`blockedBy`, `parent`; see
- * `src/core/dependencies.ts`). Only the dependent issue's file changes.
+ * Link / unlink an issue (`links`; see `src/core/links.ts`). A new link is
+ * stored on the issue it is added to. A link to another issue can be stored
+ * on either issue, so removing (or replacing) one also rewrites the other
+ * issue's file when that issue stores it.
  */
 
 /**
@@ -37,33 +44,174 @@ import { loadStoredIssue, type StoredIssue } from './load.ts';
  */
 export type LinkResult = IssueChange & { changed: boolean };
 
-const sameLinks = (a: Issue, b: Issue): boolean =>
-  JSON.stringify(dependencyFields(a)) === JSON.stringify(dependencyFields(b));
+/** What {@link editLinks} changed, in memory. */
+export interface LinkEdit {
+  /** Whether the issue's own links changed. */
+  changed: boolean;
+  /** Other issues whose stored links changed (loaded fresh). */
+  others: StoredIssue[];
+}
 
-/** Write the issue (renaming a stale filename or directory) and commit. */
-async function writeLinks(
+const linksJson = (issue: Pick<Issue, 'links'>): string =>
+  JSON.stringify(issue.links ?? []);
+
+/** Set `issue.links` (absent when empty). */
+function setLinks(issue: Issue, links: Link[]): void {
+  const unique = uniqueLinks(links);
+  if (unique.length > 0) issue.links = unique;
+  else delete issue.links;
+}
+
+/** Drop the links of `issue` that stand for one of the edges in `keys`. */
+function dropEdges(issue: Issue, keys: ReadonlySet<string>): void {
+  setLinks(
+    issue,
+    (issue.links ?? []).filter(
+      (link) =>
+        !isIssueLink(link) || !keys.has(edgeKey(edgeOf(issue.id, link))),
+    ),
+  );
+}
+
+/**
+ * Change the links of `stored` (loaded under the repo lock), in memory:
+ * remove the links `remove` selects, then add `add`. A link to another issue
+ * that already exists (stored on either issue) is not added again, and a new
+ * parent or original (`duplicateOf`) replaces the old one. Throws a
+ * {@link ValidationError} (nothing changed on disk) if an added issue link
+ * points at the issue itself, a missing issue, or closes a cycle (see
+ * `issueLinkError`). Returns what changed; the caller writes it.
+ */
+export async function editLinks(
+  dir: string,
+  stored: StoredIssue,
+  add: readonly Link[],
+  remove: readonly LinkSelector[] = [],
+): Promise<LinkEdit> {
+  const { issue } = stored;
+  const before = linksJson(issue);
+  const { issues: loaded } = await loadAllIssues(dir);
+  // Work on copies of the others; this issue is the one just loaded.
+  const issues = [
+    ...loaded.filter((i) => i.id !== issue.id).map((i) => structuredClone(i)),
+    issue,
+  ];
+  const byId = new Map(issues.map((i) => [i.id, i]));
+  const touched = new Set<number>();
+  const removeEdges = (edges: IssueEdge[]) => {
+    if (edges.length === 0) return;
+    const keys = new Set(edges.map(edgeKey));
+    for (const edge of edges) {
+      for (const end of [edge.from, edge.to]) {
+        const other = byId.get(end);
+        if (!other) continue;
+        const was = linksJson(other);
+        dropEdges(other, keys);
+        if (other !== issue && linksJson(other) !== was) touched.add(end);
+      }
+    }
+  };
+
+  for (const selector of remove) {
+    if ('key' in selector) {
+      setLinks(
+        issue,
+        (issue.links ?? []).filter((link) => linkKey(link) !== selector.key),
+      );
+      continue;
+    }
+    const graph = new LinkGraph(issues);
+    removeEdges(
+      graph.edges.filter(
+        (edge) =>
+          (edge.from === issue.id || edge.to === issue.id) &&
+          selects(selector, issue.id, edge),
+      ),
+    );
+  }
+
+  const errors: string[] = [];
+  for (const link of add) {
+    if (!isIssueLink(link)) {
+      setLinks(issue, [...(issue.links ?? []), link]);
+      continue;
+    }
+    const edge = edgeOf(issue.id, link);
+    const valid = link.id !== issue.id && byId.has(link.id);
+    if (valid) {
+      const graph = new LinkGraph(issues);
+      if (graph.has(edge)) continue;
+      // Check for a cycle without the edges the new one replaces.
+      removeEdges(replacedEdges(graph, edge));
+    }
+    const error = issueLinkError(issue.id, link, new LinkGraph(issues), (id) =>
+      byId.has(id),
+    );
+    if (error) {
+      errors.push(error);
+      continue;
+    }
+    setLinks(issue, [...(issue.links ?? []), link]);
+  }
+  if (errors.length > 0) throw new ValidationError(errors);
+
+  const others: StoredIssue[] = [];
+  for (const id of [...touched].sort((a, b) => a - b)) {
+    const other = await loadStoredIssue(dir, id);
+    other.issue.links = byId.get(id)?.links;
+    if (!other.issue.links) delete other.issue.links;
+    others.push(other);
+  }
+  return { changed: linksJson(issue) !== before, others };
+}
+
+/**
+ * Write the other issues of a {@link LinkEdit} (bumping their `updated`,
+ * moving a misplaced file); returns the paths to commit.
+ */
+export async function writeOthers(
+  dir: string,
+  config: Config,
+  others: readonly StoredIssue[],
+): Promise<string[]> {
+  const paths: string[] = [];
+  for (const other of others) {
+    other.issue.updated = nextTimestamp([other.issue.updated]);
+    paths.push(
+      ...(await relocateIssue(dir, other.issue, other, {
+        closed: isClosedStatus(config, other.issue.status),
+      })),
+      ...assetPaths(other.issue),
+    );
+  }
+  return paths;
+}
+
+/** Write the issue and the other issues of `edit`, then commit. */
+async function writeEdit(
   ctx: ServiceContext,
   stored: StoredIssue,
   before: Issue,
+  edit: LinkEdit,
   operation: Operation,
   config: Config,
 ): Promise<LinkResult> {
   const { issue } = stored;
-  if (sameLinks(before, issue)) {
-    return {
-      changed: false,
-      issue: before,
-      paths: [],
-      config,
-      commit: null,
-    };
+  if (!edit.changed && edit.others.length === 0) {
+    return { changed: false, issue: before, paths: [], config, commit: null };
   }
-  issue.updated = nextTimestamp([issue.updated]);
-  // Write to the directory the status requires (repairs a misplaced file).
-  const paths = await relocateIssue(ctx.dir, issue, stored, {
-    closed: isClosedStatus(config, issue.status),
-  });
-  paths.push(...assetPaths(issue));
+  const paths: string[] = [];
+  if (edit.changed) {
+    issue.updated = nextTimestamp([issue.updated]);
+    // Write to the directory the status requires (repairs a misplaced file).
+    paths.push(
+      ...(await relocateIssue(ctx.dir, issue, stored, {
+        closed: isClosedStatus(config, issue.status),
+      })),
+      ...assetPaths(issue),
+    );
+  }
+  paths.push(...(await writeOthers(ctx.dir, config, edit.others)));
   const commit = await commitChange(ctx, config, {
     operation,
     issue,
@@ -74,74 +222,50 @@ async function writeLinks(
 }
 
 /**
- * Add links to issue `id` from untrusted `input`
- * (`{ blockedBy?: id | id[], parent?: id }`): blockers are added to
- * `blockedBy`, `parent` replaces the parent. Rejected (`invalid_input`,
- * nothing written) if a target doesn't exist, is the issue itself, or the
- * link would create a cycle. Adding links that already exist is a no-op.
+ * Add links to issue `id` from untrusted `input` (`{ links: [...] }`, see
+ * `parseLinkRequest`). Rejected (`invalid_input`, nothing written) for a bad
+ * link, or an issue link to the issue itself, to a missing issue, or that
+ * would create a cycle. A new parent or `duplicateOf` replaces the old one
+ * (also when the other issue stores it). Links that already exist are a
+ * no-op.
  */
 export async function linkIssue(
   ctx: ServiceContext,
   id: number,
-  input: LinkChanges | unknown,
+  input: unknown,
   options: ExistingIssueOptions = {},
 ): Promise<LinkResult> {
+  const parsed = parseLinkRequest(input, 'link');
+  if ('errors' in parsed) throw new ValidationError(parsed.errors);
   return withRepoLock(ctx.dir, async () => {
     const config = await loadConfig(ctx);
     const stored = await loadStoredIssue(ctx.dir, id, options.precondition);
-    const parsed = parseLinkChanges(input);
-    if (!parsed.valid) throw new ValidationError(parsed.errors);
-    const changes = parsed.values;
-
-    // Every issue (open and closed) is needed to check targets and cycles;
-    // the one being linked is taken as just loaded.
-    const { issues } = await loadAllIssues(ctx.dir);
-    const byId = indexIssues(issues);
-    byId.set(id, stored.issue);
-    const errors = validateLinks(id, changes, byId);
-    if (errors.length > 0) throw new ValidationError(errors);
-
     const before = structuredClone(stored.issue);
-    const { issue } = stored;
-    if (changes.blockedBy) {
-      issue.blockedBy = normalizeIdList([
-        ...blockersOf(issue),
-        ...changes.blockedBy,
-      ]);
-    }
-    if (changes.parent !== undefined) issue.parent = changes.parent;
-    return writeLinks(ctx, stored, before, 'link', config);
+    const edit = await editLinks(ctx.dir, stored, parsed.links);
+    return writeEdit(ctx, stored, before, edit, 'link', config);
   });
 }
 
 /**
- * Remove links from issue `id` from untrusted `input`
- * (`{ blockedBy?: id | id[], parent?: true }`). Targets needn't exist (so
- * links to deleted issues can be dropped); removing links that aren't there
- * is a no-op.
+ * Remove links from issue `id` from untrusted `input` (`{ links: [...] }`;
+ * an issue link without `id` removes every link of that relationship). A
+ * link to another issue is removed whichever issue stores it. Targets needn't
+ * exist (so links to deleted issues can be dropped); removing links that
+ * aren't there is a no-op.
  */
 export async function unlinkIssue(
   ctx: ServiceContext,
   id: number,
-  input: UnlinkChanges | unknown,
+  input: unknown,
   options: ExistingIssueOptions = {},
 ): Promise<LinkResult> {
+  const parsed = parseLinkRequest(input, 'unlink');
+  if ('errors' in parsed) throw new ValidationError(parsed.errors);
   return withRepoLock(ctx.dir, async () => {
     const config = await loadConfig(ctx);
     const stored = await loadStoredIssue(ctx.dir, id, options.precondition);
-    const parsed = parseUnlinkChanges(input);
-    if (!parsed.valid) throw new ValidationError(parsed.errors);
-    const changes = parsed.values;
-
     const before = structuredClone(stored.issue);
-    const { issue } = stored;
-    if (changes.blockedBy) {
-      const remove = new Set(changes.blockedBy);
-      const kept = blockersOf(issue).filter((b) => !remove.has(b));
-      if (kept.length > 0) issue.blockedBy = kept;
-      else delete issue.blockedBy;
-    }
-    if (changes.parent) delete issue.parent;
-    return writeLinks(ctx, stored, before, 'unlink', config);
+    const edit = await editLinks(ctx.dir, stored, [], parsed.links);
+    return writeEdit(ctx, stored, before, edit, 'unlink', config);
   });
 }

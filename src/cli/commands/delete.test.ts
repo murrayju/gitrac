@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import simpleGit from 'simple-git';
 import { EXIT_INVALID_INPUT, GitracError } from '../../core/errors.ts';
 import { serializeIssue } from '../../core/issue.ts';
+import { issueLinks } from '../../core/links.fixture.ts';
 import { findIssueFile, readIssue } from '../../fs/issue-store.ts';
 import type { GlobalOptions } from '../global-options.ts';
 import { type DeleteIO, runDelete } from './delete.ts';
@@ -180,7 +181,9 @@ describe('gitrac delete with links to the issue (#68)', () => {
     expect(res.stdout).toContain('Would remove links to #1 from:');
     expect(res.stdout).toContain('#2: Keep (blockedBy)');
     expect(res.stdout).toContain('#3: Child (parent)');
-    expect((await readIssue(dir, 2)).blockedBy).toEqual([1]);
+    expect((await readIssue(dir, 2)).links).toEqual(
+      issueLinks({ blockedBy: 1 }),
+    );
     expect(await subjects()).toEqual(before);
   });
 
@@ -191,17 +194,13 @@ describe('gitrac delete with links to the issue (#68)', () => {
       {
         id: 2,
         title: 'Keep',
-        blockedBy: true,
-        parent: false,
-        duplicateOf: false,
+        relationships: ['blockedBy'],
         paths: [join('.issues', '2-keep.md')],
       },
       {
         id: 3,
         title: 'Child',
-        blockedBy: false,
-        parent: true,
-        duplicateOf: false,
+        relationships: ['parent'],
         paths: [join('.issues', '3-child.md')],
       },
     ]);
@@ -214,8 +213,8 @@ describe('gitrac delete with links to the issue (#68)', () => {
       JSON.parse(res.stdout).unlinked.map((u: { id: number }) => u.id),
     ).toEqual([2, 3]);
     expect((await subjects())[0]).toBe('issue: delete #1 Dupe');
-    expect((await readIssue(dir, 2)).blockedBy).toBeUndefined();
-    expect((await readIssue(dir, 3)).parent).toBeUndefined();
+    expect((await readIssue(dir, 2)).links).toBeUndefined();
+    expect((await readIssue(dir, 3)).links).toBeUndefined();
     const changed = await simpleGit(dir).raw([
       'show',
       '--name-only',

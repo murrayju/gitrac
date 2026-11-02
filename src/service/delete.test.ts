@@ -3,6 +3,7 @@ import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { GitracError } from '../core/errors.ts';
 import { serializeIssue } from '../core/issue.ts';
+import { issueLinks } from '../core/links.fixture.ts';
 import { findIssueFile, readIssue, writeIssue } from '../fs/issue-store.ts';
 import { deleteIssue } from './delete.ts';
 import {
@@ -215,7 +216,11 @@ describe('deleteIssue', () => {
       // #2 is blocked by #1 and another issue
       await writeIssue(
         fx.dir,
-        makeIssue({ id: 2, title: 'Blocked', blockedBy: [1, 4] }),
+        makeIssue({
+          id: 2,
+          title: 'Blocked',
+          links: issueLinks({ blockedBy: [1, 4] }),
+        }),
       );
       // #3 is a closed sub-issue of #1, only blocked by #1
       await writeIssue(
@@ -224,19 +229,22 @@ describe('deleteIssue', () => {
           id: 3,
           title: 'Child',
           status: 'done',
-          parent: 1,
-          blockedBy: [1],
+          links: issueLinks({ parent: 1, blockedBy: 1 }),
         }),
         { closed: true },
       );
       // #4 doesn't reference #1
       await writeIssue(
         fx.dir,
-        makeIssue({ id: 4, title: 'Other', parent: 2, blockedBy: [2] }),
+        makeIssue({
+          id: 4,
+          title: 'Other',
+          links: issueLinks({ parent: 2, blockedBy: 2 }),
+        }),
       );
     }
 
-    test('removes the ID from blockedBy and clears parent, in the same commit', async () => {
+    test('removes the links to it, in the same commit', async () => {
       await linkedFixture();
       const result = await deleteIssue(fx.context(), 1);
 
@@ -245,32 +253,30 @@ describe('deleteIssue', () => {
         {
           id: 2,
           title: 'Blocked',
-          blockedBy: true,
-          parent: false,
-          duplicateOf: false,
+          relationships: ['blockedBy'],
           paths: [join('.issues', '2-blocked.md')],
         },
         {
           id: 3,
           title: 'Child',
-          blockedBy: true,
-          parent: true,
-          duplicateOf: false,
+          relationships: ['parent', 'blockedBy'],
           paths: [join('.issues', 'closed', '3-child.md')],
         },
       ]);
 
       const two = await readIssue(fx.dir, 2);
-      expect(two.blockedBy).toEqual([4]);
+      expect(two.links).toEqual(issueLinks({ blockedBy: 4 }));
       expect(two.updated).not.toBe(old);
       const three = await readIssue(fx.dir, 3);
-      expect(three.blockedBy).toBeUndefined();
-      expect(three.parent).toBeUndefined();
+      expect(three.links).toBeUndefined();
       expect(three.updated).not.toBe(old);
       expect(three.status).toBe('done');
       // Untouched
       const four = await readIssue(fx.dir, 4);
-      expect(four).toMatchObject({ parent: 2, blockedBy: [2], updated: old });
+      expect(four).toMatchObject({
+        links: issueLinks({ parent: 2, blockedBy: 2 }),
+        updated: old,
+      });
 
       expect(fx.commits).toHaveLength(1);
       expect(fx.commits[0]?.files).toEqual([
@@ -286,7 +292,9 @@ describe('deleteIssue', () => {
       const before = await snapshot();
       const plan = await deleteIssue(fx.context(), 1, { dryRun: true });
       expect(plan.unlinked.map((u) => u.id)).toEqual([2, 3]);
-      expect(plan.unlinked[1]).toMatchObject({ blockedBy: true, parent: true });
+      expect(plan.unlinked[1]).toMatchObject({
+        relationships: ['parent', 'blockedBy'],
+      });
       expect(await snapshot()).toEqual(before);
       expect(fx.events).toEqual([]);
     });
@@ -295,7 +303,13 @@ describe('deleteIssue', () => {
       await writeIssue(fx.dir, makeIssue({ id: 1, title: 'Gone' }));
       await writeFile(
         join(fx.dir, '.issues', '2-old-name.md'),
-        serializeIssue(makeIssue({ id: 2, title: 'New name', parent: 1 })),
+        serializeIssue(
+          makeIssue({
+            id: 2,
+            title: 'New name',
+            links: issueLinks({ parent: 1 }),
+          }),
+        ),
       );
       const plan = await deleteIssue(fx.context(), 1, { dryRun: true });
       const expected = [
@@ -311,7 +325,7 @@ describe('deleteIssue', () => {
         ...expected,
       ]);
       expect((await findIssueFile(fx.dir, 2))?.filename).toBe('2-new-name.md');
-      expect((await readIssue(fx.dir, 2)).parent).toBeUndefined();
+      expect((await readIssue(fx.dir, 2)).links).toBeUndefined();
     });
 
     test('commits the assets the unlinked issues reference', async () => {
@@ -322,7 +336,7 @@ describe('deleteIssue', () => {
         makeIssue({
           id: 2,
           title: 'Pic',
-          blockedBy: [1],
+          links: issueLinks({ blockedBy: 1 }),
           description: ref('kept.png'),
         }),
       );

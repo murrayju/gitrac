@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
+import { issueLinks } from '../core/links.fixture.ts';
 import { parseIssueQuery } from '../core/query.ts';
 import type { Config } from '../core/types.ts';
 import { findIssueFile, readConfig, writeIssue } from '../fs/issue-store.ts';
@@ -100,7 +101,7 @@ describe('the next write moves a misplaced file', () => {
   });
 
   test('link', async () => {
-    await linkIssue(fx.context(), 1, { blockedBy: [3] });
+    await linkIssue(fx.context(), 1, { links: issueLinks({ blockedBy: 3 }) });
     expect(await findIssueFile(fx.dir, 1)).toMatchObject({ closed: false });
   });
 
@@ -112,7 +113,7 @@ describe('the next write moves a misplaced file', () => {
         id: 2,
         title: 'Closed on a branch',
         status: 'done',
-        blockedBy: [3],
+        links: issueLinks({ blockedBy: 3 }),
       }),
     );
     const result = await deleteIssue(fx.context(), 3);

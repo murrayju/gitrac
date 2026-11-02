@@ -6,7 +6,10 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
-import type { IssueDependencies } from '../../core/dependencies.ts';
+import {
+  type IssueDependencies,
+  refsByRelationship,
+} from '../../core/dependencies.ts';
 import type { Config } from '../../core/types.ts';
 import type {
   ApiIssue,
@@ -145,7 +148,7 @@ export function useIssue(id: number): {
 }
 
 /**
- * An issue's resolved links (parent, sub-issues, blocked by, blocks),
+ * An issue's resolved relations (parent, sub-issues, blocked by, ...),
  * refetched on every change — linked issues can change status or title
  * without this issue changing.
  */
@@ -163,13 +166,7 @@ export function useIssueDependencies(id: number): {
     fetchIssueDependencies(id)
       .then((data) => {
         if (seq !== seqRef.current) return;
-        const { parent, children, blockedBy, blocks } = data;
-        rememberIssueTitles([
-          ...(parent ? [parent] : []),
-          ...children,
-          ...blockedBy,
-          ...blocks,
-        ]);
+        rememberIssueTitles(Object.values(refsByRelationship(data)).flat());
         setDependencies(data);
       })
       .catch(() => {

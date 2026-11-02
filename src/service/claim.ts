@@ -13,7 +13,6 @@ import {
   toClosedElsewhere,
 } from '../core/elsewhere.ts';
 import { GitracError, invalidInput } from '../core/errors.ts';
-import { dropDuplicateLink } from '../core/lifecycle.ts';
 import {
   claimAge,
   formatDuration,
@@ -251,8 +250,6 @@ export async function claimIssue(
     // Use email as the canonical identifier if available, else the name
     issue.assignee = claimAssignee(user);
     issue.status = active;
-    // A forced claim can reopen an issue closed as a duplicate.
-    dropDuplicateLink(issue, config);
 
     // Add the user to config.assignees if not already present (by email).
     // Skip a user that is not a valid entry (e.g. an em dash in the name):

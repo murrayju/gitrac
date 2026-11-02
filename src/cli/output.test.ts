@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import yaml from 'js-yaml';
 import { parseIssue } from '../core/issue.ts';
+import { issueLinks } from '../core/links.fixture.ts';
 import type { Issue } from '../core/types.ts';
 import { formatIssueDetail, formatIssueList } from './output.ts';
 
@@ -151,7 +152,8 @@ describe('formatIssueDetail', () => {
 });
 
 describe('detail with resolved dependencies (#102)', () => {
-  const linked: Issue = { ...SAMPLE_ISSUE_2, parent: 5, blockedBy: [1, 9] };
+  const links = issueLinks({ parent: 5, blockedBy: [1, 9] });
+  const linked: Issue = { ...SAMPLE_ISSUE_2, links };
   const deps = {
     parent: { id: 5, title: 'Epic', status: 'todo', resolved: false },
     children: [{ id: 7, title: 'Child', status: 'backlog', resolved: false }],
@@ -162,6 +164,7 @@ describe('detail with resolved dependencies (#102)', () => {
     blocks: [{ id: 8, title: 'Later', status: 'todo', resolved: false }],
     duplicateOf: null,
     duplicates: [],
+    related: [],
     blocked: false,
   };
   const mark = {
@@ -173,21 +176,19 @@ describe('detail with resolved dependencies (#102)', () => {
     },
   };
 
-  test('json adds a dependencies field and keeps parent / blockedBy', () => {
+  test('json adds a dependencies field and keeps links', () => {
     const parsed = JSON.parse(formatIssueDetail(linked, 'json', deps, mark));
     expect(parsed.dependencies).toEqual(deps);
-    expect(parsed.parent).toBe(5);
-    expect(parsed.blockedBy).toEqual([1, 9]);
+    expect(parsed.links).toEqual(links);
     expect(parsed.claimedElsewhere).toEqual(mark.claimedElsewhere);
   });
 
-  test('yaml adds a dependencies field and keeps parent / blockedBy', () => {
+  test('yaml adds a dependencies field and keeps links', () => {
     const parsed = yaml.load(
       formatIssueDetail(linked, 'yaml', deps, mark),
     ) as Record<string, unknown>;
     expect(parsed.dependencies).toEqual(deps);
-    expect(parsed.parent).toBe(5);
-    expect(parsed.blockedBy).toEqual([1, 9]);
+    expect(parsed.links).toEqual(links);
     expect(parsed.claimedElsewhere).toEqual(mark.claimedElsewhere);
   });
 
@@ -224,6 +225,7 @@ describe('dependencies only elsewhere (#120)', () => {
       blocks: [],
       duplicateOf: null,
       duplicates: [],
+      related: [],
       blocked: true,
     };
     const out = formatIssueDetail(SAMPLE_ISSUE_2, 'human', deps);

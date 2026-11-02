@@ -656,8 +656,9 @@ export function issueRoutes(ctx: ServerContext): Hono {
     });
   }
 
-  // GET /issues/:id/dependencies — the issue's parent, sub-issues, blockers
-  // and the issues it blocks (derived), each `{ id, title, status, resolved }`
+  // GET /issues/:id/dependencies: the issue's relations (parent,
+  // sub-issues, blockers, blocked, duplicates, related; from every issue's
+  // links), each `{ id, title, status, resolved }`
   // (`status: null` for a missing issue; plus `foundElsewhere` for one only
   // in another worktree or on another branch), plus `blocked`. Works for an
   // issue only elsewhere too (as `GET /issues/:id`). Resolved against the
@@ -679,9 +680,9 @@ export function issueRoutes(ctx: ServerContext): Hono {
     );
   });
 
-  // POST /issues/:id/link — `{ blockedBy?: id | id[], parent?: id }`: add
-  // blockers / set the parent. 400 if a target is missing, the issue itself,
-  // or the link would create a cycle. Honors `If-Match`.
+  // POST /issues/:id/link: `{ links: [...] }` (see `parseLinkRequest`):
+  // add links. 400 for a bad link, or an issue link to a missing issue, to
+  // the issue itself, or that would create a cycle. Honors `If-Match`.
   app.post('/issues/:id/link', locked, async (c) => {
     const id = Number.parseInt(c.req.param('id'), 10);
     if (Number.isNaN(id)) {
@@ -693,8 +694,9 @@ export function issueRoutes(ctx: ServerContext): Hono {
     );
   });
 
-  // POST /issues/:id/unlink — `{ blockedBy?: id | id[], parent?: true }`:
-  // remove blockers / clear the parent. Honors `If-Match`.
+  // POST /issues/:id/unlink: `{ links: [...] }`: remove links (an issue
+  // link without `id`: every link of that relationship), whichever issue
+  // stores them. Honors `If-Match`.
   app.post('/issues/:id/unlink', locked, async (c) => {
     const id = Number.parseInt(c.req.param('id'), 10);
     if (Number.isNaN(id)) {

@@ -1,9 +1,4 @@
 import { type ClaimUser, decideEdit } from '../core/claim.ts';
-import {
-  duplicateOfError,
-  idValue,
-  indexIssues,
-} from '../core/dependencies.ts';
 import { sameDescription } from '../core/description.ts';
 import {
   describeLocation,
@@ -15,13 +10,13 @@ import {
   assertCanClose,
   assertCanReopen,
   closingStatus,
-  dropDuplicateLink,
   reopenStatus,
 } from '../core/lifecycle.ts';
+import { toIssueId } from '../core/links.ts';
 import { nextTimestamp } from '../core/timestamp.ts';
 import type { Config, Issue, Status } from '../core/types.ts';
 import { validateIssue, validateIssueFields } from '../core/validate.ts';
-import { duplicateStatus, isClosedStatus } from '../core/workflow.ts';
+import { isClosedStatus } from '../core/workflow.ts';
 import {
   registerLabels,
   relocateIssue,
@@ -43,7 +38,7 @@ import {
   type ServiceContext,
 } from './context.ts';
 import { ValidationError } from './errors.ts';
-import { loadAllIssues } from './list.ts';
+import { editLinks, writeOthers } from './links.ts';
 import { loadStoredIssue, type Precondition } from './load.ts';
 
 /**
@@ -244,11 +239,6 @@ export async function updateIssue(
     // Input errors take precedence over issue errors (missing, If-Match...).
     const { title, status, priority, assignee, labels, description } =
       validFields(fields, config);
-    const duplicateOf = validDuplicateOf(
-      typeof fields === 'object' && fields !== null
-        ? (fields as Record<string, unknown>).duplicateOf
-        : undefined,
-    );
     const author = await commentAuthor(ctx, options.comment);
     // The acting user, for the claim rule. Resolve it before the issue is
     // loaded, so a bad identity (e.g. an unknown web author) is
@@ -265,12 +255,6 @@ export async function updateIssue(
     }
     if (status !== undefined && status !== issue.status) {
       issue.status = status;
-      dropDuplicateLink(issue, config);
-      changed = true;
-    }
-    if (duplicateOf !== undefined && duplicateOf !== issue.duplicateOf) {
-      await assertDuplicateOf(ctx.dir, issue, duplicateOf, config);
-      issue.duplicateOf = duplicateOf;
       changed = true;
     }
     if (priority !== undefined && priority !== issue.priority) {
@@ -549,10 +533,10 @@ export async function deleteComment(
  * `invalid_state`; neither writes anything (see `src/core/lifecycle.ts`).
  *
  * With `duplicateOf` (an issue ID), the issue gets the duplicate status
- * (`duplicateStatus`, default `duplicate`) and `duplicateOf` links it to
- * that issue. A bad ID, no duplicate status, the issue itself, a missing
- * issue or a cycle of duplicates is `invalid_input` (see
- * `duplicateOfError`).
+ * (`duplicateStatus`, default `duplicate`) and a `duplicateOf` link to that
+ * issue (replacing an older one; see `editLinks`), in the same commit. A
+ * bad ID, no duplicate status, the issue itself, a missing issue or a cycle
+ * of duplicates is `invalid_input`.
  *
  * Like a status change by `updateIssue`, a close must not overwrite a
  * claim: if the issue's effective state (here, in other worktrees or on
@@ -588,12 +572,13 @@ export async function closeIssue(
     assertCanClose(issue, stored.closed, config);
     const now = await assertClaimFree(ctx, id, issue, user, config, options);
 
+    const linked =
+      duplicateOf === undefined
+        ? { others: [] }
+        : await editLinks(ctx.dir, stored, [
+            { type: 'issue', relationship: 'duplicateOf', id: duplicateOf },
+          ]);
     issue.status = status;
-    dropDuplicateLink(issue, config);
-    if (duplicateOf !== undefined) {
-      await assertDuplicateOf(ctx.dir, issue, duplicateOf, config);
-      issue.duplicateOf = duplicateOf;
-    }
     issue.updated = now;
     appendComment(issue, author, options.comment, now);
 
@@ -604,7 +589,11 @@ export async function closeIssue(
     return finish(ctx, config, {
       operation: 'close',
       issue,
-      paths: [...paths, ...assetPaths(issue)],
+      paths: [
+        ...paths,
+        ...assetPaths(issue),
+        ...(await writeOthers(ctx.dir, config, linked.others)),
+      ],
       message: commitMessage(config, `close #${id} ${issue.title}`),
     });
   });
@@ -616,35 +605,11 @@ export async function closeIssue(
  */
 function validDuplicateOf(value: unknown): number | undefined {
   if (value === undefined) return undefined;
-  const id = idValue(value);
+  const id = toIssueId(value);
   if (id === undefined) {
     throw new ValidationError(['Invalid duplicateOf: must be an issue ID']);
   }
   return id;
-}
-
-/**
- * Throw a {@link ValidationError} unless `issue` (as changed so far) can be
- * linked as a duplicate of `original`: it must be in the duplicate status,
- * and `original` must pass `duplicateOfError`.
- */
-async function assertDuplicateOf(
-  dir: string,
-  issue: Issue,
-  original: number,
-  config: Config,
-): Promise<void> {
-  const status = duplicateStatus(config);
-  if (issue.status !== status) {
-    throw new ValidationError([
-      status === undefined
-        ? 'duplicateOf needs a duplicate status: add a closed "duplicate" status or set duplicateStatus in .issues/config.yaml'
-        : `duplicateOf needs the status ${status}`,
-    ]);
-  }
-  const { issues } = await loadAllIssues(dir);
-  const error = duplicateOfError(issue.id, original, indexIssues(issues));
-  if (error) throw new ValidationError([error]);
 }
 
 /** Pick a status, reporting a bad one as a {@link ValidationError}. */
@@ -685,7 +650,6 @@ export async function reopenIssue(
     const now = await assertClaimFree(ctx, id, issue, user, config, options);
 
     issue.status = status;
-    dropDuplicateLink(issue, config);
     issue.updated = now;
     appendComment(issue, author, options.comment, now);
 

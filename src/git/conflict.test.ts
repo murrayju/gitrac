@@ -5,6 +5,7 @@ import {
   serializeConfig,
 } from '../core/config.ts';
 import { parseIssue, serializeIssue } from '../core/issue.ts';
+import { issueLinks } from '../core/links.fixture.ts';
 import type {
   Comment,
   Config,
@@ -510,82 +511,57 @@ describe('mergeIssueFiles', () => {
   });
 });
 
-/** Regression tests for #55: dependency fields in the merge driver. */
-describe('merging dependency fields', () => {
-  test('blockedBy merges as a set', () => {
-    const base = makeFrontmatter({ blockedBy: [1, 2] });
+/** Regression tests for #55 / #127: links in the merge driver. */
+describe('merging links', () => {
+  const url = (u: string) => ({ type: 'url', url: u }) as const;
+
+  test('links merge as a set', () => {
+    const base = makeFrontmatter({ links: issueLinks({ blockedBy: [1, 2] }) });
     const ours = makeFrontmatter({
-      blockedBy: [1, 2, 3],
+      links: [...issueLinks({ blockedBy: [1, 2, 3] }), url('https://a')],
       updated: '2025-01-03T00:00:00Z',
     });
     const theirs = makeFrontmatter({
-      blockedBy: [2, 4],
+      links: issueLinks({ blockedBy: [2, 4], parent: 9 }),
       updated: '2025-01-02T00:00:00Z',
     });
-    // ours added 3, theirs added 4 and removed 1.
-    expect(mergeIssueFrontmatter(ours, theirs, base).blockedBy).toEqual([
-      2, 3, 4,
+    // ours added 3 and a URL, theirs added 4 and the parent, removed 1.
+    expect(mergeIssueFrontmatter(ours, theirs, base).links).toEqual([
+      ...issueLinks({ blockedBy: [2, 3] }),
+      url('https://a'),
+      ...issueLinks({ blockedBy: 4, parent: 9 }),
     ]);
   });
 
-  test('blockedBy removed on both sides is not written', () => {
-    const base = makeFrontmatter({ blockedBy: [1] });
+  test('links removed on both sides are not written', () => {
+    const base = makeFrontmatter({ links: issueLinks({ blockedBy: 1 }) });
     const ours = makeFrontmatter({ labels: ['bug'] });
     const theirs = makeFrontmatter();
     const merged = mergeIssueFrontmatter(ours, theirs, base);
-    expect('blockedBy' in merged).toBe(false);
+    expect('links' in merged).toBe(false);
   });
 
-  test('duplicateOf is per-field (#127)', () => {
-    const base = makeFrontmatter();
-    const ours = makeFrontmatter({ priority: 'high' });
-    const theirs = makeFrontmatter({ status: 'duplicate', duplicateOf: 7 });
-    const merged = mergeIssueFrontmatter(ours, theirs, base);
-    expect(merged.status).toBe('duplicate');
-    expect(merged.duplicateOf).toBe(7);
-    expect('duplicateOf' in mergeIssueFrontmatter(ours, base, base)).toBe(
-      false,
-    );
-  });
-
-  test('parent is per-field (one side wins, both: newer side)', () => {
-    const base = makeFrontmatter();
-    const ours = makeFrontmatter({ priority: 'high' });
-    const theirs = makeFrontmatter({ parent: 7 });
-    expect(mergeIssueFrontmatter(ours, theirs, base).parent).toBe(7);
-
-    const newer = makeFrontmatter({
-      parent: 8,
-      updated: '2025-01-05T00:00:00Z',
-    });
-    expect(mergeIssueFrontmatter(newer, theirs, base).parent).toBe(8);
-    // Cleared on one side.
-    expect(
-      'parent' in
-        mergeIssueFrontmatter(
-          makeFrontmatter(),
-          makeFrontmatter({ labels: ['x'] }),
-          makeFrontmatter({ parent: 3 }),
-        ),
-    ).toBe(false);
-  });
-
-  test('mergeIssueFiles merges and round-trips the fields', async () => {
-    const base = issueFile({ blockedBy: [1] });
+  test('mergeIssueFiles merges a version 1 file into links', async () => {
+    // Base and theirs written by an older gitrac (blockedBy / parent).
+    const legacy = (fields: string, updated: string) =>
+      issueFile({ updated }).replace('labels: []\n', `labels: []\n${fields}`);
+    const base = legacy('blockedBy:\n  - 1\n', '2025-01-01T00:00:00Z');
     const ours = issueFile({
-      blockedBy: [1, 2],
+      links: issueLinks({ blockedBy: [1, 2] }),
       updated: '2025-01-02T00:00:00Z',
     });
-    const theirs = issueFile({
-      blockedBy: [1, 3],
-      parent: 9,
-      updated: '2025-01-03T00:00:00Z',
-    });
+    const theirs = legacy(
+      'parent: 9\nblockedBy:\n  - 1\n  - 3\n',
+      '2025-01-03T00:00:00Z',
+    );
     const result = await mergeIssueFiles(base, ours, theirs);
     expect(result.conflict).toBe(false);
-    const merged = parseIssue(result.content);
-    expect(merged.blockedBy).toEqual([1, 2, 3]);
-    expect(merged.parent).toBe(9);
+    expect(result.content).not.toContain('blockedBy:\n');
+    expect(parseIssue(result.content).links).toEqual(
+      issueLinks({ blockedBy: [1, 2], parent: 9 }).concat(
+        issueLinks({ blockedBy: 3 }),
+      ),
+    );
   });
 });
 

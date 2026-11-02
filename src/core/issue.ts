@@ -10,6 +10,7 @@ import {
 import { GitracError } from './errors.ts';
 import { scanFences } from './fences.ts';
 import { splitLines } from './lines.ts';
+import { legacyLinks, parseLinks, uniqueLinks } from './links.ts';
 import type {
   ExtraFields,
   Issue,
@@ -46,6 +47,8 @@ const KNOWN_KEYS: ReadonlySet<string> = new Set([
   'priority',
   'assignee',
   'labels',
+  'links',
+  // The fields `links` replaced (config version 1): read into `links`.
   'parent',
   'blockedBy',
   'duplicateOf',
@@ -235,46 +238,28 @@ function toLabelsField(value: unknown): string[] {
   return items.map(toStringField).filter((label) => label !== '');
 }
 
-/** A positive integer issue ID, or undefined (absent / not an ID). */
-function toOptionalIdField(value: unknown): number | undefined {
-  const id = toIdField(value);
-  return Number.isInteger(id) && id > 0 ? id : undefined;
+/**
+ * The `links` field, present only when non-empty, so files without links
+ * round-trip unchanged.
+ */
+export function linkFields(issue: Pick<Issue, 'links'>): Pick<Issue, 'links'> {
+  const links = uniqueLinks(issue.links ?? []);
+  return links.length > 0 ? { links } : {};
 }
 
 /**
- * Coerce a list of issue IDs (`blockedBy`): a single scalar becomes a
- * one-element list, numeric strings are accepted, anything that isn't a
- * positive integer is dropped, and the result is sorted and de-duplicated.
+ * The issue file `content` rewritten without the fields that `links`
+ * replaced (`parent`, `blockedBy`, `duplicateOf`; config version 1), or
+ * null if it has none of them. Nothing else changes (`updated` included).
+ * Throws if the file can't be parsed.
  */
-function toIdListField(value: unknown): number[] {
-  if (value === null || value === undefined) return [];
-  const items = Array.isArray(value) ? value : [value];
-  const ids = items
-    .map(toOptionalIdField)
-    .filter((id): id is number => id !== undefined);
-  return normalizeIdList(ids);
-}
-
-/** Sort ascending and drop duplicates (the canonical `blockedBy` form). */
-export function normalizeIdList(ids: readonly number[]): number[] {
-  return [...new Set(ids)].sort((a, b) => a - b);
-}
-
-/**
- * The optional dependency fields, in frontmatter order, present only when
- * set (`parent`, `duplicateOf`) / non-empty (`blockedBy`, normalized) so
- * files without them round-trip unchanged.
- */
-export function dependencyFields(
-  issue: Pick<Issue, 'parent' | 'blockedBy' | 'duplicateOf'>,
-): Pick<Issue, 'parent' | 'blockedBy' | 'duplicateOf'> {
-  const fields: Pick<Issue, 'parent' | 'blockedBy' | 'duplicateOf'> = {};
-  if (issue.parent !== undefined) fields.parent = issue.parent;
-  if (issue.blockedBy && issue.blockedBy.length > 0) {
-    fields.blockedBy = normalizeIdList(issue.blockedBy);
-  }
-  if (issue.duplicateOf !== undefined) fields.duplicateOf = issue.duplicateOf;
-  return fields;
+export function migrateLegacyLinks(content: string): string | null {
+  const { data } = matter(content, MATTER_OPTIONS);
+  const fm = isPlainObject(data) ? data : {};
+  const legacy = ['parent', 'blockedBy', 'duplicateOf'].some((key) =>
+    Object.hasOwn(fm, key),
+  );
+  return legacy ? serializeIssue(parseIssue(content)) : null;
 }
 
 /**
@@ -314,11 +299,8 @@ export function parseIssue(markdown: string): Issue {
     priority: toStringField(fm.priority) as Priority,
     assignee: toStringField(fm.assignee),
     labels: toLabelsField(fm.labels),
-    ...dependencyFields({
-      parent: toOptionalIdField(fm.parent),
-      blockedBy: toIdListField(fm.blockedBy),
-      duplicateOf: toOptionalIdField(fm.duplicateOf),
-    }),
+    // The fields `links` replaced are read into it (they are never written).
+    ...linkFields({ links: [...parseLinks(fm.links), ...legacyLinks(fm)] }),
     created: toStringField(fm.created),
     createdBy: toStringField(fm.createdBy),
     updated: toStringField(fm.updated),
@@ -401,7 +383,7 @@ export function serializeIssue(issue: Issue): string {
     priority: issue.priority,
     assignee: issue.assignee,
     labels: issue.labels,
-    ...dependencyFields(issue),
+    ...linkFields(issue),
     created: issue.created,
     createdBy: issue.createdBy,
     updated: issue.updated,

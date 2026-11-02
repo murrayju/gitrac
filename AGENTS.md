@@ -62,7 +62,7 @@ video/        # Remotion project for the gitrac.dev demo video, from real record
 .issues/      # Project issues (managed by gitrac itself)
 ```
 
-The architecture is layered: `core` (pure functions, no I/O) -> `fs` (filesystem) -> `git` (git operations) -> `service` (one function per mutation: `createIssue`, `updateIssue`, `addComment`, `editComment`, `deleteComment`, `closeIssue`, `reopenIssue`, `deleteIssue`, `renumberIssue`, `resolveDuplicateId`, `claimIssue`, `unclaimIssue`, `submitForReview`, `closeWithCommit`, `claimNextIssue`, `linkIssue`, `unlinkIssue`, `initProject`, `updateLabelColors`, `updateAssignees`, `installMergeDriver`, and in `src/service/sync.ts` `syncStatus`, `fetchRemotes`, `pullRemotes`, `pushRemotes`, `syncRemotes`, `setSyncIncluded`) -> `cli`/`web` (thin adapters: parse input -> call the service -> format output, mapping `GitracError`s to exit codes / HTTP statuses). Each layer only depends on layers below it.
+The architecture is layered: `core` (pure functions, no I/O) -> `fs` (filesystem) -> `git` (git operations) -> `service` (one function per mutation: `createIssue`, `updateIssue`, `addComment`, `editComment`, `deleteComment`, `closeIssue`, `reopenIssue`, `deleteIssue`, `renumberIssue`, `resolveDuplicateId`, `migrateProject`, `claimIssue`, `unclaimIssue`, `submitForReview`, `closeWithCommit`, `claimNextIssue`, `linkIssue`, `unlinkIssue`, `initProject`, `updateLabelColors`, `updateAssignees`, `installMergeDriver`, and in `src/service/sync.ts` `syncStatus`, `fetchRemotes`, `pullRemotes`, `pushRemotes`, `syncRemotes`, `setSyncIncluded`) -> `cli`/`web` (thin adapters: parse input -> call the service -> format output, mapping `GitracError`s to exit codes / HTTP statuses). Each layer only depends on layers below it.
 
 ## Development
 
@@ -150,10 +150,13 @@ priority: high
 assignee: murrayju
 labels:
   - bug
-parent: 12          # optional: sub-issue of #12
-blockedBy:          # optional: can't start until these are closed
-  - 3
-duplicateOf: 9      # optional: closed as a duplicate of #9 (status: duplicate)
+links:              # optional (src/core/links.ts)
+  - type: issue
+    relationship: blockedBy   # also blocks, parent, child, duplicateOf, duplicatedBy, related
+    id: 3
+  - type: github-pr           # also url ({ url, title? }); unknown types are kept as is
+    repo: murrayju/gitrac
+    number: 42
 created: 2026-03-28T12:00:00Z
 createdBy: murrayju
 updated: 2026-03-28T14:30:00Z
@@ -167,6 +170,8 @@ Description goes here (full markdown supported).
 
 Comment body here. Headings in comments are escaped with `\#`.
 ```
+
+A link between two issues is stored on one of them only; read relations through `LinkGraph` (`src/core/links.ts`), which derives the other side from every issue's links, never from one issue's `links` alone. Changing the `.issues/` format means bumping `CONFIG_VERSION` (`src/core/config.ts`) and adding a step to `migrateProject` (`src/service/migrate.ts`); keep reading the old format, since files from older branches merge in unconverted.
 
 Unknown frontmatter keys (hand-added `estimate:`, `externalId:`, ...) are preserved verbatim after the known ones on every write and merge, and exposed read-only as `Issue.extra` (`-o json`, API). Don't build or copy issue frontmatter field by field without carrying `extra` along (`src/core/issue.ts`).
 

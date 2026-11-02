@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Hono } from 'hono';
 import { createDefaultConfig } from '../../core/config.ts';
+import { issueLinks } from '../../core/links.fixture.ts';
 import type { Issue } from '../../core/types.ts';
 import {
   initIssuesDir,
@@ -65,9 +66,16 @@ beforeEach(async () => {
   );
   await writeIssue(
     dir,
-    makeIssue({ id: 3, title: 'Task', parent: 1, blockedBy: [2] }),
+    makeIssue({
+      id: 3,
+      title: 'Task',
+      links: issueLinks({ parent: 1, blockedBy: 2 }),
+    }),
   );
-  await writeIssue(dir, makeIssue({ id: 4, title: 'Later', blockedBy: [3] }));
+  await writeIssue(
+    dir,
+    makeIssue({ id: 4, title: 'Later', links: issueLinks({ blockedBy: 3 }) }),
+  );
 });
 
 afterEach(async () => {
@@ -91,10 +99,9 @@ function post(
 }
 
 describe('GET /api/issues/:id', () => {
-  test('includes blockedBy and parent', async () => {
+  test('includes links', async () => {
     const data = (await (await req('/issues/3')).json()) as Issue;
-    expect(data.blockedBy).toEqual([2]);
-    expect(data.parent).toBe(1);
+    expect(data.links).toEqual(issueLinks({ parent: 1, blockedBy: 2 }));
   });
 });
 
@@ -107,6 +114,7 @@ describe('GET /api/issues/:id/dependencies', () => {
       children: [],
       duplicateOf: null,
       duplicates: [],
+      related: [],
       blockedBy: [{ id: 2, title: 'Blocker', status: 'done', resolved: true }],
       blocks: [{ id: 4, title: 'Later', status: 'todo', resolved: false }],
       blocked: false,
@@ -125,40 +133,55 @@ describe('GET /api/issues/:id/dependencies', () => {
 
 describe('POST /api/issues/:id/link and /unlink', () => {
   test('links, replies with the issue and its ETag', async () => {
-    const res = await post('/issues/1/link', { blockedBy: [2] });
+    const links = [
+      ...issueLinks({ blockedBy: 2 }),
+      { type: 'url', url: 'https://x.dev' },
+    ];
+    const res = await post('/issues/1/link', { links });
     expect(res.status).toBe(200);
     expect(res.headers.get('ETag')).toBeTruthy();
-    expect(((await res.json()) as Issue).blockedBy).toEqual([2]);
-    expect((await readIssue(dir, 1)).blockedBy).toEqual([2]);
+    expect(((await res.json()) as Issue).links).toEqual(links);
+    expect((await readIssue(dir, 1)).links).toEqual(links);
   });
 
   test('400 { error, errors } for a cycle, nothing written', async () => {
-    const res = await post('/issues/3/link', { blockedBy: 4 });
+    const res = await post('/issues/3/link', {
+      links: issueLinks({ blockedBy: 4 }),
+    });
     expect(res.status).toBe(400);
     const data = await res.json();
     expect(data.errors[0]).toContain('cycle');
-    expect((await readIssue(dir, 3)).blockedBy).toEqual([2]);
+    expect((await readIssue(dir, 3)).links).toEqual(
+      issueLinks({ parent: 1, blockedBy: 2 }),
+    );
+    expect((await post('/issues/3/link', { blockedBy: 4 })).status).toBe(400);
   });
 
   test('honors If-Match', async () => {
     const res = await post(
       '/issues/1/link',
-      { blockedBy: 2 },
+      { links: issueLinks({ blockedBy: 2 }) },
       { 'If-Match': '"stale"' },
     );
     expect(res.status).toBe(409);
-    expect((await readIssue(dir, 1)).blockedBy).toBeUndefined();
+    expect((await readIssue(dir, 1)).links).toBeUndefined();
   });
 
   test('unlinks', async () => {
     const res = await post('/issues/3/unlink', {
-      blockedBy: [2],
-      parent: true,
+      links: [
+        ...issueLinks({ blockedBy: 2 }),
+        { type: 'issue', relationship: 'parent' },
+      ],
     });
     expect(res.status).toBe(200);
-    const issue = await readIssue(dir, 3);
-    expect(issue.blockedBy).toBeUndefined();
-    expect(issue.parent).toBeUndefined();
+    expect((await readIssue(dir, 3)).links).toBeUndefined();
+    // #4 stores "blocked by #3": unlinking from #3 rewrites #4.
+    const blocks = await post('/issues/3/unlink', {
+      links: issueLinks({ blocks: 4 }),
+    });
+    expect(blocks.status).toBe(200);
+    expect((await readIssue(dir, 4)).links).toBeUndefined();
   });
 });
 

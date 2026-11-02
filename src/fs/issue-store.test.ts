@@ -102,7 +102,7 @@ describe('readConfig / writeConfig', () => {
   test('reads default config after init', async () => {
     await initIssuesDir(dir);
     const config = await readConfig(dir);
-    expect(config.version).toBe(1);
+    expect(config.version).toBe(2);
     expect(config.nextId).toBeUndefined();
     expect(config.statuses).toContainEqual({ name: 'backlog', closed: false });
   });

@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import simpleGit from 'simple-git';
 import { EXIT_CONFLICT, GitracError } from '../../core/errors.ts';
+import { issueLinks } from '../../core/links.fixture.ts';
 import { findIssueFiles, readIssue } from '../../fs/issue-store.ts';
 import type { GlobalOptions } from '../global-options.ts';
 import { type RenumberIO, resolveFileArg, runRenumber } from './renumber.ts';
@@ -166,8 +167,7 @@ describe('a duplicate ID after merging two clones', () => {
         {
           id: 2,
           title: 'Blocked',
-          blockedBy: true,
-          parent: false,
+          relationships: ['blockedBy'],
           mentions: false,
           updated: false,
           paths: [],
@@ -183,7 +183,9 @@ describe('a duplicate ID after merging two clones', () => {
       'Renumbered from #1 (duplicate ID).',
     );
     // Not rewritten by default: the link was ambiguous.
-    expect((await readIssue(dir, 2)).blockedBy).toEqual([1]);
+    expect((await readIssue(dir, 2)).links).toEqual(
+      issueLinks({ blockedBy: 1 }),
+    );
     expect((await cli('show', '1')).code).toBe(0);
     // The next new issue gets the next ID.
     const created = await cli('create', '-t', 'Next', '-o', 'json');
@@ -203,7 +205,9 @@ describe('a duplicate ID after merging two clones', () => {
     const res = await cli('renumber', '1', '-f', ALPHA, '--update-refs');
     expect(res.code).toBe(0);
     expect(res.stdout).toContain('Links to #1 changed to #3 in:');
-    expect((await readIssue(dir, 2)).blockedBy).toEqual([3]);
+    expect((await readIssue(dir, 2)).links).toEqual(
+      issueLinks({ blockedBy: 3 }),
+    );
     const changed = await simpleGit(dir).raw([
       'show',
       '--no-renames',

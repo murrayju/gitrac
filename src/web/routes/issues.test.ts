@@ -593,7 +593,7 @@ describe('PATCH /api/issues/:id/close', () => {
     });
     expect(bad.status).toBe(400);
     expect(await bad.json()).toMatchObject({
-      errors: ["Issue #2 can't be a duplicate of itself"],
+      errors: ["Issue #2 can't be linked to itself"],
     });
 
     const res = await req('/issues/2/close', {
@@ -604,7 +604,7 @@ describe('PATCH /api/issues/:id/close', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       status: 'duplicate',
-      duplicateOf: 1,
+      links: [{ type: 'issue', relationship: 'duplicateOf', id: 1 }],
     });
     const deps = await (await req('/issues/1/dependencies')).json();
     expect(deps.duplicates).toEqual([

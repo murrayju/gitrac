@@ -132,20 +132,3 @@ export function closingStatus(
   }
   return closeStatus(config);
 }
-
-/**
- * Drop `issue.duplicateOf` unless the issue is in the duplicate status: the
- * link only holds while the issue is closed as a duplicate. Call it after
- * every status change.
- */
-export function dropDuplicateLink(
-  issue: Pick<Issue, 'status' | 'duplicateOf'>,
-  config: WorkflowConfig,
-): void {
-  if (
-    issue.duplicateOf !== undefined &&
-    issue.status !== duplicateStatus(config)
-  ) {
-    delete issue.duplicateOf;
-  }
-}
