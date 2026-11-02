@@ -1,14 +1,14 @@
 ---
 id: 127
 title: Close an issue as a duplicate of another issue
-status: backlog
+status: in_progress
 priority: medium
 assignee: justin@tigerdata.com
 labels:
   - feature
 created: '2026-11-02T04:01:59.991Z'
 createdBy: Justin Murray
-updated: '2026-11-02T17:17:17.295Z'
+updated: '2026-11-02T17:17:18.394Z'
 ---
 
 Close an issue as a duplicate of another one, and record the link.
