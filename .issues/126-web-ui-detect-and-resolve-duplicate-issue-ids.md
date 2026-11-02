@@ -1,14 +1,14 @@
 ---
 id: 126
 title: 'Web UI: detect and resolve duplicate issue IDs'
-status: backlog
+status: in_progress
 priority: medium
-assignee: ''
+assignee: justin@tigerdata.com
 labels:
   - feature
 created: '2026-11-02T01:41:28.374Z'
 createdBy: Justin Murray
-updated: '2026-11-02T01:41:28.374Z'
+updated: '2026-11-02T01:41:34.470Z'
 ---
 
 Opening an issue whose ID has several files (e.g. two clones created the same ID) shows only a raw `API error 409 ... duplicate_issue` message in the web UI.
