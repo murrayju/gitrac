@@ -11,6 +11,7 @@ import type { Config } from '../../core/types.ts';
 import type {
   ApiIssue,
   Draft,
+  DuplicateIssueId,
   GitStatus,
   Identity,
   IssueFilters,
@@ -18,6 +19,7 @@ import type {
 import {
   fetchConfig,
   fetchDrafts,
+  fetchDuplicates,
   fetchGitStatus,
   fetchIdentity,
   fetchIssueDependencies,
@@ -225,6 +227,30 @@ export function useWorkflow(): WorkflowView {
 
 function refetchConfig(): void {
   void configQuery.refetch();
+}
+
+// Duplicate issue IDs (several files with one ID), shared by the banner,
+// the resolve page and the issue view. Re-fetched when issues change.
+const duplicatesQuery = createSharedQuery(fetchDuplicates, (refetch) =>
+  issueEvents().subscribe(refetch),
+);
+
+/** The issue IDs that several files have (empty until loaded). */
+export function useDuplicates(): {
+  duplicates: DuplicateIssueId[];
+  refetch: () => void;
+} {
+  const { data } = useSyncExternalStore(
+    duplicatesQuery.subscribe,
+    duplicatesQuery.getSnapshot,
+  );
+  return { duplicates: data ?? NO_DUPLICATES, refetch: refetchDuplicates };
+}
+
+const NO_DUPLICATES: DuplicateIssueId[] = [];
+
+function refetchDuplicates(): void {
+  void duplicatesQuery.refetch();
 }
 
 // The server's default identity, shared like the config ("Acting as" picker,

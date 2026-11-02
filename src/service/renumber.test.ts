@@ -4,7 +4,14 @@ import { join } from 'node:path';
 import { GitracError } from '../core/errors.ts';
 import { serializeIssue } from '../core/issue.ts';
 import { findIssueFiles, readIssue, writeIssue } from '../fs/issue-store.ts';
-import { renumberCandidates, renumberIssue } from './renumber.ts';
+import {
+  duplicateIssueIds,
+  keepOrder,
+  type RenumberCandidate,
+  renumberCandidates,
+  renumberIssue,
+  resolveDuplicateId,
+} from './renumber.ts';
 import {
   makeIssue,
   type ServiceFixture,
@@ -58,8 +65,20 @@ const BETA = join('.issues', '1-beta.md');
 describe('renumberCandidates', () => {
   test('lists every file of the ID with its title', async () => {
     expect(await renumberCandidates(fx.dir, 1)).toEqual([
-      { path: ALPHA, filename: '1-alpha.md', closed: false, title: 'Alpha' },
-      { path: BETA, filename: '1-beta.md', closed: false, title: 'Beta' },
+      {
+        path: ALPHA,
+        filename: '1-alpha.md',
+        closed: false,
+        title: 'Alpha',
+        created: '2025-01-01T00:00:00Z',
+      },
+      {
+        path: BETA,
+        filename: '1-beta.md',
+        closed: false,
+        title: 'Beta',
+        created: '2025-01-01T00:00:00Z',
+      },
     ]);
   });
 });
@@ -338,5 +357,127 @@ describe('renumberIssue identity validation (#98)', () => {
     }
     expect(await snapshot()).toEqual(before);
     expect(fx.events).toEqual([]);
+  });
+});
+
+describe('duplicateIssueIds (#126)', () => {
+  test('lists each duplicated ID, oldest file first, with previewed new IDs', async () => {
+    // Beta is older, so it keeps #1. #2 gets a second, closed file.
+    await writeIssue(
+      fx.dir,
+      makeIssue({ id: 1, title: 'Beta', created: '2024-06-01T00:00:00Z' }),
+    );
+    await mkdir(join(fx.dir, '.issues', 'closed'), { recursive: true });
+    await writeIssue(
+      fx.dir,
+      makeIssue({ id: 2, title: 'Closed copy', status: 'done' }),
+      { closed: true },
+    );
+    const duplicates = await duplicateIssueIds(fx.dir);
+    expect(duplicates).toMatchObject([
+      {
+        id: 1,
+        keep: BETA,
+        files: [{ path: BETA }, { path: ALPHA }],
+        newIds: [3],
+      },
+      {
+        id: 2,
+        keep: join('.issues', '2-other.md'),
+        files: [
+          { path: join('.issues', '2-other.md') },
+          { path: join('.issues', 'closed', '2-closed-copy.md'), closed: true },
+        ],
+        newIds: [4],
+      },
+    ]);
+  });
+
+  test('is empty when every ID has one file', async () => {
+    await renumberIssue(fx.context(), 1, { file: BETA });
+    expect(await duplicateIssueIds(fx.dir)).toEqual([]);
+  });
+});
+
+describe('keepOrder (#126)', () => {
+  const candidate = (
+    path: string,
+    created: string | null,
+    title: string | null = 'T',
+  ): RenumberCandidate => ({
+    path,
+    filename: path,
+    closed: false,
+    title,
+    created,
+  });
+
+  test('oldest first, then by path; unparseable files first', () => {
+    const order = keepOrder([
+      candidate('b', '2025-01-01T00:00:00Z'),
+      candidate('a', '2025-01-01T00:00:00Z'),
+      candidate('c', '2024-01-01T00:00:00Z'),
+      candidate('d', 'not a date'),
+      candidate('e', null, null),
+    ]);
+    expect(order.map((c) => c.path)).toEqual(['e', 'c', 'a', 'b', 'd']);
+  });
+});
+
+describe('resolveDuplicateId (#126)', () => {
+  test('by default the oldest file keeps the ID; the others get new IDs', async () => {
+    await writeIssue(
+      fx.dir,
+      makeIssue({ id: 1, title: 'Gamma', created: '2026-01-01T00:00:00Z' }),
+    );
+    await writeIssue(
+      fx.dir,
+      makeIssue({ id: 1, title: 'Alpha', created: '2024-01-01T00:00:00Z' }),
+    );
+    const result = await resolveDuplicateId(fx.context(), 1);
+    expect(result.kept).toBe(ALPHA);
+    // Beta (2025) before Gamma (2026).
+    expect(
+      result.renumberings.map((r) => [r.from, r.to, r.oldId, r.newId]),
+    ).toEqual([
+      [BETA, join('.issues', '3-beta.md'), 1, 3],
+      [join('.issues', '1-gamma.md'), join('.issues', '4-gamma.md'), 1, 4],
+    ]);
+    expect(fx.commits.map((c) => c.operation)).toEqual([
+      'renumber',
+      'renumber',
+    ]);
+    expect((await readIssue(fx.dir, 1)).title).toBe('Alpha');
+    expect(await duplicateIssueIds(fx.dir)).toEqual([]);
+  });
+
+  test('keep overrides the suggestion', async () => {
+    const result = await resolveDuplicateId(fx.context(), 1, { keep: BETA });
+    expect(result.kept).toBe(BETA);
+    expect(result.renumberings.map((r) => r.from)).toEqual([ALPHA]);
+    expect((await readIssue(fx.dir, 1)).title).toBe('Beta');
+    expect((await readIssue(fx.dir, 3)).title).toBe('Alpha');
+  });
+
+  test('bad input and states are rejected before anything changes', async () => {
+    const before = await snapshot();
+    expect(
+      (await rejection(resolveDuplicateId(fx.context(), 1, { keep: 5 }))).code,
+    ).toBe('invalid_input');
+    expect(
+      (
+        await rejection(
+          resolveDuplicateId(fx.context(), 1, { keep: '.issues/9-x.md' }),
+        )
+      ).code,
+    ).toBe('invalid_input');
+    expect((await rejection(resolveDuplicateId(fx.context(), 2))).code).toBe(
+      'invalid_state',
+    );
+    expect((await rejection(resolveDuplicateId(fx.context(), 9))).code).toBe(
+      'not_found',
+    );
+    expect(await snapshot()).toEqual(before);
+    expect(fx.commits).toEqual([]);
   });
 });

@@ -3,11 +3,16 @@ import { join, normalize } from 'node:path';
 import { blockersOf } from '../core/dependencies.ts';
 import { GitracError, issueNotFound } from '../core/errors.ts';
 import { normalizeIdList, parseIssueFile } from '../core/issue.ts';
+import { parseIssueId } from '../core/slug.ts';
 import { nextTimestamp } from '../core/timestamp.ts';
 import type { Config, Issue } from '../core/types.ts';
 import { isClosedStatus } from '../core/workflow.ts';
-import { findIssueFiles, relocateIssue } from '../fs/issue-store.ts';
-import { allocateIssueId } from '../git/ids.ts';
+import {
+  findIssueFiles,
+  listAllIssueFiles,
+  relocateIssue,
+} from '../fs/issue-store.ts';
+import { allocateIssueId, nextIssueId } from '../git/ids.ts';
 import { withRepoLock } from '../git/lock.ts';
 import {
   assetPaths,
@@ -30,6 +35,8 @@ export interface RenumberCandidate {
   closed: boolean;
   /** Its title, or null if the file can't be read or parsed. */
   title: string | null;
+  /** Its `created` timestamp, or null if the file can't be read or parsed. */
+  created: string | null;
 }
 
 /** Another issue that references the renumbered ID. */
@@ -103,13 +110,14 @@ export async function renumberCandidates(
   return Promise.all(
     files.map(async ({ filename, closed, path }) => {
       let title: string | null = null;
+      let created: string | null = null;
       try {
         const content = await readFile(join(dir, path), 'utf-8');
-        title = parseIssueFile(content, { id, path }).title;
+        ({ title, created } = parseIssueFile(content, { id, path }));
       } catch {
         // Unreadable or malformed: still a candidate, just untitled.
       }
-      return { path, filename, closed, title };
+      return { path, filename, closed, title, created };
     }),
   );
 }
@@ -311,5 +319,131 @@ export async function renumberIssue(
       ),
     });
     return { ...result, commit };
+  });
+}
+
+/** An issue ID that several files have, with the suggested fix. */
+export interface DuplicateIssueId {
+  id: number;
+  /**
+   * Its files, in the order {@link keepOrder} gives: the suggested keeper
+   * first.
+   */
+  files: RenumberCandidate[];
+  /** Path of the file that keeps the ID by default (the first one). */
+  keep: string;
+  /**
+   * Preview of the new IDs for the other files, in order. Only a preview:
+   * the IDs are allocated when the fix is applied.
+   */
+  newIds: number[];
+}
+
+/**
+ * `candidates` in the order to keep them: a file that can't be parsed first
+ * (it can't be renumbered), then the oldest by `created`, then by path.
+ */
+export function keepOrder(
+  candidates: readonly RenumberCandidate[],
+): RenumberCandidate[] {
+  const createdAt = (c: RenumberCandidate): number => {
+    const time = c.created === null ? Number.NaN : Date.parse(c.created);
+    return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
+  };
+  return [...candidates].sort(
+    (a, b) =>
+      Number(a.title !== null) - Number(b.title !== null) ||
+      createdAt(a) - createdAt(b) ||
+      (a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
+  );
+}
+
+/**
+ * Every issue ID that more than one file has (in `.issues/` and
+ * `.issues/closed/`), by ascending ID, with the suggested fix: the oldest
+ * file keeps the ID and each other file gets the next free ID (previewed
+ * in order across all IDs, as when they are fixed one after another).
+ * Read-only; no lock.
+ */
+export async function duplicateIssueIds(
+  dir: string,
+): Promise<DuplicateIssueId[]> {
+  const counts = new Map<number, number>();
+  for (const file of await listAllIssueFiles(dir)) {
+    const id = parseIssueId(file);
+    if (id !== null) counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+  const ids = [...counts]
+    .filter(([, count]) => count > 1)
+    .map(([id]) => id)
+    .sort((a, b) => a - b);
+  if (ids.length === 0) return [];
+  let nextId = await nextIssueId(dir);
+  const duplicates: DuplicateIssueId[] = [];
+  for (const id of ids) {
+    const files = keepOrder(await renumberCandidates(dir, id));
+    // The directory can change between the two reads.
+    if (files.length < 2) continue;
+    const newIds = files.slice(1).map(() => nextId++);
+    duplicates.push({
+      id,
+      files,
+      keep: (files[0] as RenumberCandidate).path,
+      newIds,
+    });
+  }
+  return duplicates;
+}
+
+/** The result of {@link resolveDuplicateId}. */
+export interface DuplicateResolution {
+  id: number;
+  /** Repo-relative path of the file that kept the ID. */
+  kept: string;
+  /** One renumbering per other file, in {@link keepOrder}. */
+  renumberings: IssueRenumbering[];
+  config: Config;
+}
+
+/**
+ * Fix duplicate issue ID `id`: the file `options.keep` (a repo-relative
+ * path or bare filename, as for {@link renumberIssue}; default: the first
+ * in {@link keepOrder}, i.e. the oldest) keeps the ID, and every other file
+ * gets a fresh ID with {@link renumberIssue} (one commit each; references
+ * are only reported). Throws `invalid_input` if `keep` is not a string or
+ * not a file of the ID, `not_found` if no file has the ID and
+ * `invalid_state` if only one has it.
+ */
+export async function resolveDuplicateId(
+  ctx: ServiceContext,
+  id: number,
+  options: { keep?: unknown } = {},
+): Promise<DuplicateResolution> {
+  const { keep } = options;
+  if (keep !== undefined && typeof keep !== 'string') {
+    throw new GitracError('invalid_input', 'keep must be a file path');
+  }
+  return withRepoLock(ctx.dir, async () => {
+    const candidates = keepOrder(await renumberCandidates(ctx.dir, id));
+    if (candidates.length === 0) throw issueNotFound(id);
+    const files = candidates.map((c) => c.path);
+    if (candidates.length === 1) {
+      throw new GitracError(
+        'invalid_state',
+        `Issue #${id} is not duplicated (its only file is ${files[0]}).`,
+        { details: { id, files } },
+      );
+    }
+    const kept =
+      keep === undefined
+        ? (candidates[0] as RenumberCandidate)
+        : selectCandidate(id, candidates, keep);
+    const renumberings: IssueRenumbering[] = [];
+    for (const candidate of candidates) {
+      if (candidate.path === kept.path) continue;
+      renumberings.push(await renumberIssue(ctx, id, { file: candidate.path }));
+    }
+    const last = renumberings.at(-1) as IssueRenumbering;
+    return { id, kept: kept.path, renumberings, config: last.config };
   });
 }

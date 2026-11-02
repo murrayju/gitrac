@@ -5,6 +5,7 @@ import type { Config } from '../core/types.ts';
 import { AmendTracker } from '../git/amend-tracker.ts';
 import { IdentityResolver } from '../git/identity.ts';
 import { getBranchWarning } from '../git/status.ts';
+import { duplicateIssueIds } from '../service/renumber.ts';
 import type { ElsewhereCache } from './elsewhere-cache.ts';
 import { bindFirstFreePort } from './listen.ts';
 import { freshConfig } from './live-config.ts';
@@ -12,6 +13,7 @@ import { assetRoutes, MAX_UPLOAD_BYTES, serveAsset } from './routes/assets.ts';
 import { branchRoutes } from './routes/branches.ts';
 import { configRoutes } from './routes/config.ts';
 import { draftRoutes } from './routes/drafts.ts';
+import { duplicateRoutes } from './routes/duplicates.ts';
 import { eventsRoute } from './routes/events.ts';
 import { gitRoutes } from './routes/git.ts';
 import { identityRoutes } from './routes/identity.ts';
@@ -125,6 +127,15 @@ export async function startServer(options: {
     console.warn(`\n  Warning: ${warning}\n`);
   }
 
+  const duplicates = await duplicateIssueIds(dir);
+  if (duplicates.length > 0) {
+    const ids = duplicates.map((d) => `#${d.id}`).join(', ');
+    console.warn(
+      `\n  Warning: several files have the same issue ID (${ids}). ` +
+        'Open the web UI to renumber them.\n',
+    );
+  }
+
   if (!ui) {
     console.warn(
       '\n  Warning: web UI not built — only the API is served. Run ' +
@@ -228,6 +239,7 @@ export function createApp(ctx: ServerContext, options: AppOptions = {}): Hono {
 
   // API routes
   app.route('/api', issueRoutes(ctx));
+  app.route('/api', duplicateRoutes(ctx));
   app.route('/api', draftRoutes(ctx));
   app.route('/api', assetRoutes(ctx));
   app.route('/api', configRoutes(ctx));

@@ -192,7 +192,7 @@ With the gitrac merge driver installed (`gitrac init` installs it; in an existin
 - **Both branches changed the title:** git reports a rename/rename conflict and leaves two files with the same merged content. Keep the one matching the title, `git rm` the other.
 - **A file the driver can't parse** (hand-broken YAML, leftover markers): you get git's normal conflict markers for the whole file.
 - **Closed on one branch, edited later on the other:** the merged status can be open while the file is in `closed/` (or the inverse). Nothing is lost: `ls` and the web UI list it by its status, and `ls` warns `issue file <path> is in the wrong directory for its status` on stderr. The next edit, comment, link, close or reopen of the issue moves the file.
-- **Same ID created in two clones** (`12-a.md` and `12-b.md`): not a merge conflict; gitrac then fails with `duplicate_issue` (exit 3). Run `gitrac renumber 12 --file .issues/12-b.md` to give one copy a new ID, then check the issues it lists as referencing #12 (the old links/mentions could mean either issue; `--update-refs` points their `blockedBy`/`parent` at the new ID).
+- **Same ID created in two clones** (`12-a.md` and `12-b.md`): not a merge conflict; gitrac then fails with `duplicate_issue` (exit 3). Run `gitrac renumber 12 --file .issues/12-b.md` to give one copy a new ID, then check the issues it lists as referencing #12 (the old links/mentions could mean either issue; `--update-refs` points their `blockedBy`/`parent` at the new ID). The web UI also lists duplicated IDs (banner, `/duplicates` page) and renumbers them with one click: by default the oldest copy (by `created`) keeps the ID.
 
 ## Reading Issues Directly
 

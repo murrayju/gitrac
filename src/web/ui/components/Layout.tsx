@@ -13,6 +13,7 @@ import { BranchSwitcher } from './BranchSwitcher.tsx';
 import { BranchWarning } from './BranchWarning.tsx';
 import type { CreateIssueModalProps } from './CreateIssueModal.tsx';
 import { CreateIssueModal } from './CreateIssueModal.tsx';
+import { DuplicateIdsBanner } from './DuplicateIds.tsx';
 import { IdentityPicker } from './IdentityPicker.tsx';
 import { ImageLightbox } from './ImageLightbox.tsx';
 import { ShortcutsModal } from './ShortcutsModal.tsx';
@@ -212,6 +213,7 @@ export function Layout({ children }: { children: ReactNode }) {
             />
           )}
           <SyncBanner />
+          <DuplicateIdsBanner />
           <div className="flex-1 overflow-auto">{children}</div>
         </main>
 

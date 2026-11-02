@@ -102,18 +102,32 @@ async function writeHighWater(path: string, next: number): Promise<void> {
  */
 export async function allocateIssueId(dir: string): Promise<number> {
   const path = await nextIdPath(dir);
+  const id = await nextIssueId(dir, path);
+  if (path) await writeHighWater(path, id + 1);
+  return id;
+}
+
+/**
+ * The ID that {@link allocateIssueId} gives next, without bumping the
+ * high-water mark (e.g. to preview a renumbering). Read-only; no lock, so a
+ * later allocation can give a different ID.
+ */
+export async function nextIssueId(
+  dir: string,
+  highWaterPath?: string | null,
+): Promise<number> {
+  const path =
+    highWaterPath === undefined ? await nextIdPath(dir) : highWaterPath;
   const [config, files, inRefs, highWater] = await Promise.all([
     readConfig(dir),
     listAllIssueFiles(dir),
     maxIssueIdInRefs(dir),
     readHighWater(path),
   ]);
-  const id = Math.max(
+  return Math.max(
     highWater,
     maxIdOf(files) + 1,
     inRefs + 1,
     config.nextId ?? 1,
   );
-  if (path) await writeHighWater(path, id + 1);
-  return id;
 }

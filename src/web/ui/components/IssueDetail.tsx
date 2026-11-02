@@ -3,13 +3,14 @@ import { useNavigate, useParams } from 'react-router-dom';
 import type { Issue } from '../../../core/types.ts';
 import {
   ConflictError,
+  type DuplicateResolution,
   deleteIssue,
   fetchDeletePlan,
   type IssueDeletion,
   updateIssueVersioned,
   type Versioned,
 } from '../api.ts';
-import { useIssue } from '../hooks.ts';
+import { useDuplicates, useIssue } from '../hooks.ts';
 import { trackRequest } from '../lib/request-state.ts';
 import { relativeTime } from '../lib/time.ts';
 import { CommentEditor } from './CommentEditor.tsx';
@@ -17,6 +18,7 @@ import { CommentList } from './CommentList.tsx';
 import { DeleteIssueDialog } from './DeleteIssueDialog.tsx';
 import { DependenciesPanel } from './DependenciesPanel.tsx';
 import { DescriptionEditor } from './DescriptionEditor.tsx';
+import { DuplicateIssueView, ResolutionNotice } from './DuplicateIds.tsx';
 import { ElsewhereIssueView } from './ElsewhereIssueView.tsx';
 import { MetadataPanel } from './MetadataPanel.tsx';
 
@@ -40,6 +42,12 @@ export function IssueDetail() {
   const titleSavingRef = useRef(false);
   const editingTitleRef = useRef(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const { duplicates } = useDuplicates();
+  const duplicate = duplicates.find((d) => d.id === issueId);
+  // What the duplicate-ID fix did, shown once the issue loads.
+  const [resolution, setResolution] = useState<DuplicateResolution | null>(
+    null,
+  );
 
   // Focus input when entering edit mode
   useEffect(() => {
@@ -47,6 +55,20 @@ export function IssueDetail() {
       titleInputRef.current.focus();
     }
   }, [editingTitle]);
+
+  // Several files have this ID: the issue can't load until that is fixed.
+  if (duplicate) {
+    return (
+      <DuplicateIssueView
+        key={duplicate.files.map((f) => f.path).join('\n')}
+        duplicate={duplicate}
+        onResolved={(result) => {
+          setResolution(result);
+          refetch();
+        }}
+      />
+    );
+  }
 
   if (loading && !issue) {
     return <div className="p-6 text-gray-500">Loading...</div>;
@@ -155,6 +177,12 @@ export function IssueDetail() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
+      {resolution && (
+        <ResolutionNotice
+          results={[resolution]}
+          onDismiss={() => setResolution(null)}
+        />
+      )}
       <div className="flex gap-8">
         {/* Main content */}
         <div className="flex-1 min-w-0">

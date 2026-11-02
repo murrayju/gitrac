@@ -406,6 +406,73 @@ export async function fetchDeletePlan(
   });
 }
 
+/** One of the files of a duplicated issue ID. */
+export interface DuplicateFile {
+  /** Repo-relative path (`.issues/[closed/]<id>-<slug>.md`). */
+  path: string;
+  filename: string;
+  closed: boolean;
+  /** Null if the file can't be parsed. */
+  title: string | null;
+  created: string | null;
+}
+
+/** An issue ID that several files have, with the suggested fix. */
+export interface DuplicateIssueId {
+  id: number;
+  /** Its files, the suggested keeper (the oldest) first. */
+  files: DuplicateFile[];
+  /** Path of the file that keeps the ID by default. */
+  keep: string;
+  /** Preview of the new IDs for the other files, in order. */
+  newIds: number[];
+}
+
+/** Another issue that links to or mentions a renumbered ID. */
+export interface RenumberReference {
+  id: number;
+  title: string;
+  blockedBy: boolean;
+  parent: boolean;
+  mentions: boolean;
+}
+
+/** What `POST /api/duplicates/:id/resolve` did. */
+export interface DuplicateResolution {
+  id: number;
+  /** Repo-relative path of the file that kept the ID. */
+  kept: string;
+  /** One entry per other file, which got a fresh ID. */
+  renumbered: {
+    oldId: number;
+    newId: number;
+    title: string;
+    from: string;
+    to: string;
+    /** Other issues that link to or mention the old ID (not changed). */
+    references: RenumberReference[];
+  }[];
+}
+
+/** Every issue ID that several files have, with the suggested fix. */
+export async function fetchDuplicates(): Promise<DuplicateIssueId[]> {
+  return request<DuplicateIssueId[]>('/api/duplicates');
+}
+
+/**
+ * Fix a duplicate issue ID: the file `keep` (a repo-relative path) keeps
+ * the ID and every other file gets a fresh ID.
+ */
+export async function resolveDuplicate(
+  id: number,
+  keep: string,
+): Promise<DuplicateResolution> {
+  return request<DuplicateResolution>(`/api/duplicates/${id}/resolve`, {
+    method: 'POST',
+    body: JSON.stringify({ keep }),
+  });
+}
+
 export async function fetchConfig(): Promise<Config> {
   return request<Config>('/api/config');
 }
