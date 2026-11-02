@@ -76,6 +76,29 @@ describe('linkIssue', () => {
     );
   });
 
+  test('a link is written on its home: the blocked issue, the sub-issue, the duplicate, the higher ID', async () => {
+    const result = await link(
+      1,
+      issue('blocks', 2),
+      issue('child', 2),
+      issue('duplicatedBy', 2),
+      issue('related', 2),
+    );
+    expect(result.changed).toBe(true);
+    expect(result.paths).toEqual([join('.issues', '2-two.md')]);
+    expect(fx.commits.map((c) => c.message)).toEqual(['issue: link #1 One']);
+    expect((await readIssue(fx.dir, 1)).links).toBeUndefined();
+    const two = await readIssue(fx.dir, 2);
+    expect(two.links).toEqual(
+      issueLinks({ blockedBy: 1, parent: 1, duplicateOf: 1, related: 1 }),
+    );
+    // Not activity on #2: its `updated` (claims, staleness) stays.
+    expect(two.updated).toBe('2025-01-01T00:00:00Z');
+    // From #2 itself, the same links are no-ops.
+    const again = await link(2, issue('blockedBy', 1), issue('related', 1));
+    expect(again.changed).toBe(false);
+  });
+
   test('a link that exists on the other issue is a no-op (nothing written)', async () => {
     await link(1, issue('blocks', 2));
     const before = await fileOf('2-two.md');
@@ -87,8 +110,11 @@ describe('linkIssue', () => {
   });
 
   test('a new parent replaces the old one, also when the old parent stores it', async () => {
-    // #1 stores "#2 is my sub-issue".
-    await link(1, issue('child', 2));
+    // #1 stores "#2 is my sub-issue" (e.g. by hand).
+    await writeIssue(
+      fx.dir,
+      makeIssue({ id: 1, title: 'One', links: issueLinks({ child: 2 }) }),
+    );
     const result = await link(2, issue('parent', 3));
     expect(result.issue.links).toEqual(issueLinks({ parent: 3 }));
     expect(result.paths).toEqual([
@@ -176,7 +202,17 @@ describe('unlinkIssue', () => {
   });
 
   test('removes a link the other issue stores, from that file', async () => {
-    await link(1, issue('blocks', 2));
+    await link(2, issue('blocks', 1));
+    expect((await readIssue(fx.dir, 1)).links).toEqual(
+      issueLinks({ blockedBy: 2 }),
+    );
+    const removed = await unlink(2, issue('blocks', 1));
+    expect(removed.paths).toEqual([join('.issues', '1-one.md')]);
+    // Stored on the other side by hand: removed there too.
+    await writeIssue(
+      fx.dir,
+      makeIssue({ id: 1, title: 'One', links: issueLinks({ blocks: 2 }) }),
+    );
     const result = await unlink(2, issue('blockedBy', 1));
     expect(result.changed).toBe(true);
     expect(result.paths).toEqual([join('.issues', '1-one.md')]);

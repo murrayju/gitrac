@@ -1,12 +1,14 @@
 import {
   edgeKey,
   edgeOf,
+  homeOf,
   type IssueEdge,
   isIssueLink,
   issueLinkError,
   type Link,
   LinkGraph,
   type LinkSelector,
+  linkFor,
   linkKey,
   parseLinkRequest,
   replacedEdges,
@@ -32,10 +34,11 @@ import { loadAllIssues } from './list.ts';
 import { loadStoredIssue, type StoredIssue } from './load.ts';
 
 /**
- * Link / unlink an issue (`links`; see `src/core/links.ts`). A new link is
- * stored on the issue it is added to. A link to another issue can be stored
- * on either issue, so removing (or replacing) one also rewrites the other
- * issue's file when that issue stores it.
+ * Link / unlink an issue (`links`; see `src/core/links.ts`). A link to
+ * another issue is written on its home (`homeOf`: the blocked issue, the
+ * sub-issue, the duplicate, the higher ID of two related issues), which can
+ * be the other issue's file; removing (or replacing) one rewrites whichever
+ * file stores it. URL and other links stay on the issue they are added to.
  */
 
 /**
@@ -76,8 +79,10 @@ function dropEdges(issue: Issue, keys: ReadonlySet<string>): void {
 /**
  * Change the links of `stored` (loaded under the repo lock), in memory:
  * remove the links `remove` selects, then add `add`. A link to another issue
- * that already exists (stored on either issue) is not added again, and a new
- * parent or original (`duplicateOf`) replaces the old one. Throws a
+ * is written on its home (`homeOf`), as the relationship seen from there
+ * (`blocks` from #3 to #5 is `blockedBy: 3` on #5). One that already exists
+ * (stored on either issue) is not added again, and a new parent or original
+ * (`duplicateOf`) replaces the old one. Throws a
  * {@link ValidationError} (nothing changed on disk) if an added issue link
  * points at the issue itself, a missing issue, or closes a cycle (see
  * `issueLinkError`). Returns what changed; the caller writes it.
@@ -151,7 +156,10 @@ export async function editLinks(
       errors.push(error);
       continue;
     }
-    setLinks(issue, [...(issue.links ?? []), link]);
+    const home = homeOf(edge);
+    const homeIssue = byId.get(home) as Issue;
+    setLinks(homeIssue, [...(homeIssue.links ?? []), linkFor(home, edge)]);
+    if (homeIssue !== issue) touched.add(home);
   }
   if (errors.length > 0) throw new ValidationError(errors);
 
@@ -166,8 +174,12 @@ export async function editLinks(
 }
 
 /**
- * Write the other issues of a {@link LinkEdit} (bumping their `updated`,
- * moving a misplaced file); returns the paths to commit.
+ * Write the other issues of a {@link LinkEdit} (moving a misplaced file);
+ * returns the paths to commit. Their `updated` stays as it is: a link added
+ * from another issue is not activity on them (it must not make a claim on
+ * them look renewed), and a newer `updated` here would supersede a claim on
+ * them in another worktree or on another branch. Links merge as a set, so
+ * the merge driver does not need it either.
  */
 export async function writeOthers(
   dir: string,
@@ -176,7 +188,6 @@ export async function writeOthers(
 ): Promise<string[]> {
   const paths: string[] = [];
   for (const other of others) {
-    other.issue.updated = nextTimestamp([other.issue.updated]);
     paths.push(
       ...(await relocateIssue(dir, other.issue, other, {
         closed: isClosedStatus(config, other.issue.status),
@@ -223,7 +234,8 @@ async function writeEdit(
 
 /**
  * Add links to issue `id` from untrusted `input` (`{ links: [...] }`, see
- * `parseLinkRequest`). Rejected (`invalid_input`, nothing written) for a bad
+ * `parseLinkRequest`); a link to another issue is written on its home,
+ * which can be the other issue (see {@link editLinks}). Rejected (`invalid_input`, nothing written) for a bad
  * link, or an issue link to the issue itself, to a missing issue, or that
  * would create a cycle. A new parent or `duplicateOf` replaces the old one
  * (also when the other issue stores it). Links that already exist are a

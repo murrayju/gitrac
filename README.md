@@ -190,7 +190,7 @@ Reproduced locally with k6. Investigating the pool timeout.
 Root cause: `getSessionTimeout()` reads a renamed env var.
 ```
 
-- **Frontmatter** holds the metadata. `links` is optional and only written when set: links to other issues (`relationship`: `blockedBy`, `blocks`, `parent`, `child`, `duplicateOf`, `duplicatedBy`, `related`), URLs (`type: url`) and GitHub pull requests (`type: github-pr`). A link between two issues is stored on one of them; the other side is derived.
+- **Frontmatter** holds the metadata. `links` is optional and only written when set: links to other issues (`relationship`: `blockedBy`, `parent`, `duplicateOf`, `related`), URLs (`type: url`) and GitHub pull requests (`type: github-pr`). A link between two issues is stored once, on the dependent issue (the blocked one, the sub-issue, the duplicate), so each file lists everything that constrains it; "blocks", sub-issues and duplicates are derived.
 - **Description** is full markdown, headings and horizontal rules included.
 - **Comments** follow a `---` separator. Each one starts with `### author — timestamp`. Headings inside comment bodies are escaped (`\## ...`) so they can't be mistaken for a new comment.
 - Files gitrac writes round-trip exactly. Hand edits are fine, though the CLI is the safer path. Custom frontmatter keys (`estimate:`, `externalId:` and so on) are kept verbatim through every write and merge, and exposed read-only as `extra` in JSON output and the API. Known fields are normalized on write (for example, dates get quoted).

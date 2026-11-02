@@ -144,6 +144,7 @@ export function registerLinkCommands(program: Command): void {
     .command('link <id>')
     .description(
       'Link an issue to other issues (blocked by, parent, duplicate of, ...) and/or URLs. ' +
+        'A link to another issue is stored on the dependent issue (the blocked one, the sub-issue, the duplicate; related: the higher ID), which can be the other issue. ' +
         'A GitHub pull request URL becomes a github-pr link. ' +
         'Exits 2 (nothing written) if a target is missing, the issue itself, or the link would create a cycle.',
     );

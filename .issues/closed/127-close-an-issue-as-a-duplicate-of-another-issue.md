@@ -1,14 +1,14 @@
 ---
 id: 127
 title: Close an issue as a duplicate of another issue
-status: in_progress
+status: done
 priority: medium
 assignee: justin@tigerdata.com
 labels:
   - feature
 created: '2026-11-02T04:01:59.991Z'
 createdBy: Justin Murray
-updated: '2026-11-02T17:17:18.394Z'
+updated: '2026-11-02T17:44:49.131Z'
 ---
 
 Close an issue as a duplicate of another one, and record the link.
@@ -55,3 +55,12 @@ Replaced the scalar duplicateOf (and parent / blockedBy) with a general links fi
 ### Justin Murray — 2026-11-02T17:17:17.295Z
 
 Follow-up: store each issue link on a fixed home issue (the dependent one), so an issue's file reliably lists what constrains it; index the link graph.
+
+### Justin Murray — 2026-11-02T17:44:49.131Z
+
+Each issue link now has one fixed home, so an issue's file reliably lists what constrains it.
+
+- homeOf (src/core/links.ts): the blocked issue (blockedBy), the sub-issue (parent), the duplicate (duplicateOf), the higher ID of two related issues (related). editLinks writes every issue link there, whichever issue it is added from (link 3 --blocks 5 writes blockedBy: 3 into #5). gitrac never writes blocks / child / duplicatedBy; they stay valid as input, and a hand-written one still counts when read.
+- Writing another issue's file for a link keeps its updated: it is not activity on that issue, and a newer updated would supersede a claim on it in another worktree. Links merge as a set, so the merge driver does not need it.
+- LinkGraph is indexed by issue (Maps of in/out edges), so ready no longer scans every edge per issue: 20,000 issues + 40,000 lookups in about 120 ms.
+- Docs: spec (One home per link, updated exception), README, skill, AGENTS.md.

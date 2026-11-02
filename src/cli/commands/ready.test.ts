@@ -107,14 +107,19 @@ describe('link / unlink', () => {
     expect(second).toContain(
       'Links:      https://github.com/o/r/pull/7, https://x.dev/spec',
     );
+    // Written on their home: the blocked issue, the sub-issue, the higher ID.
+    expect((await readIssue(dir, 1)).links).toBeUndefined();
+    expect((await readIssue(dir, 3)).links).toEqual(
+      issueLinks({ blockedBy: 1, related: 1 }),
+    );
     expect((await readIssue(dir, 2)).links).toEqual([
+      ...issueLinks({ parent: 1 }),
       { type: 'github-pr', repo: 'o/r', number: 7 },
       { type: 'url', url: 'https://x.dev/spec' },
     ]);
-    // Removed from #1's file, where it is stored.
-    await ok('unlink', '3', '--blocked-by', '1', '--related', '1');
+    await ok('unlink', '1', '--blocks', '3', '--related', '3');
+    expect((await readIssue(dir, 3)).links).toBeUndefined();
     await ok('unlink', '2', '--parent', '--url', 'https://x.dev/spec');
-    expect((await readIssue(dir, 1)).links).toBeUndefined();
     expect((await readIssue(dir, 2)).links).toEqual([
       { type: 'github-pr', repo: 'o/r', number: 7 },
     ]);

@@ -264,7 +264,8 @@ function AddUrlForm({
  * exists only in another worktree or on another branch shows where it is,
  * and links to its read-only view; as a blocker it blocks in any status (its
  * work is not here yet). Below: the issue's other links (URLs, pull
- * requests). New links are added to this issue.
+ * requests). An issue link is written on its home (the blocked issue, the
+ * sub-issue, the duplicate), which can be the other issue.
  */
 export function DependenciesPanel({
   issueId,

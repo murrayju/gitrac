@@ -6,7 +6,7 @@ import { readIssue, writeIssue } from '../fs/issue-store.ts';
 import { deleteIssue } from './delete.ts';
 import { ValidationError } from './errors.ts';
 import { closeIssue, reopenIssue } from './issues.ts';
-import { linkIssue, unlinkIssue } from './links.ts';
+import { unlinkIssue } from './links.ts';
 import { renumberIssue } from './renumber.ts';
 import {
   makeIssue,
@@ -97,14 +97,20 @@ describe('the link does not depend on the status', () => {
 
   test('closing as a duplicate of another issue replaces the original', async () => {
     await writeIssue(fx.dir, makeIssue({ id: 3, title: 'Third' }));
-    await linkIssue(fx.context(), 1, {
-      links: [{ type: 'issue', relationship: 'duplicatedBy', id: 2 }],
-    });
+    // #1 stores the old link, by hand ("#2 duplicates me").
+    await writeIssue(
+      fx.dir,
+      makeIssue({
+        id: 1,
+        title: 'Original',
+        links: issueLinks({ duplicatedBy: 2 }),
+      }),
+    );
     const { issue, paths } = await closeIssue(fx.context(), 2, {
       duplicateOf: 3,
     });
     expect(issue.links).toEqual(issueLinks({ duplicateOf: 3 }));
-    // #1 stored the old link: it is rewritten in the same commit.
+    // It is removed from #1 in the same commit.
     expect(paths).toContain(join('.issues', '1-original.md'));
     expect((await readIssue(fx.dir, 1)).links).toBeUndefined();
     expect(fx.commits.at(-1)?.files).toEqual(paths);

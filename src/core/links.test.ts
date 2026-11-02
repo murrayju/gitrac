@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { issueLinks } from './links.fixture.ts';
 import {
   edgeOf,
+  homeOf,
   type IssueLink,
   isSafeUrl,
   issueLinkError,
@@ -195,6 +196,22 @@ describe('LinkGraph', () => {
     expect(graph.duplicates(4)).toEqual([3]);
     expect(graph.related(3)).toEqual([1]);
     expect(graph.related(2)).toEqual([]);
+  });
+
+  test('homeOf: the blocked issue, the sub-issue, the duplicate, the higher ID', () => {
+    for (const [relationship, home, stored] of [
+      ['blocks', 3, 'blockedBy'],
+      ['blockedBy', 5, 'blockedBy'],
+      ['child', 3, 'parent'],
+      ['parent', 5, 'parent'],
+      ['duplicatedBy', 3, 'duplicateOf'],
+      ['duplicateOf', 5, 'duplicateOf'],
+      ['related', 5, 'related'],
+    ] as const) {
+      const edge = edgeOf(5, link(relationship, 3));
+      expect([relationship, homeOf(edge)]).toEqual([relationship, home]);
+      expect(linkFor(home, edge).relationship).toBe(stored);
+    }
   });
 
   test('a new parent or original replaces the old one', () => {

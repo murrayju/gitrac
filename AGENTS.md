@@ -152,7 +152,7 @@ labels:
   - bug
 links:              # optional (src/core/links.ts)
   - type: issue
-    relationship: blockedBy   # also blocks, parent, child, duplicateOf, duplicatedBy, related
+    relationship: blockedBy   # also parent, duplicateOf, related (stored on the dependent issue)
     id: 3
   - type: github-pr           # also url ({ url, title? }); unknown types are kept as is
     repo: murrayju/gitrac
@@ -171,7 +171,7 @@ Description goes here (full markdown supported).
 Comment body here. Headings in comments are escaped with `\#`.
 ```
 
-A link between two issues is stored on one of them only; read relations through `LinkGraph` (`src/core/links.ts`), which derives the other side from every issue's links, never from one issue's `links` alone. Changing the `.issues/` format means bumping `CONFIG_VERSION` (`src/core/config.ts`) and adding a step to `migrateProject` (`src/service/migrate.ts`); keep reading the old format, since files from older branches merge in unconverted.
+A link between two issues is stored once, on its home (`homeOf`: the blocked issue, the sub-issue, the duplicate, the higher ID of two related ones); write links through `editLinks` (`src/service/links.ts`), which puts them there. Read relations through `LinkGraph` (`src/core/links.ts`), which derives the other side from every issue's links (and also counts a link hand-written on the other side), never from one issue's `links` alone. Changing the `.issues/` format means bumping `CONFIG_VERSION` (`src/core/config.ts`) and adding a step to `migrateProject` (`src/service/migrate.ts`); keep reading the old format, since files from older branches merge in unconverted.
 
 Unknown frontmatter keys (hand-added `estimate:`, `externalId:`, ...) are preserved verbatim after the known ones on every write and merge, and exposed read-only as `Issue.extra` (`-o json`, API). Don't build or copy issue frontmatter field by field without carrying `extra` along (`src/core/issue.ts`).
 

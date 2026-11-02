@@ -18,6 +18,11 @@
  * `parent` (#id is the parent of this issue), `child` (#id is a sub-issue of
  * this issue), `duplicateOf` (this issue is a duplicate of #id),
  * `duplicatedBy` (#id is a duplicate of this issue), `related`.
+ *
+ * A link between two issues is stored on one of them, its home (see
+ * {@link homeOf}), so gitrac writes only `blockedBy`, `parent`, `duplicateOf`
+ * and `related`. `blocks`, `child` and `duplicatedBy` are the same relations
+ * seen from the other issue: accepted as input (and when read).
  */
 export const ISSUE_RELATIONSHIPS = [
   'blockedBy',
@@ -371,12 +376,16 @@ export const edgeKey = (edge: IssueEdge): string =>
   `${edge.kind}:${edge.from}:${edge.to}`;
 
 /**
- * Every relation between `issues`, from the links each one stores (an
- * issue only stores its own side; the other side is derived), without
- * duplicates. A link to the issue itself is ignored.
+ * Every relation between `issues`, from the links they store (a relation is
+ * stored on one of its two issues; see {@link homeOf}), without duplicates,
+ * indexed by issue. A link to the issue itself is ignored.
  */
 export class LinkGraph {
   readonly edges: IssueEdge[];
+  private readonly keys: Set<string>;
+  /** The `to` ends by `kind:from`, and the `from` ends by `kind:to`, ascending. */
+  private readonly outgoing = new Map<string, number[]>();
+  private readonly incoming = new Map<string, number[]>();
 
   constructor(issues: Iterable<{ id: number; links?: readonly Link[] }>) {
     const byKey = new Map<string, IssueEdge>();
@@ -388,26 +397,28 @@ export class LinkGraph {
       }
     }
     this.edges = [...byKey.values()];
+    this.keys = new Set(byKey.keys());
+    for (const { kind, from, to } of this.edges) {
+      push(this.outgoing, `${kind}:${from}`, to);
+      push(this.incoming, `${kind}:${to}`, from);
+    }
+    for (const ids of [...this.outgoing.values(), ...this.incoming.values()]) {
+      ids.sort((a, b) => a - b);
+    }
   }
 
   has(edge: IssueEdge): boolean {
-    return this.edges.some((e) => edgeKey(e) === edgeKey(edge));
+    return this.keys.has(edgeKey(edge));
   }
 
   /** IDs of the issues on the `to` side of `kind` edges from `id`, ascending. */
   private targets(kind: IssueEdge['kind'], id: number): number[] {
-    return sortedIds(
-      this.edges.filter((e) => e.kind === kind && e.from === id),
-      'to',
-    );
+    return [...(this.outgoing.get(`${kind}:${id}`) ?? [])];
   }
 
   /** IDs of the issues on the `from` side of `kind` edges to `id`, ascending. */
   private sources(kind: IssueEdge['kind'], id: number): number[] {
-    return sortedIds(
-      this.edges.filter((e) => e.kind === kind && e.to === id),
-      'from',
-    );
+    return [...(this.incoming.get(`${kind}:${id}`) ?? [])];
   }
 
   /** The issues `id` is blocked by. */
@@ -474,8 +485,22 @@ export class LinkGraph {
   }
 }
 
-function sortedIds(edges: IssueEdge[], end: 'from' | 'to'): number[] {
-  return [...new Set(edges.map((e) => e[end]))].sort((a, b) => a - b);
+function push(map: Map<string, number[]>, key: string, id: number): void {
+  const ids = map.get(key);
+  if (ids) ids.push(id);
+  else map.set(key, [id]);
+}
+
+/**
+ * The issue that stores a relation (its home): the blocked issue, the
+ * sub-issue, the duplicate, and the higher ID of two related issues. So an
+ * issue's own file lists everything that constrains it (its blockers, its
+ * parent, its original). gitrac writes a link only on its home, whichever
+ * issue it is added from (see {@link linkFor}); a link stored on the other
+ * issue (e.g. by hand) still counts.
+ */
+export function homeOf(edge: IssueEdge): number {
+  return edge.kind === 'duplicate' ? edge.from : edge.to;
 }
 
 /**
