@@ -1,14 +1,14 @@
 ---
 id: 127
 title: Close an issue as a duplicate of another issue
-status: done
+status: backlog
 priority: medium
 assignee: justin@tigerdata.com
 labels:
   - feature
 created: '2026-11-02T04:01:59.991Z'
 createdBy: Justin Murray
-updated: '2026-11-02T04:45:16.933Z'
+updated: '2026-11-02T15:00:32.655Z'
 ---
 
 Close an issue as a duplicate of another one, and record the link.
@@ -34,3 +34,7 @@ Close an issue as a duplicate of another, with a link.
 - Service: closeIssue / updateIssue validate (duplicateOfError: not itself, must exist, no cycle; no combo with status/cancelled; needs a duplicate status). dropDuplicateLink removes the link on reopen, status edit, forced claim. delete clears it on duplicates of the deleted issue; renumber reports it and --update-refs repoints it.
 - Web: PATCH /api/issues/:id/close { duplicateOf } and PATCH /api/issues/:id { status, duplicateOf }. Picking the duplicate status in the UI asks for the original issue; the links panel shows Duplicate of / Duplicates. Purple badge for duplicate.
 - Docs: spec, README, skill, AGENTS.md.
+
+### Justin Murray — 2026-11-02T15:00:32.655Z
+
+Reworking: replace the scalar duplicateOf (and parent / blockedBy) with a general links field, with a config version migration.
