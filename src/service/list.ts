@@ -111,6 +111,9 @@ type States = ReadonlyMap<number, readonly IssueStateElsewhere[]>;
  * `staleClaims` gives each one's claim. The versions elsewhere for this
  * come from `options.states` (maybe cached), else `options.elsewhere`, else
  * a fresh scan.
+ *
+ * `paths` gives the repo-relative path of each listed issue's file (unique,
+ * also when several files have the same ID).
  */
 export async function listIssues(
   dir: string,
@@ -126,6 +129,7 @@ export async function listIssues(
     misplaced: string[];
     elsewhere: IssueOnlyElsewhere[];
     staleClaims: Map<number, StaleClaim>;
+    paths: ReadonlyMap<Issue, string>;
   }
 > {
   const [{ open, closed, unreadable }, states, staleStates] = await Promise.all(
@@ -141,7 +145,9 @@ export async function listIssues(
     ...open.filter((f) => isClosedStatus(config, f.issue.status)),
     ...closed.filter((f) => !isClosedStatus(config, f.issue.status)),
   ].map((f) => f.path);
-  const issues = [...open, ...closed].map((f) => f.issue);
+  const files = [...open, ...closed];
+  const issues = files.map((f) => f.issue);
+  const paths = new Map(files.map((f) => [f.issue, f.path]));
   let listed = queryIssues(issues, query, config);
   let onlyElsewhere = states
     ? queryElsewhere(localIds(issues, unreadable), states, query, config)
@@ -172,6 +178,7 @@ export async function listIssues(
     misplaced,
     elsewhere: onlyElsewhere,
     staleClaims,
+    paths,
   };
 }
 

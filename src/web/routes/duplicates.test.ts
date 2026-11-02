@@ -15,6 +15,7 @@ import { AmendTracker } from '../../git/amend-tracker.ts';
 import type { ServerContext } from '../server.ts';
 import { IssueWatcher } from '../watcher.ts';
 import { duplicateRoutes } from './duplicates.ts';
+import { issueRoutes } from './issues.ts';
 
 /** Regression tests for #126: list and resolve duplicate issue IDs. */
 
@@ -62,6 +63,7 @@ beforeEach(async () => {
   };
   app = new Hono();
   app.route('/api', duplicateRoutes(ctx));
+  app.route('/api', issueRoutes(ctx));
 });
 
 afterEach(async () => {
@@ -96,6 +98,17 @@ describe('GET /api/duplicates', () => {
         ],
         newIds: [2],
       },
+    ]);
+  });
+});
+
+describe('GET /api/issues', () => {
+  test('gives each file its path, a unique key for a duplicated ID', async () => {
+    const res = await send('GET', '/issues');
+    const issues = (await res.json()) as (Issue & { path?: string })[];
+    expect(issues.map((i) => [i.id, i.path]).sort()).toEqual([
+      [1, NEW],
+      [1, OLD],
     ]);
   });
 });

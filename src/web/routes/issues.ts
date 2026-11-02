@@ -332,7 +332,7 @@ export function issueRoutes(ctx: ServerContext): Hono {
     // on another branch, after the local ones (from the cached scan).
     // `stale=<duration>`: only the issues whose effective state is a stale
     // claim, each with `staleClaim` (same rules as `gitrac ls --stale`).
-    const { issues, elsewhere, staleClaims } = await listIssues(
+    const { issues, elsewhere, staleClaims, paths } = await listIssues(
       dir,
       query,
       config,
@@ -351,7 +351,11 @@ export function issueRoutes(ctx: ServerContext): Hono {
       return claim ? { ...issue, staleClaim: claim } : issue;
     };
     return c.json([
-      ...(await withClaims(ctx, issues)).map(withStale),
+      // `path`: the issue's file, a unique key (IDs can be duplicated).
+      ...(await withClaims(ctx, issues)).map((issue, index) => ({
+        ...withStale(issue),
+        path: paths.get(issues[index] as Issue),
+      })),
       ...elsewhere.map(({ issue, foundElsewhere }) => {
         // Their issue is the newest version: judge it alone, at its location.
         const claim =

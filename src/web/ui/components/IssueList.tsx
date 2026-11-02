@@ -257,12 +257,13 @@ export function IssueList() {
               {sorted.map((issue: ApiIssue) =>
                 issue.foundElsewhere ? (
                   <ElsewhereIssueRow
-                    key={issue.id}
+                    key={`elsewhere:${issue.id}`}
                     issue={issue}
                     found={issue.foundElsewhere}
                   />
                 ) : (
-                  <IssueRow key={issue.id} issue={issue} />
+                  // Its file path: IDs can be duplicated, paths can't.
+                  <IssueRow key={issue.path ?? issue.id} issue={issue} />
                 ),
               )}
             </tbody>

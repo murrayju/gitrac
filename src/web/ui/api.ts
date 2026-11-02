@@ -18,7 +18,15 @@ import type {
  * and `staleClaim` when `staleAfter` is configured and its claim has had no
  * activity for that long.
  */
-export type ApiIssue = Issue & ElsewhereMarks & { staleClaim?: StaleClaim };
+export type ApiIssue = Issue &
+  ElsewhereMarks & {
+    staleClaim?: StaleClaim;
+    /**
+     * Repo-relative path of its file (`GET /api/issues` only; not for an
+     * issue only elsewhere). Unique, also when several files have one ID.
+     */
+    path?: string;
+  };
 
 export interface Draft {
   filename: string;
